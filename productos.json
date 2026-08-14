@@ -1,0 +1,132 @@
+[
+  {
+    "model": "productos.producto",
+    "pk": 1,
+    "fields": {
+      "nombre": "Martillo",
+      "descripcion": "Martillo con mango antiderrapante",
+      "precio": 15000,
+      "imagen": "productos/producto-1-martillo.jpg",
+      "stock": 18,
+      "categoria": "Herramientas",
+      "activo": true
+    }
+  },
+  {
+    "model": "productos.producto",
+    "pk": 2,
+    "fields": {
+      "nombre": "Taladro Bauker",
+      "descripcion": "Taladro percutor eléctrico de precisión Bauker",
+      "precio": 57000,
+      "imagen": "productos/producto-2-taladro-bauker.jpg",
+      "stock": 20,
+      "categoria": "Herramientas",
+      "activo": true
+    }
+  },
+  {
+    "model": "productos.producto",
+    "pk": 3,
+    "fields": {
+      "nombre": "Clavo corriente 4 (1kg)",
+      "descripcion": "Clavos corriente 4 para construcción",
+      "precio": 2000,
+      "imagen": "productos/producto-3-clavo-corriente-4-1kg.jpg",
+      "stock": 158,
+      "categoria": "Construcción",
+      "activo": true
+    }
+  },
+  {
+    "model": "productos.producto",
+    "pk": 4,
+    "fields": {
+      "nombre": "Stanley Sierra Circular",
+      "descripcion": "Sierra circular Stanley de 7-1/4 pulgadas y 1600 W",
+      "precio": 60000,
+      "imagen": "productos/producto-4-stanley-sierra-circular.jpg",
+      "stock": 31,
+      "categoria": "Herramientas",
+      "activo": true
+    }
+  },
+  {
+    "model": "productos.producto",
+    "pk": 5,
+    "fields": {
+      "nombre": "Pintura Látex Extracubriente",
+      "descripcion": "Pintura látex extracubriente mate, galón blanco",
+      "precio": 22000,
+      "imagen": "productos/producto-5-pintura-latex-extracubriente.jpg",
+      "stock": 48,
+      "categoria": "Pinturas",
+      "activo": true
+    }
+  },
+  {
+    "model": "productos.producto",
+    "pk": 6,
+    "fields": {
+      "nombre": "Combinación lavaplatos Arizona",
+      "descripcion": "Llave de agua para lavaplatos marca Arizona",
+      "precio": 11500,
+      "imagen": "productos/producto-6-combinacion-lavaplatos-arizona.jpg",
+      "stock": 18,
+      "categoria": "Gasfitería",
+      "activo": false
+    }
+  },
+  {
+    "model": "productos.producto",
+    "pk": 7,
+    "fields": {
+      "nombre": "Taladro Bosch Professional GSB 450 RE",
+      "descripcion": "Taladro percutor Bosch de 450 W para perforación en madera, metal y mampostería.",
+      "precio": 20000,
+      "imagen": "productos/producto-7-taladro-bosch-professional-gsb-450-re.jpg",
+      "stock": 90,
+      "categoria": "Herramientas",
+      "activo": true
+    }
+  },
+  {
+    "model": "productos.producto",
+    "pk": 8,
+    "fields": {
+      "nombre": "Perno hexagonal métrico",
+      "descripcion": "Perno de acero para trabajos de construcción y montaje.",
+      "precio": 5000,
+      "imagen": "productos/producto-8-perno-hexagonal-metrico.jpg",
+      "stock": 40,
+      "categoria": "Construcción",
+      "activo": true
+    }
+  },
+  {
+    "model": "productos.producto",
+    "pk": 9,
+    "fields": {
+      "nombre": "Cinta métrica profesional 5 m",
+      "descripcion": "Cinta métrica retráctil para mediciones de hasta cinco metros.",
+      "precio": 12990,
+      "imagen": "productos/producto-9-cinta-metrica-profesional-5-m.jpg",
+      "stock": 25,
+      "categoria": "Herramientas",
+      "activo": true
+    }
+  },
+  {
+    "model": "productos.producto",
+    "pk": 10,
+    "fields": {
+      "nombre": "Madera de pino 2x3 pulgadas",
+      "descripcion": "Pieza de madera de pino dimensionada para construcción y terminaciones.",
+      "precio": 5900,
+      "imagen": "productos/producto-10-madera-de-pino-2x3-pulgadas.jpg",
+      "stock": 120,
+      "categoria": "Construcción",
+      "activo": true
+    }
+  }
+]

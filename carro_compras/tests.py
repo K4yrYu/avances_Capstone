@@ -1,0 +1,250 @@
+from unittest.mock import Mock, patch
+
+from django.test import TestCase, override_settings
+from django.urls import reverse
+
+from productos.models import Producto
+from usuarios.models import Usuario
+from .models import Detalle, Venta
+
+
+@override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
+class SeguridadCarritoTests(TestCase):
+    def setUp(self):
+        self.dueno = Usuario.objects.create_user(
+            rut='55555555-5', username='dueno', email='dueno@example.com',
+            telefono='+56955555555', password='Ferremas!2026Clave',
+        )
+        self.otro = Usuario.objects.create_user(
+            rut='66666666-6', username='otro', email='otro@example.com',
+            telefono='+56966666666', password='Ferremas!2026Clave',
+        )
+        self.admin = Usuario.objects.create_user(
+            rut='88888888-8', username='admin_ventas', email='admin-ventas@example.com',
+            telefono='+56988888888', password='Ferremas!2026Clave', is_staff=True,
+        )
+        self.producto = Producto.objects.create(
+            nombre='Martillo', descripcion='Martillo', precio=10000,
+            imagen='https://example.com/martillo.jpg', stock=10,
+            categoria='Herramientas', activo=True,
+        )
+        self.venta = Venta.objects.create(id_usuario=self.dueno, total_venta=20000)
+        self.detalle = Detalle.objects.create(
+            id_venta=self.venta, producto=self.producto, cantidad_producto=2,
+        )
+
+    def test_otro_usuario_no_puede_modificar_detalle(self):
+        self.client.force_login(self.otro)
+
+        response = self.client.put(
+            reverse('actualizar_cantidad_producto', args=[self.detalle.id]),
+            {'cantidad_producto': 1},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.detalle.refresh_from_db()
+        self.assertEqual(self.detalle.cantidad_producto, 2)
+
+    def test_cantidad_cero_es_rechazada(self):
+        self.client.force_login(self.dueno)
+
+        response = self.client.put(
+            reverse('actualizar_cantidad_producto', args=[self.detalle.id]),
+            {'cantidad_producto': 0},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.detalle.refresh_from_db()
+        self.assertEqual(self.detalle.cantidad_producto, 2)
+
+    def test_disminuir_ultimo_producto_lo_elimina_y_deja_total_cero(self):
+        self.detalle.cantidad_producto = 1
+        self.detalle.save(update_fields=['cantidad_producto', 'subtotal_venta'])
+        self.venta.total_venta = self.detalle.subtotal_venta
+        self.venta.save(update_fields=['total_venta'])
+        self.client.force_login(self.dueno)
+
+        response = self.client.put(
+            reverse('disminuir_cantidad_producto', args=[self.detalle.id]),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['total_carrito'], 0)
+        self.assertFalse(Detalle.objects.filter(id=self.detalle.id).exists())
+        self.venta.refresh_from_db()
+        self.assertEqual(self.venta.total_venta, 0)
+
+    def test_paneles_y_api_de_ventas_requieren_administrador(self):
+        self.client.force_login(self.dueno)
+
+        pagina = self.client.get(reverse('historial_ventas'))
+        api = self.client.get(reverse('api_historial_ventas'))
+
+        self.assertEqual(pagina.status_code, 302)
+        self.assertEqual(api.status_code, 403)
+
+    def test_carrito_no_aparece_como_retiro_ni_genera_boleta(self):
+        self.client.force_login(self.admin)
+
+        retiros = self.client.get(reverse('api_retiros'))
+        boleta = self.client.get(reverse('api_boleta', args=[self.venta.id]))
+
+        self.assertEqual(retiros.status_code, 200)
+        self.assertEqual(retiros.json(), [])
+        self.assertEqual(boleta.status_code, 404)
+
+
+@override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
+class SeguridadWebpayTests(TestCase):
+    def setUp(self):
+        self.usuario = Usuario.objects.create_user(
+            rut='77777777-7', username='comprador', email='comprador@example.com',
+            telefono='+56977777777', password='Ferremas!2026Clave',
+        )
+        self.producto = Producto.objects.create(
+            nombre='Sierra', descripcion='Sierra', precio=15000,
+            imagen='https://example.com/sierra.jpg', stock=8,
+            categoria='Herramientas', activo=True,
+        )
+        self.venta = Venta.objects.create(id_usuario=self.usuario, total_venta=30000)
+        Detalle.objects.create(id_venta=self.venta, producto=self.producto, cantidad_producto=2)
+        self.client.force_login(self.usuario)
+
+    def _iniciar_pago(self, tx):
+        tx.create.return_value = {
+            'token': 'token-webpay-seguro',
+            'url': 'https://webpay3gint.transbank.cl/webpayserver/initTransaction',
+        }
+        with patch('carro_compras.views._webpay_transaction', return_value=tx):
+            response = self.client.post(
+                reverse('iniciar_pago_webpay'),
+                {'tipo_entrega': 'retiro'},
+            )
+        self.assertEqual(response.status_code, 302)
+        self.venta.refresh_from_db()
+        return response
+
+    def _respuesta_autorizada(self, **overrides):
+        response = {
+            'status': 'AUTHORIZED',
+            'response_code': 0,
+            'buy_order': self.venta.webpay_buy_order,
+            'session_id': self.venta.webpay_session_id,
+            'amount': self.venta.webpay_amount,
+            'card_detail': {'card_number': '6623'},
+        }
+        response.update(overrides)
+        return response
+
+    def test_iniciar_pago_congela_total_y_referencia(self):
+        tx = Mock()
+
+        self._iniciar_pago(tx)
+
+        self.assertEqual(self.venta.estado_venta, 'pago_pendiente')
+        self.assertEqual(self.venta.webpay_amount, 30000)
+        self.assertEqual(self.venta.webpay_transaction_id, 'token-webpay-seguro')
+        self.assertTrue(self.venta.webpay_buy_order)
+        self.assertTrue(self.venta.webpay_session_id)
+
+    def test_inicio_ajax_entrega_url_sin_navegar_al_endpoint_api(self):
+        tx = Mock()
+        tx.create.return_value = {
+            'token': 'token-webpay-seguro',
+            'url': 'https://webpay3gint.transbank.cl/webpayserver/initTransaction',
+        }
+
+        with patch('carro_compras.views._webpay_transaction', return_value=tx):
+            response = self.client.post(
+                reverse('iniciar_pago_webpay'),
+                {'tipo_entrega': 'retiro'},
+                HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+                HTTP_ACCEPT='application/json',
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['redirect_url'].startswith('https://webpay3gint.transbank.cl/'))
+
+    def test_volver_desde_webpay_reabre_el_carrito(self):
+        tx = Mock()
+        self._iniciar_pago(tx)
+
+        response = self.client.post(reverse('cancelar_pago_webpay'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['cancelled'])
+        self.venta.refresh_from_db()
+        self.assertEqual(self.venta.estado_venta, 'carrito')
+        self.assertIsNone(self.venta.webpay_transaction_id)
+
+    def test_iniciar_pago_rechaza_redireccion_fuera_de_transbank(self):
+        tx = Mock()
+        tx.create.return_value = {
+            'token': 'token-webpay-seguro',
+            'url': 'https://sitio-malicioso.example/robar-token',
+        }
+
+        with patch('carro_compras.views._webpay_transaction', return_value=tx):
+            response = self.client.post(
+                reverse('iniciar_pago_webpay'), {'tipo_entrega': 'retiro'}
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.venta.refresh_from_db()
+        self.assertEqual(self.venta.estado_venta, 'carrito')
+        self.assertIsNone(self.venta.webpay_transaction_id)
+
+    def test_callback_malformado_deja_pago_pendiente_para_revision(self):
+        tx = Mock()
+        self._iniciar_pago(tx)
+        tx.commit.return_value = ['respuesta', 'inválida']
+
+        with patch('carro_compras.views._webpay_transaction', return_value=tx):
+            response = self.client.post(
+                reverse('respuesta_pago_webpay'), {'token_ws': 'token-webpay-seguro'}
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.venta.refresh_from_db()
+        self.assertEqual(self.venta.estado_venta, 'pago_pendiente')
+
+    def test_monto_manipulado_revierte_pago_y_no_descuenta_stock(self):
+        tx = Mock()
+        self._iniciar_pago(tx)
+        tx.commit.return_value = self._respuesta_autorizada(amount=1)
+
+        with patch('carro_compras.views._webpay_transaction', return_value=tx):
+            response = self.client.post(
+                reverse('respuesta_pago_webpay'), {'token_ws': 'token-webpay-seguro'}
+            )
+
+        self.assertEqual(response.status_code, 409)
+        tx.refund.assert_called_once_with('token-webpay-seguro', 1)
+        self.venta.refresh_from_db()
+        self.producto.refresh_from_db()
+        self.assertEqual(self.venta.estado_venta, 'carrito')
+        self.assertEqual(self.producto.stock, 8)
+
+    def test_pago_confirmado_descuenta_stock_una_sola_vez(self):
+        tx = Mock()
+        self._iniciar_pago(tx)
+        tx.commit.return_value = self._respuesta_autorizada()
+
+        with patch('carro_compras.views._webpay_transaction', return_value=tx):
+            primera = self.client.post(
+                reverse('respuesta_pago_webpay'), {'token_ws': 'token-webpay-seguro'}
+            )
+            segunda = self.client.post(
+                reverse('respuesta_pago_webpay'), {'token_ws': 'token-webpay-seguro'}
+            )
+
+        self.assertEqual(primera.status_code, 200)
+        self.assertEqual(segunda.status_code, 200)
+        self.producto.refresh_from_db()
+        self.venta.refresh_from_db()
+        self.assertEqual(self.producto.stock, 6)
+        self.assertEqual(self.venta.estado_venta, 'pagado')
+        self.assertEqual(tx.commit.call_count, 1)
