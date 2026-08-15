@@ -3,204 +3,123 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Despachos - FERREMAS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Gestión de despachos | SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      font-family: 'Arial', sans-serif;
-    }
-    .fondo {
-      background: url('https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1920,fit=crop/Yle55W6QKWSoQbE4/herramientas-manuales-basicas-02-2022-07-AE0vvPgGKDiqlZEX.jpg') no-repeat center center fixed;
-      background-size: cover;
-      min-height: 100vh;
-      padding-top: 40px;
-      padding-bottom: 40px;
-    }
-    .container {
-      background-color: #388E3C;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-      padding: 30px;
-      margin-top: 50px;
-      color: black;
-    }
-    .card-despacho {
-      background-color: rgba(255, 255, 255, 0.9);
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 30px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-    .btn-volver {
-      background: linear-gradient(to bottom, #2E7D32, #81C784);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      padding: 10px 30px;
-      font-size: 1.1rem;
-      font-weight: bold;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-      transition: background-color 0.3s, transform 0.3s;
-    }
-    .btn-volver:hover {
-      background: linear-gradient(to bottom, #45a049, #66bb6a);
-      transform: scale(1.05);
-    }
-    .table th, .table td {
-      vertical-align: middle;
-      color: black;
-    }
-    .table tbody tr {
-      background-color: rgba(255, 255, 255, 0.9);
-    }
-    .form-inline {
-      display: flex;
-      gap: 10px;
-    }
-    #buscador {
-      max-width: 400px;
-      margin: 20px auto;
-    }
-    footer {
-      text-align: center;
-      margin-top: 40px;
-      font-size: 0.9rem;
-      color: #777;
-    }
-  </style>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}">
+  <link rel="stylesheet" href="{% static 'css/operaciones_entrega.css' %}">
 </head>
 <body>
+  <a class="skip-link" href="#contenido-operaciones">Saltar al contenido</a>
 
-<!-- CSRF token oculto -->
-<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+  <div class="admin-shell">
+    <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
+      <div class="offcanvas-header sidebar-mobile-header">
+        <span id="adminSidebarLabel">Menú administrativo</span>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#adminSidebar" aria-label="Cerrar menú"></button>
+      </div>
+      <div class="offcanvas-body sidebar-body">
+        <a class="sidebar-brand" href="{% url 'panel_administracion' %}" aria-label="Panel SFI"><img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente"></a>
+        <div class="sidebar-section">
+          <span class="sidebar-label">Principal</span>
+          <nav class="sidebar-nav" aria-label="Secciones administrativas">
+            <a href="{% url 'panel_administracion' %}"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i><span>Resumen</span></a>
+            <a href="{% url 'lista_productos_crud' %}"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><span>Productos</span></a>
+            <a href="{% url 'vista_lista_usuarios' %}"><i class="fa-solid fa-users" aria-hidden="true"></i><span>Usuarios</span></a>
+            <a href="{% url 'historial_ventas' %}"><i class="fa-solid fa-receipt" aria-hidden="true"></i><span>Ventas</span></a>
+          </nav>
+        </div>
+        <div class="sidebar-section">
+          <span class="sidebar-label">Operaciones</span>
+          <nav class="sidebar-nav" aria-label="Operaciones de entrega">
+            <a href="{% url 'vista_retiros' %}"><i class="fa-solid fa-store" aria-hidden="true"></i><span>Retiros</span></a>
+            <a class="active" href="{% url 'vista_despachos' %}"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i><span>Despachos</span></a>
+          </nav>
+        </div>
+        <div class="sidebar-footer">
+          <a href="{% url 'index' %}"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>Ver tienda</a>
+          <form method="post" action="{% url 'cerrar_sesion' %}">{% csrf_token %}<button type="submit"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>Cerrar sesión</button></form>
+        </div>
+      </div>
+    </aside>
 
-<div class="fondo">
-  <div class="container">
-    <h2 class="text-center mb-4">Gestión de Despachos</h2>
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <div class="topbar-title">
+          <button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-controls="adminSidebar" aria-label="Abrir menú"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
+          <div><span>Operaciones</span><strong>Gestión de despachos</strong></div>
+        </div>
+        <div class="admin-profile"><span class="profile-avatar">{{ user.username|first|upper }}</span><div><strong>{{ user.get_full_name|default:user.username }}</strong><span>Administrador</span></div></div>
+      </header>
 
-    <div class="text-center mb-4">
-      <a href="{% url 'panel_administracion' %}" class="btn btn-volver">
-        <i class="fas fa-arrow-left me-2"></i> Volver al Panel de Administración
-      </a>
-    </div>
+      <main
+        class="operations-management"
+        id="contenido-operaciones"
+        data-operation="despacho"
+        data-api-url="{% url 'api_despachos' %}"
+        data-confirm-url="{% url 'api_confirmar_despacho' 0 %}"
+        data-receipt-url="{% url 'ver_boleta' 0 %}"
+      >
+        <section class="operations-heading">
+          <div>
+            <span class="operations-kicker"><i class="fa-solid fa-circle" aria-hidden="true"></i> Entrega a domicilio</span>
+            <h1>Gestión de despachos</h1>
+            <p>Organiza los pedidos a domicilio y registra cada entrega completada.</p>
+          </div>
+          <a class="switch-operation-action" href="{% url 'vista_retiros' %}"><i class="fa-solid fa-store" aria-hidden="true"></i> Ir a retiros</a>
+        </section>
 
-    <input type="text" id="buscador" class="form-control text-center" placeholder="Buscar por nombre o RUT..." onkeyup="filtrarTablas()">
+        <section class="operations-metrics" aria-label="Resumen de despachos">
+          <article><span class="operation-metric-icon purple"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i></span><div><small>Total de despachos</small><strong id="metrica-operaciones-total">—</strong></div></article>
+          <article><span class="operation-metric-icon warning"><i class="fa-solid fa-clock" aria-hidden="true"></i></span><div><small>Por despachar</small><strong id="metrica-operaciones-pendientes">—</strong></div></article>
+          <article><span class="operation-metric-icon green"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></span><div><small>Entregados</small><strong id="metrica-operaciones-completadas">—</strong></div></article>
+          <article class="operation-value-metric"><span class="operation-metric-icon yellow"><i class="fa-solid fa-sack-dollar" aria-hidden="true"></i></span><div><small>Valor por entregar</small><strong id="metrica-operaciones-valor">—</strong></div></article>
+        </section>
 
-    <div id="mensaje" class="mt-3"></div>
-
-    <div class="card-despacho">
-      <h4>🚚 Despachos Pendientes</h4>
-      <div id="tablaPendientes"></div>
-    </div>
-
-    <div class="card-despacho">
-      <h4>✅ Despachos Completados</h4>
-      <div id="tablaCompletados"></div>
+        <section class="operations-card">
+          <div class="operations-card-heading"><div><span>Pedidos con despacho</span><h2>Órdenes registradas</h2></div><strong id="contador-operaciones" aria-live="polite">Cargando…</strong></div>
+          <div class="operations-filters">
+            <label class="operation-filter search-operation-filter" for="buscar-operacion"><span>Buscar despacho</span><span class="operation-filter-control"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" id="buscar-operacion" class="form-control" placeholder="Cliente, dirección, RUT o número de venta" autocomplete="off"></span></label>
+            <label class="operation-filter" for="filtro-estado-operacion"><span>Estado</span><select class="form-select" id="filtro-estado-operacion"><option value="">Todos</option><option value="pendiente">Por despachar</option><option value="completado">Entregados</option></select></label>
+            <label class="operation-filter" for="fecha-desde-operacion"><span>Desde</span><input type="date" id="fecha-desde-operacion" class="form-control"></label>
+            <label class="operation-filter" for="fecha-hasta-operacion"><span>Hasta</span><input type="date" id="fecha-hasta-operacion" class="form-control"></label>
+            <label class="operation-filter" for="orden-operaciones"><span>Ordenar</span><select class="form-select" id="orden-operaciones"><option value="recientes">Más recientes</option><option value="antiguas">Más antiguas</option><option value="total-desc">Mayor total</option></select></label>
+            <button class="clear-operation-filters" id="limpiar-filtros-operaciones" type="button"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Limpiar</span></button>
+          </div>
+          <div class="operations-table-wrap">
+            <table class="operations-table dispatch-table">
+              <thead><tr><th>Pedido</th><th>Cliente</th><th>Dirección</th><th>Fecha</th><th>Productos</th><th>Total</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead>
+              <tbody id="tabla-operaciones" aria-live="polite" aria-busy="true">
+                {% for _ in "12345" %}<tr class="operation-loading-row" aria-hidden="true"><td><span class="operation-loading-line short"></span></td><td><span class="operation-loading-profile"></span></td><td><span class="operation-loading-line address"></span></td><td><span class="operation-loading-line long"></span></td><td><span class="operation-loading-line"></span></td><td><span class="operation-loading-line"></span></td><td><span class="operation-loading-line"></span></td><td><span class="operation-loading-line long"></span></td></tr>{% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
     </div>
   </div>
 
-  <footer>
-    <p>© 2025 FERREMAS - Gestión de Despachos</p>
-  </footer>
-</div>
+  <div class="modal fade" id="modalConfirmarOperacion" tabindex="-1" aria-labelledby="tituloModalOperacion" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content operation-modal">
+      <div class="modal-header"><span class="operation-modal-icon dispatch"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i></span><div><span>Confirmar operación</span><h2 class="modal-title" id="tituloModalOperacion">Completar despacho</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+      <div class="modal-body">
+        <p>Confirma únicamente cuando el pedido haya sido entregado al cliente.</p>
+        <div class="modal-operation-summary"><span id="avatarModalOperacion">C</span><div><strong id="nombreModalOperacion"></strong><small id="ventaModalOperacion"></small></div></div>
+        <div class="modal-address-summary"><span>Dirección de entrega</span><strong id="direccionModalOperacion"></strong></div>
+        <div class="modal-inline-error" id="errorModalOperacion" role="alert"></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="operation-modal-cancel" data-bs-dismiss="modal">Cancelar</button><button type="button" class="operation-modal-confirm" id="confirmarOperacion">Marcar como entregado</button></div>
+    </div></div>
+  </div>
 
-<!-- Scripts -->
-<script src="/static/js/security.js"></script>
-<script>
-const { escapeHtml } = window.FerremasSecurity;
-  function getCSRFToken() {
-    return document.querySelector('[name=csrfmiddlewaretoken]')?.value;
-  }
+  <div class="toast-container position-fixed bottom-0 end-0 p-3"><div class="toast operation-toast" id="notificacionOperacion" role="status" aria-live="polite" aria-atomic="true"><div class="toast-body"><i class="fa-solid fa-circle-check" id="iconoNotificacionOperacion" aria-hidden="true"></i><span id="mensajeNotificacionOperacion">Entrega confirmada.</span><button type="button" class="btn-close ms-auto" data-bs-dismiss="toast" aria-label="Cerrar"></button></div></div></div>
 
-  async function cargarDespachos() {
-    const res = await fetch('/api/despachos/');
-    const datos = await res.json();
-
-    const pendientes = datos.filter(v => v.estado_entrega === 'pendiente' && v.total_venta > 0);
-    const completados = datos.filter(v => v.estado_entrega === 'completado' && v.total_venta > 0);
-
-    renderTabla(pendientes, 'tablaPendientes', true);
-    renderTabla(completados, 'tablaCompletados', false);
-  }
-
-  function renderTabla(ventas, contenedorId, permitirConfirmar) {
-    const contenedor = document.getElementById(contenedorId);
-    if (ventas.length === 0) {
-      contenedor.innerHTML = '<div class="alert alert-info">No hay despachos ' + (permitirConfirmar ? 'pendientes' : 'completados') + '.</div>';
-      return;
-    }
-
-    let tabla = `<div class="table-responsive"><table class="table table-hover table-bordered align-middle">
-      <thead class="${permitirConfirmar ? 'table-warning' : 'table-light'}">
-        <tr>
-          <th>ID</th><th>Cliente</th><th>RUT</th><th>Dirección</th><th>Total</th><th>Fecha</th>${permitirConfirmar ? '<th>Confirmar Entrega</th>' : ''}
-        </tr>
-      </thead><tbody>`;
-
-    ventas.forEach(v => {
-      tabla += `<tr>
-        <td>${v.id}</td>
-        <td>${escapeHtml(v.id_usuario.first_name)} ${escapeHtml(v.id_usuario.last_name)}</td>
-        <td>${escapeHtml(v.id_usuario.rut)}</td>
-        <td>${escapeHtml(v.direccion_despacho || 'No especificada')}</td>
-        <td>$${v.total_venta}</td>
-        <td>${new Date(v.fecha_compra).toLocaleString()}</td>`;
-      if (permitirConfirmar) {
-        tabla += `
-          <td>
-            <form onsubmit="confirmarDespacho(event, ${v.id})">
-              <button type="submit" class="btn btn-success btn-sm">Confirmar</button>
-            </form>
-          </td>`;
-      }
-      tabla += `</tr>`;
-    });
-
-    tabla += '</tbody></table></div>';
-    contenedor.innerHTML = tabla;
-  }
-
-  async function confirmarDespacho(event, ventaId) {
-    event.preventDefault();
-
-    const res = await fetch(`/api/despachos/confirmar/${ventaId}/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': getCSRFToken()
-      }
-    });
-
-    const data = await res.json();
-    const msgDiv = document.getElementById("mensaje");
-
-    if (res.ok) {
-      msgDiv.innerHTML = `<div class="alert alert-success">${escapeHtml(data.mensaje)}</div>`;
-      cargarDespachos();
-    } else {
-      msgDiv.innerHTML = `<div class="alert alert-danger">${escapeHtml(data.detail || 'Error al confirmar despacho')}</div>`;
-    }
-
-    setTimeout(() => msgDiv.innerHTML = '', 4000);
-  }
-
-  function filtrarTablas() {
-    const input = document.getElementById("buscador").value.toLowerCase();
-    const tablas = document.querySelectorAll("table tbody");
-    tablas.forEach(tbody => {
-      const filas = tbody.querySelectorAll("tr");
-      filas.forEach(fila => {
-        const textoFila = fila.innerText.toLowerCase();
-        fila.style.display = textoFila.includes(input) ? "" : "none";
-      });
-    });
-  }
-
-  window.addEventListener('DOMContentLoaded', cargarDespachos);
-</script>
-
-<script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/security.js' %}"></script>
+  <script src="{% static 'js/operaciones_entrega.js' %}"></script>
 </body>
 </html>

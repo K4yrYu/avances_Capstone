@@ -16,11 +16,12 @@ from carro_compras.models import Venta
 from django.utils import timezone
 from django.contrib.auth.views import PasswordResetView
 from django.core.cache import cache
-from django.http import HttpResponse
 from django.views.decorators.http import require_POST
 from django.urls import reverse_lazy, reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
 from django.core.mail import send_mail
+from django.template.loader import render_to_string
 from django.conf import settings
 from django.db import transaction
 
@@ -89,11 +90,24 @@ class RegistroAPIView(APIView):
                     activation_url = request.build_absolute_uri(
                         reverse('activar_cuenta', args=[token])
                     )
+                    activation_html = render_to_string(
+                        'usuarios/emails/activacion_cuenta.html',
+                        {
+                            'nombre': user.first_name,
+                            'activation_url': activation_url,
+                        },
+                    )
                     send_mail(
-                        subject='Activa tu cuenta en SFI',
-                        message=f'Hola {user.first_name}, activa tu cuenta usando este enlace:\n{activation_url}',
+                        subject='Confirma tu correo y activa tu cuenta | SFI',
+                        message=(
+                            f'Hola {user.first_name},\n\n'
+                            'Confirma tu correo para activar tu cuenta SFI usando este enlace:\n'
+                            f'{activation_url}\n\n'
+                            'El enlace vence en 24 horas. Si no creaste esta cuenta, ignora el mensaje.'
+                        ),
                         from_email=settings.DEFAULT_FROM_EMAIL,
                         recipient_list=[user.email],
+                        html_message=activation_html,
                     )
             except Exception:
                 logger.exception('No se pudo enviar el correo de activación')
@@ -122,11 +136,18 @@ class LoginAPIView(APIView):
             login(request, user)
             Token.objects.filter(user=user).delete()
             token = Token.objects.create(user=user)
+            next_url = str(request.data.get('next') or '').strip()
+            if not url_has_allowed_host_and_scheme(
+                next_url,
+                allowed_hosts={request.get_host()},
+                require_https=request.is_secure(),
+            ):
+                next_url = '/'
             return Response({
                 'status': 'success',
                 'message': 'Inicio de sesión exitoso',
                 'token': token.key,
-                'redirect_url': '/'
+                'redirect_url': next_url,
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -180,13 +201,23 @@ class VistaRecuperarConValidacion(PasswordResetView):
     subject_template_name = 'usuarios/password_reset_subject.txt'
     success_url = reverse_lazy('password_reset_done')
 
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        form.fields['email'].widget.attrs.update({
+            'placeholder': 'tu@correo.cl',
+            'autocomplete': 'email',
+        })
+        return form
+
     def post(self, request, *args, **kwargs):
         client_ip = request.META.get('REMOTE_ADDR', 'unknown')
         cache_key = f'password-reset:{client_ip}'
         attempts = cache.get(cache_key, 0)
         if attempts >= 5:
-            return HttpResponse(
-                'Demasiadas solicitudes. Intenta nuevamente más tarde.',
+            return render(
+                request,
+                self.template_name,
+                {'form': self.get_form(), 'rate_limited': True},
                 status=429,
             )
         cache.set(cache_key, attempts + 1, timeout=60 * 60)

@@ -3,220 +3,221 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agregar Producto</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body {
-      margin: 0;
-      font-family: 'Arial', sans-serif;
-    }
-
-    .fondo {
-      background: url('https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1920,fit=crop/Yle55W6QKWSoQbE4/herramientas-manuales-basicas-02-2022-07-AE0vvPgGKDiqlZEX.jpg') no-repeat center center fixed;
-      background-size: cover;
-      min-height: 100vh;
-      padding-top: 30px;
-    }
-
-    .logo-container {
-      text-align: center;
-      padding-top: 20px;
-    }
-
-    .logo-container img {
-      height: 80px;
-      border-radius: 15px;
-      background-color: white;
-      padding: 8px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-    }
-
-    .container {
-      background-color: rgba(255, 255, 255, 0.95);
-      padding: 30px;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-      color: #333;
-      max-width: 700px;
-    }
-
-    h1 {
-      color: #333;
-    }
-
-    .btn-success, .btn-outline-secondary {
-      font-weight: bold;
-      border-radius: 50px;
-      padding: 10px 25px;
-      font-size: 1rem;
-    }
-
-    .btn-success {
-      background: linear-gradient(to bottom, #2E7D32, #81C784);
-      border: none;
-    }
-
-    .btn-success:hover {
-      background: linear-gradient(to bottom, #45a049, #66bb6a);
-      transform: scale(1.05);
-    }
-
-    .btn-outline-secondary {
-      background: linear-gradient(to bottom, #455A64, #90A4AE);
-      color: white;
-      border: none;
-    }
-
-    .btn-outline-secondary:hover {
-      background: linear-gradient(to bottom, #607D8B, #B0BEC5);
-      transform: scale(1.05);
-    }
-
-    .form-label {
-      font-weight: bold;
-    }
-
-    .form-control,
-    .form-select {
-      border-radius: 8px;
-    }
-
-    footer {
-      background-color: #2E7D32;
-      color: white;
-      padding: 20px;
-    }
-
-    .mb-4 {
-      margin-bottom: 1.5rem;
-    }
-
-    .text-center a {
-      display: inline-block;
-      margin-top: 10px;
-    }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Agregar producto | Administración SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}">
+  <link rel="stylesheet" href="{% static 'css/formulario_producto_admin.css' %}">
 </head>
 <body>
+  <a class="skip-link" href="#contenido-formulario">Saltar al formulario</a>
 
-<div class="fondo">
+  <div class="admin-shell">
+    <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
+      <div class="offcanvas-header sidebar-mobile-header">
+        <span id="adminSidebarLabel">Menú administrativo</span>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#adminSidebar" aria-label="Cerrar menú"></button>
+      </div>
 
-  <!-- Logo flotante -->
-  <div class="logo-container">
-    <img src="{% static 'img/logo.png' %}" alt="FERREMAS Logo">
-  </div>
+      <div class="offcanvas-body sidebar-body">
+        <a class="sidebar-brand" href="{% url 'panel_administracion' %}" aria-label="Panel SFI">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
+        </a>
 
-  <div class="container my-5">
-    <h1 class="text-center mb-4">Agregar Producto</h1>
-    <form id="form-producto" enctype="multipart/form-data">
-      <div class="mb-3">
-        <label class="form-label">Nombre</label>
-        <input type="text" class="form-control" id="nombre" required>
+        <div class="sidebar-section">
+          <span class="sidebar-label">Principal</span>
+          <nav class="sidebar-nav" aria-label="Secciones administrativas">
+            <a href="{% url 'panel_administracion' %}"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i><span>Resumen</span></a>
+            <a class="active" href="{% url 'lista_productos_crud' %}"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><span>Productos</span></a>
+            <a href="{% url 'vista_lista_usuarios' %}"><i class="fa-solid fa-users" aria-hidden="true"></i><span>Usuarios</span></a>
+            <a href="{% url 'historial_ventas' %}"><i class="fa-solid fa-receipt" aria-hidden="true"></i><span>Ventas</span></a>
+          </nav>
+        </div>
+
+        <div class="sidebar-section">
+          <span class="sidebar-label">Operaciones</span>
+          <nav class="sidebar-nav" aria-label="Operaciones de entrega">
+            <a href="{% url 'vista_retiros' %}"><i class="fa-solid fa-store" aria-hidden="true"></i><span>Retiros</span></a>
+            <a href="{% url 'vista_despachos' %}"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i><span>Despachos</span></a>
+          </nav>
+        </div>
+
+        <div class="sidebar-footer">
+          <a href="{% url 'lista_productos' %}"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Ver catálogo</a>
+          <form method="post" action="{% url 'cerrar_sesion' %}">
+            {% csrf_token %}
+            <button type="submit"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Cerrar sesión</button>
+          </form>
+        </div>
       </div>
-      <div class="mb-3">
-        <label class="form-label">Descripción</label>
-        <textarea class="form-control" id="descripcion" required></textarea>
-      </div>
-      <div class="mb-3">
-        <label class="form-label">Precio</label>
-        <input type="number" class="form-control" id="precio" required step="1" min="1">
-      </div>
-      <div class="mb-3">
-        <label class="form-label">Imagen del producto</label>
-        <input type="file" class="form-control" id="imagen" name="imagen" accept="image/jpeg,image/png,image/webp" required>
-        <div class="form-text">JPG, PNG o WebP. Máximo 5 MB.</div>
-      </div>
-      <div class="mb-3">
-        <label class="form-label">Stock</label>
-        <input type="number" class="form-control" id="stock" required>
-      </div>
-      <div class="mb-3">
-        <label class="form-label">Categoría</label>
-        <select class="form-select" id="categoria" required>
-          <option value="" disabled selected>Selecciona una categoría</option>
-        </select>
-      </div>
-      <button type="submit" class="btn btn-success w-100">Agregar</button>
-    </form>
-    <div class="text-center mt-3">
-      <a href="/productos/crud/" class="btn btn-outline-secondary">Volver al CRUD</a>
+    </aside>
+
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <div class="topbar-title">
+          <button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-controls="adminSidebar" aria-label="Abrir menú">
+            <i class="fa-solid fa-bars" aria-hidden="true"></i>
+          </button>
+          <div><span>Administración</span><strong>Nuevo producto</strong></div>
+        </div>
+
+        <div class="admin-profile">
+          <span class="profile-avatar">{{ user.username|first|upper }}</span>
+          <div><strong>{{ user.get_full_name|default:user.username }}</strong><span>Administrador</span></div>
+        </div>
+      </header>
+
+      <main
+        class="product-form-page"
+        id="contenido-formulario"
+        data-submit-url="{% url 'api_agregar_producto' %}"
+        data-products-url="{% url 'lista_productos_crud' %}"
+        data-placeholder-url="{% static 'img/sfi-logo.png' %}"
+      >
+        <section class="form-page-heading">
+          <div>
+            <span class="form-kicker"><i class="fa-solid fa-circle" aria-hidden="true"></i> Inventario SFI</span>
+            <h1>Agregar producto</h1>
+            <p>Registra la información comercial, disponibilidad e imagen que aparecerán en el catálogo.</p>
+          </div>
+          <a class="back-products-link" href="{% url 'lista_productos_crud' %}"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver a productos</a>
+        </section>
+
+        <form id="form-producto" class="product-create-form" enctype="multipart/form-data" novalidate>
+          {% csrf_token %}
+          <div class="form-main-column">
+            <section class="admin-form-card">
+              <div class="form-card-heading">
+                <span class="form-section-icon"><i class="fa-solid fa-tag" aria-hidden="true"></i></span>
+                <div><small>Información principal</small><h2>Datos del producto</h2></div>
+              </div>
+
+              <div class="form-fields-grid">
+                <div class="admin-field field-full">
+                  <label for="nombre">Nombre del producto <span>*</span></label>
+                  <div class="input-with-icon"><i class="fa-solid fa-box" aria-hidden="true"></i><input type="text" class="form-control" id="nombre" name="nombre" maxlength="200" placeholder="Ej. Taladro percutor 750 W" autocomplete="off" required></div>
+                  <small class="field-help">Usa un nombre claro y fácil de encontrar en el catálogo.</small>
+                  <span class="field-error" data-error-for="nombre"></span>
+                </div>
+
+                <div class="admin-field field-full">
+                  <label for="descripcion">Descripción <span>*</span></label>
+                  <textarea class="form-control" id="descripcion" name="descripcion" rows="5" placeholder="Describe sus características, usos y contenido…" required></textarea>
+                  <div class="field-meta"><small class="field-help">Incluye la información necesaria para tomar una decisión de compra.</small><small id="description-count">0 caracteres</small></div>
+                  <span class="field-error" data-error-for="descripcion"></span>
+                </div>
+
+                <div class="admin-field">
+                  <label for="categoria">Categoría <span>*</span></label>
+                  <select class="form-select" id="categoria" name="categoria" required>
+                    <option value="">Selecciona una categoría</option>
+                    <option value="Herramientas">Herramientas</option>
+                    <option value="Construcción">Construcción</option>
+                    <option value="Electricidad">Electricidad</option>
+                    <option value="Pinturas">Pinturas</option>
+                    <option value="Gasfitería">Gasfitería</option>
+                    <option value="Adhesivos">Adhesivos</option>
+                    <option value="Iluminación">Iluminación</option>
+                    <option value="Ferretería">Ferretería</option>
+                    <option value="Seguridad">Seguridad</option>
+                    <option value="Otra">Otra</option>
+                  </select>
+                  <span class="field-error" data-error-for="categoria"></span>
+                </div>
+
+                <div class="admin-field">
+                  <label for="precio">Precio de venta <span>*</span></label>
+                  <div class="money-input"><span>$</span><input type="number" class="form-control" id="precio" name="precio" min="1" step="1" placeholder="0" inputmode="numeric" required><em>CLP</em></div>
+                  <span class="field-error" data-error-for="precio"></span>
+                </div>
+              </div>
+            </section>
+
+            <section class="admin-form-card">
+              <div class="form-card-heading">
+                <span class="form-section-icon green"><i class="fa-solid fa-warehouse" aria-hidden="true"></i></span>
+                <div><small>Disponibilidad</small><h2>Inventario y publicación</h2></div>
+              </div>
+
+              <div class="form-fields-grid inventory-form-grid">
+                <div class="admin-field">
+                  <label for="stock">Stock inicial <span>*</span></label>
+                  <div class="input-with-icon"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><input type="number" class="form-control" id="stock" name="stock" min="0" step="1" value="0" inputmode="numeric" required></div>
+                  <small class="field-help">Puede comenzar en cero si aún no hay unidades.</small>
+                  <span class="field-error" data-error-for="stock"></span>
+                </div>
+
+                <label class="publication-toggle" for="activo">
+                  <input type="checkbox" id="activo" name="activo" checked>
+                  <span class="toggle-control" aria-hidden="true"></span>
+                  <span><strong>Publicar inmediatamente</strong><small>El producto quedará visible en el catálogo.</small></span>
+                </label>
+              </div>
+            </section>
+          </div>
+
+          <aside class="form-side-column">
+            <section class="admin-form-card image-form-card">
+              <div class="form-card-heading">
+                <span class="form-section-icon yellow"><i class="fa-regular fa-image" aria-hidden="true"></i></span>
+                <div><small>Imagen principal</small><h2>Fotografía del producto</h2></div>
+              </div>
+
+              <label class="image-upload-zone" id="image-upload-zone" for="imagen">
+                <input type="file" id="imagen" name="imagen" accept="image/jpeg,image/png,image/webp" required>
+                <span class="upload-placeholder" id="upload-placeholder">
+                  <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
+                  <strong>Selecciona una imagen</strong>
+                  <small>o arrástrala hasta aquí</small>
+                </span>
+                <img id="image-preview" alt="Vista previa del producto" hidden>
+                <span class="change-image" id="change-image" hidden><i class="fa-solid fa-pen" aria-hidden="true"></i> Cambiar imagen</span>
+              </label>
+              <p class="image-requirements"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> JPG, PNG o WebP · máximo 5 MB · hasta 5000 × 5000 px.</p>
+              <span class="field-error image-error" data-error-for="imagen"></span>
+            </section>
+
+            <section class="catalog-preview-card">
+              <span>Vista previa de precio</span>
+              <strong id="price-preview">$0</strong>
+              <small>Este valor se mostrará en pesos chilenos.</small>
+            </section>
+
+            <section class="form-guidance-card">
+              <strong><i class="fa-solid fa-lightbulb" aria-hidden="true"></i> Antes de publicar</strong>
+              <ul>
+                <li>Comprueba que el nombre no esté duplicado.</li>
+                <li>Usa una fotografía clara y centrada.</li>
+                <li>Verifica cuidadosamente precio y stock.</li>
+              </ul>
+            </section>
+          </aside>
+
+          <div class="form-submit-bar">
+            <div><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><span><strong>Registro protegido</strong><small>Solo administradores pueden crear productos.</small></span></div>
+            <div class="submit-actions">
+              <a href="{% url 'lista_productos_crud' %}">Cancelar</a>
+              <button type="submit" id="submit-product"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>Crear producto</span></button>
+            </div>
+          </div>
+
+          <div class="form-general-error" id="form-general-error" role="alert" aria-live="assertive" hidden></div>
+        </form>
+      </main>
     </div>
   </div>
 
-  <footer class="text-center p-3 mt-5">
-    <p>© 2025 FERREMAS - Todos los derechos reservados</p>
-  </footer>
+  <div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="product-form-toast" class="toast product-form-toast" role="status" aria-live="polite" aria-atomic="true">
+      <div class="toast-body"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>Producto creado correctamente.</span></div>
+    </div>
+  </div>
 
-</div>
-
-<script>
-const categoriasDisponibles = [
-  "Herramientas", "Construcción", "Electricidad", "Pinturas",
-  "Gasfitería", "Adhesivos", "Iluminación", "Ferretería", "Seguridad", "Otra"
-];
-
-document.addEventListener("DOMContentLoaded", () => {
-  const selectCategoria = document.getElementById("categoria");
-  categoriasDisponibles.forEach(cat => {
-    const option = document.createElement("option");
-    option.value = cat;
-    option.textContent = cat;
-    selectCategoria.appendChild(option);
-  });
-});
-
-function getCookie(name) {
-  let cookieValue = null;
-  if (document.cookie && document.cookie !== '') {
-    const cookies = document.cookie.split(';');
-    for (let i = 0; i < cookies.length; i++) {
-      const cookie = cookies[i].trim();
-      if (cookie.substring(0, name.length + 1) === (name + '=')) {
-        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-        break;
-      }
-    }
-  }
-  return cookieValue;
-}
-
-const csrftoken = getCookie('csrftoken');
-
-document.getElementById("form-producto").addEventListener("submit", function(event) {
-  event.preventDefault();
-  const data = new FormData();
-  data.append("nombre", document.getElementById("nombre").value);
-  data.append("descripcion", document.getElementById("descripcion").value);
-  data.append("precio", document.getElementById("precio").value);
-  data.append("imagen", document.getElementById("imagen").files[0]);
-  data.append("stock", document.getElementById("stock").value);
-  data.append("categoria", document.getElementById("categoria").value);
-
-  fetch('/productos/api/agregar/', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: {
-      'X-CSRFToken': csrftoken
-    },
-    body: data
-  })
-  .then(async response => {
-    const data = await response.json();
-    if (!response.ok) throw new Error(JSON.stringify(data));
-    return data;
-  })
-  .then(data => {
-    alert("Producto agregado correctamente.");
-    document.getElementById("form-producto").reset();
-    window.location.href = "/productos/crud/";
-  })
-  .catch(error => {
-    alert("Error al agregar el producto: " + error.message);
-    console.error("Error:", error);
-  });
-});
-</script>
-
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/formulario_producto.js' %}"></script>
 </body>
 </html>

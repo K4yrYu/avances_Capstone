@@ -1,199 +1,82 @@
+{% extends 'usuarios/base_cuenta.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crear Cuenta</title>
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body {
-            background-image: url("{% static 'img/fondo.jpg' %}");
-            background-size: cover;
-            background-attachment: fixed;
-            background-position: center;
-            background-repeat: no-repeat;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
+{% block title %}Crear cuenta{% endblock %}
+{% block description %}Crea tu cuenta SFI y verifica tu correo para comenzar a comprar.{% endblock %}
+{% block header_action %}<a class="account-header-action" href="{% url 'iniciosesion' %}">Ya tengo cuenta</a>{% endblock %}
+{% block content %}
+  <section class="register-shell" data-register-url="{% url 'api_registro' %}" data-pending-url="{% url 'registro_pendiente' %}" id="registro-cuenta">
+    <aside class="register-intro">
+      <span class="account-kicker"><i class="fa-solid fa-user-plus" aria-hidden="true"></i> Nueva cuenta SFI</span>
+      <h1>Empieza tu próximo proyecto con nosotros.</h1>
+      <p>Crea tu cuenta para comprar, guardar tu carrito y seguir todas tus entregas.</p>
+      <div class="register-steps">
+        <div class="active"><span>1</span><p><strong>Completa tus datos</strong><small>Información personal y de acceso.</small></p></div>
+        <div><span>2</span><p><strong>Verifica tu correo</strong><small>Te enviaremos un enlace seguro.</small></p></div>
+        <div><span>3</span><p><strong>Cuenta activada</strong><small>Ya puedes comprar en SFI.</small></p></div>
+      </div>
+      <div class="register-privacy"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><span><strong>Tus datos están protegidos</strong>Los utilizamos únicamente para gestionar tu cuenta y tus compras.</span></div>
+    </aside>
 
-        .navbar-custom {
-            background-color: #2E7D32;
-        }
-
-        .register-container {
-            background-color: rgba(255, 255, 255, 0.9);
-            padding: 2rem;
-            border-radius: 10px;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-            max-width: 400px;
-            margin: auto;
-        }
-
-        .register-container h2 {
-            color: #333;
-        }
-
-        footer {
-            background-color: #2E7D32;
-            color: white;
-            text-align: center;
-            padding: 15px 0;
-            margin-top: auto;
-            width: 100%;
-        }
-
-        .alert {
-            margin-top: 1rem;
-        }
-    </style>
-</head>
-<body>
-
-    <!-- Navbar con logo centrado -->
-    <nav class="navbar navbar-custom py-3 shadow">
-        <div class="container d-flex justify-content-center">
-            <img src="{% static 'img/logo.png' %}" alt="logo" class="rounded" style="height: 70px;">
+    <div class="register-form-panel">
+      <div class="account-form-heading">
+        <span>Registro de cliente</span>
+        <h2>Crear mi cuenta</h2>
+        <p>Todos los campos son necesarios para completar el registro.</p>
+      </div>
+      <form id="registro-form" class="account-form register-form" novalidate>
+        {% csrf_token %}
+        <div class="account-fields-grid">
+          <div class="account-field">
+            <label for="first_name">Nombres</label>
+            <div class="account-input"><i class="fa-regular fa-user" aria-hidden="true"></i><input class="form-control" type="text" id="first_name" name="first_name" maxlength="150" autocomplete="given-name" placeholder="Tus nombres" required></div>
+            <span data-error-for="first_name"></span>
+          </div>
+          <div class="account-field">
+            <label for="last_name">Apellidos</label>
+            <div class="account-input"><i class="fa-regular fa-user" aria-hidden="true"></i><input class="form-control" type="text" id="last_name" name="last_name" maxlength="150" autocomplete="family-name" placeholder="Tus apellidos" required></div>
+            <span data-error-for="last_name"></span>
+          </div>
+          <div class="account-field">
+            <label for="rut">RUT</label>
+            <div class="account-input"><i class="fa-solid fa-id-card" aria-hidden="true"></i><input class="form-control" type="text" id="rut" name="rut" maxlength="12" autocomplete="off" placeholder="12345678-9" required></div>
+            <small>Sin puntos y con guion.</small><span data-error-for="rut"></span>
+          </div>
+          <div class="account-field">
+            <label for="telefono">Teléfono</label>
+            <div class="account-input"><i class="fa-solid fa-phone" aria-hidden="true"></i><input class="form-control" type="tel" id="telefono" name="telefono" maxlength="15" autocomplete="tel" placeholder="+56912345678" required></div>
+            <small>Entre 9 y 15 dígitos.</small><span data-error-for="telefono"></span>
+          </div>
+          <div class="account-field full-field">
+            <label for="email">Correo electrónico</label>
+            <div class="account-input"><i class="fa-regular fa-envelope" aria-hidden="true"></i><input class="form-control" type="email" id="email" name="email" maxlength="254" autocomplete="email" placeholder="tu@correo.cl" required></div>
+            <small>Aquí recibirás el enlace para activar tu cuenta.</small><span data-error-for="email"></span>
+          </div>
+          <div class="account-field full-field">
+            <label for="username">Nombre de usuario</label>
+            <div class="account-input"><i class="fa-solid fa-user-tag" aria-hidden="true"></i><input class="form-control" type="text" id="username" name="username" maxlength="150" autocomplete="username" placeholder="Elige tu usuario" required></div>
+            <small>Lo utilizarás cada vez que inicies sesión.</small><span data-error-for="username"></span>
+          </div>
+          <div class="account-field">
+            <label for="password">Contraseña</label>
+            <div class="account-input password-control"><i class="fa-solid fa-key" aria-hidden="true"></i><input class="form-control" type="password" id="password" name="password" autocomplete="new-password" placeholder="Crea una contraseña" required><button type="button" data-password-toggle="password" aria-label="Mostrar contraseña"><i class="fa-regular fa-eye" aria-hidden="true"></i></button></div>
+            <span data-error-for="password"></span>
+          </div>
+          <div class="account-field">
+            <label for="password2">Confirmar contraseña</label>
+            <div class="account-input password-control"><i class="fa-solid fa-key" aria-hidden="true"></i><input class="form-control" type="password" id="password2" name="password2" autocomplete="new-password" placeholder="Repite la contraseña" required><button type="button" data-password-toggle="password2" aria-label="Mostrar confirmación"><i class="fa-regular fa-eye" aria-hidden="true"></i></button></div>
+            <span data-error-for="password2"></span>
+          </div>
         </div>
-    </nav>
-
-    <!-- Registro -->
-    <main class="container my-5 flex-grow-1 d-flex justify-content-center align-items-center">
-        <div class="register-container">
-            <h2 class="text-center mb-4">Crear Cuenta</h2>
-            <form id="registroForm">
-                {% csrf_token %}
-                <div class="mb-3">
-                    <input type="text" class="form-control" name="rut" placeholder="Rut (ej: 12345678-9)" required>
-                </div>
-                <div class="mb-3">
-                    <input type="text" class="form-control" name="username" placeholder="Nombre de usuario" required>
-                </div>
-                <div class="mb-3">
-                    <input type="text" class="form-control" name="first_name" placeholder="Nombres" required>
-                </div>
-                <div class="mb-3">
-                    <input type="text" class="form-control" name="last_name" placeholder="Apellidos" required>
-                </div>
-                <div class="mb-3">
-                    <input type="tel" class="form-control" name="telefono" placeholder="Teléfono" required>
-                </div>
-                <div class="mb-3">
-                    <input type="email" class="form-control" name="email" placeholder="Correo electrónico" required>
-                </div>
-                <div class="mb-3">
-                    <input type="password" class="form-control" name="password" placeholder="Contraseña" required>
-                </div>
-                <div class="mb-3">
-                    <input type="password" class="form-control" name="password2" placeholder="Confirmar Contraseña" required>
-                </div>
-                <div class="d-grid">
-                    <button type="submit" class="btn btn-success" style="width: 100%;">Guardar</button>
-                </div>
-            </form>
-            <div class="text-center mt-3">
-                ¿Ya tienes una cuenta? <a href="/usuarios/iniciosesion/">Iniciar Sesión</a>
-            </div>
-            <div id="mensaje" class="mt-3"></div>
+        <div class="account-password-rules">
+          <span id="rule-length"><i class="fa-solid fa-circle" aria-hidden="true"></i> 8 caracteres o más</span>
+          <span id="rule-nonnumeric"><i class="fa-solid fa-circle" aria-hidden="true"></i> No solo números</span>
+          <span id="rule-match"><i class="fa-solid fa-circle" aria-hidden="true"></i> Contraseñas coinciden</span>
         </div>
-    </main>
-
-    <!-- Footer -->
-    <footer>
-        <p class="mb-0">© 2025 FERREMAS - Todos los derechos reservados</p>
-    </footer>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-    <script src="/static/js/security.js"></script>
-    <!-- Script para manejar el registro -->
-    <script>
-    const { escapeHtml } = window.FerremasSecurity;
-    document.getElementById('registroForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        const submitButton = this.querySelector('button[type="submit"]');
-        submitButton.disabled = true;
-        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Registrando...';
-        
-        const formData = new FormData(this);
-        const data = {};
-        formData.forEach((value, key) => {
-            data[key] = value;
-        });
-        
-        fetch('/api/registro/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': '{{ csrf_token }}'
-            },
-            body: JSON.stringify(data)
-        })
-        .then(response => {
-            if (!response.ok) {
-                return response.json().then(err => { throw err; });
-            }
-            return response.json();
-        })
-        .then(data => {
-    const mensajeDiv = document.getElementById('mensaje');
-    if (data.status === 'success') {
-        mensajeDiv.innerHTML = '<div class="alert alert-success">¡Registro exitoso! Redirigiendo...</div>';
-        setTimeout(() => {
-            window.location.href = data.redirect_url || '/';
-        }, 1500);
-    } else {
-        let errores = '<ul class="mb-0">';
-        for (const [key, value] of Object.entries(data)) {
-            if (Array.isArray(value)) {
-                value.forEach(msg => {
-                    errores += `<li>${escapeHtml(msg)}</li>`;
-                });
-            } else {
-                errores += `<li>${escapeHtml(value)}</li>`;
-            }
-        }
-        errores += '</ul>';
-        mensajeDiv.innerHTML = `<div class="alert alert-danger">${errores}</div>`;
-    }
-})
-
-        .catch(error => {
-            console.error('Error:', error);
-            let errorMessage = 'Error al registrar. Intente nuevamente.';
-            if (error && typeof error === 'object') {
-                errorMessage = Object.entries(error).map(([key, val]) => {
-                    return `${escapeHtml(key)}: ${escapeHtml(Array.isArray(val) ? val.join(', ') : val)}`;
-                }).join('<br>');
-            }
-            document.getElementById('mensaje').innerHTML = 
-                `<div class="alert alert-danger">${errorMessage}</div>`;
-        })
-        .finally(() => {
-            submitButton.disabled = false;
-            submitButton.textContent = 'Guardar';
-        });
-    });
-
-    // Función para obtener el token CSRF
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
-            }
-        }
-        return cookieValue;
-    }
-    </script>
-</body>
-</html>
+        <div class="account-form-error" id="register-error" role="alert" aria-live="assertive" hidden></div>
+        <button class="account-submit" id="register-submit" type="submit"><i class="fa-solid fa-user-plus" aria-hidden="true"></i><span>Crear cuenta y verificar correo</span></button>
+      </form>
+      <p class="account-switch">¿Ya tienes una cuenta? <a href="{% url 'iniciosesion' %}">Inicia sesión</a></p>
+    </div>
+  </section>
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/registro.js' %}"></script>{% endblock %}

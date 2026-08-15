@@ -4,226 +4,142 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ofertas - FERREMAS</title>
-
-  <!-- Bootstrap & Estilos -->
+  <meta name="description" content="Ofertas SFI generadas cuando un producto baja de precio.">
+  <title>Ofertas | SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'css/estilos.css' %}">
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
-
-  <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-    }
-
-    body {
-      display: flex;
-      flex-direction: column;
-      background-color: #f8f9fa;
-    }
-
-    main {
-      flex: 1;
-    }
-
-    .navbar {
-      background-color: #2E7D32;
-    }
-
-    .navbar .nav-link,
-    .navbar-brand {
-      color: white !important;
-    }
-
-    .navbar .btn-outline-light {
-      border-color: white;
-      color: white;
-    }
-
-    .oferta-card {
-      border: 1px solid #e0e0e0;
-      border-radius: 10px;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-      transition: transform 0.2s ease;
-    }
-
-    .oferta-card:hover {
-      transform: scale(1.02);
-    }
-
-    .precio-anterior {
-      color: #888;
-      text-decoration: line-through;
-      font-size: 0.95rem;
-    }
-
-    .precio-actual {
-      color: #d32f2f;
-      font-weight: bold;
-      font-size: 1.25rem;
-    }
-
-    .btn-ver {
-      background-color: #FFB300;
-      color: white;
-      font-weight: bold;
-      border: none;
-    }
-
-    .btn-ver:hover {
-      background-color: #FFA000;
-    }
-
-    .badge-descuento {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background-color: #d32f2f;
-      color: white;
-      font-weight: bold;
-      padding: 5px 10px;
-      border-radius: 10px;
-      font-size: 0.85rem;
-      z-index: 10;
-    }
-
-    .oferta-img-container {
-      position: relative;
-    }
-
-    footer {
-      background-color: #2E7D32;
-      color: white;
-      text-align: center;
-      padding: 20px 0;
-    }
-  </style>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/lista_productos.css' %}">
+  <link rel="stylesheet" href="{% static 'css/ofertas.css' %}">
+  <link rel="stylesheet" href="{% static 'css/footer_sfi.css' %}">
 </head>
 <body>
-<!-- Navbar -->
-<nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #2E7D32;">
-  <div class="container">
-    <a class="navbar-brand" href="/">
-      <img src="{% static 'img/logo.png' %}" alt="logo" style="height: 70px; border-radius: 15px 0 15px 0;">
-    </a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu">
-      <span class="navbar-toggler-icon"></span>
-    </button>
+  <a class="skip-link" href="#ofertas">Saltar a las ofertas</a>
 
-    <div class="collapse navbar-collapse" id="menu">
-      <ul class="navbar-nav ms-auto align-items-center">
-        <li class="nav-item"><a class="nav-link" href="/">Inicio</a></li>
-        <li class="nav-item"><a class="nav-link" href="/productos/">Productos</a></li>
-        <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
-        <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Contacto</a></li>
-
-        {% if user.is_authenticated %}
-          <li class="nav-item ms-3">
-            <span class="text-white me-3">Hola, {{ user.username }}</span>
-          </li>
-          <li class="nav-item ms-2">
-            <form method="post" action="/usuarios/cerrar-sesion/" class="d-inline">
-              {% csrf_token %}
-              <button class="btn btn-outline-light px-3 py-2" type="submit">
-              <i class="fas fa-sign-out-alt me-2"></i> Cerrar Sesión
-              </button>
-            </form>
-          </li>
-        {% else %}
-          <li class="nav-item ms-3">
-            <a class="btn btn-outline-light d-flex align-items-center px-3 py-2" href="/usuarios/iniciosesion/">
-              <i class="fas fa-user me-2"></i> Iniciar Sesión
-            </a>
-          </li>
-        {% endif %}
-
-        {% if user.is_staff %}
-          <li class="nav-item ms-2">
-            <a class="nav-link" href="{% url 'panel_administracion' %}">Panel de Administración</a>
-          </li>
-        {% endif %}
-
-        {% if user.is_authenticated %}
-          <li class="nav-item ms-2">
-            <a class="nav-link" href="{% url 'vista_carrito' %}">
-              <i class="fas fa-shopping-cart"></i> Carrito
-            </a>
-          </li>
-          <li class="nav-item ms-2">
-            <a class="nav-link" href="{% url 'mi_historial_compras' %}">
-              <i class="fas fa-history"></i> Mis Compras
-            </a>
-          </li>
-        {% endif %}
-      </ul>
+  <div class="announcement-bar">
+    <div class="container announcement-content">
+      <span><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Compra protegida con Webpay</span>
+      <span class="announcement-secondary"><i class="fa-solid fa-tags" aria-hidden="true"></i> Descuentos basados en precios reales</span>
     </div>
   </div>
-</nav>  
 
-<!-- Contenido principal -->
-<main>
-  <div class="container py-5">
-    <h1 class="text-center mb-4">Ofertas Especiales</h1>
-    <div id="contenedor-ofertas" class="row g-4 justify-content-center">
-      <!-- JS insertará las ofertas aquí -->
-    </div>
-  </div>
-</main>
+  <header class="site-header sticky-top">
+    <nav class="navbar navbar-expand-xl" aria-label="Navegación principal">
+      <div class="container">
+        <a class="navbar-brand" href="{% url 'index' %}" aria-label="SFI, ir al inicio">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente" class="nav-logo">
+        </a>
 
-<!-- Footer fijo al fondo -->
-<footer>
-  <div class="container">
-    <p class="mb-0">© 2025 FERREMAS - Todos los derechos reservados</p>
-  </div>
-</footer>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menuPrincipal" aria-controls="menuPrincipal" aria-expanded="false" aria-label="Abrir menú">
+          <span class="navbar-toggler-icon"></span>
+        </button>
 
-<!-- JS para cargar ofertas -->
-<script src="/static/js/security.js"></script>
-<script>
-  const { escapeHtml, safeUrl } = window.FerremasSecurity;
-  document.addEventListener("DOMContentLoaded", function () {
-    fetch('/productos/api/ofertas/')
-      .then(res => res.json())
-      .then(data => {
-        const contenedor = document.getElementById("contenedor-ofertas");
-        if (data.length === 0) {
-          contenedor.innerHTML = "<p class='text-center'>No hay productos en oferta actualmente.</p>";
-          return;
-        }
+        <div class="collapse navbar-collapse" id="menuPrincipal">
+          <ul class="navbar-nav mx-auto align-items-xl-center">
+            <li class="nav-item"><a class="nav-link" href="{% url 'index' %}">Inicio</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'lista_productos' %}">Productos</a></li>
+            <li class="nav-item"><a class="nav-link active" aria-current="page" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Nosotros</a></li>
+            {% if user.is_staff %}
+              <li class="nav-item"><a class="nav-link" href="{% url 'panel_administracion' %}">Administración</a></li>
+            {% endif %}
+          </ul>
 
-        data.forEach(prod => {
-          const col = document.createElement("div");
-          col.className = "col-md-4 col-sm-6";
-          col.innerHTML = `
-            <div class="oferta-card p-3 bg-white h-100 d-flex flex-column">
-              <div class="oferta-img-container mb-3">
-                ${prod.precio_anterior ? `
-                  <div class="badge-descuento">
-                    -${Math.round(((prod.precio_anterior - prod.precio) / prod.precio_anterior) * 100)}%
-                  </div>` : ''}
-                <img src="${safeUrl(prod.imagen)}" alt="${escapeHtml(prod.nombre)}" class="img-fluid rounded">
+          <div class="nav-actions">
+            {% if user.is_authenticated %}
+              <div class="user-greeting">
+                <span>Hola,</span>
+                <strong>{{ user.first_name|default:user.username }}</strong>
               </div>
-              <h5 class="mb-2">${escapeHtml(prod.nombre)}</h5>
-              ${prod.precio_anterior ? `<p class="precio-anterior">$${prod.precio_anterior}</p>` : ''}
-              <p class="precio-actual">$${prod.precio}</p>
-              ${prod.precio_anterior ? `
-                <p class="text-success fw-bold">
-                  Ahorras un ${Math.round(((prod.precio_anterior - prod.precio) / prod.precio_anterior) * 100)}%
-                </p>
-              ` : ''}
-              <p class="text-muted mb-1">${escapeHtml(prod.descripcion)}</p>
-              <p class="text-muted">Stock disponible: ${prod.stock}</p>
-              <a href="/productos/${prod.id}/" class="btn btn-ver mt-auto align-self-start ${prod.stock === 0 ? 'disabled' : ''}" 
-                 ${prod.stock === 0 ? 'aria-disabled="true"' : ''}>${prod.stock === 0 ? 'Agotado' : 'Ver Producto'}</a>
-            </div>
-          `;
-          contenedor.appendChild(col);
-        });
-      });
-  });
-</script>
+              <a class="icon-action" href="{% url 'vista_carrito' %}" aria-label="Ver carrito" title="Carrito">
+                <i class="fa-solid fa-cart-shopping" aria-hidden="true"></i>
+              </a>
+              <a class="icon-action" href="{% url 'mi_historial_compras' %}" aria-label="Ver mis compras" title="Mis compras">
+                <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+              </a>
+              <form method="post" action="{% url 'cerrar_sesion' %}">
+                {% csrf_token %}
+                <button class="btn btn-outline-sfi btn-sm" type="submit">Salir</button>
+              </form>
+            {% else %}
+              <a class="btn btn-outline-sfi" href="{% url 'iniciosesion' %}">
+                <i class="fa-regular fa-user" aria-hidden="true"></i> Ingresar
+              </a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </nav>
+  </header>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <main
+    id="ofertas"
+    data-api-url="{% url 'api_ofertas' %}"
+    data-placeholder-url="{% static 'img/sfi-logo.png' %}"
+  >
+    <section class="offers-hero">
+      <div class="offers-grid" aria-hidden="true"></div>
+      <div class="container position-relative">
+        <div class="row align-items-center g-5">
+          <div class="col-lg-7">
+            <span class="eyebrow"><i class="fa-solid fa-bolt" aria-hidden="true"></i> Oportunidades SFI</span>
+            <h1>Precios que bajaron.<br><span>Ahorros que se notan.</span></h1>
+            <p>Aquí aparecen automáticamente los productos cuyo precio actual es menor que su precio anterior.</p>
+            <a class="offers-catalog-link" href="{% url 'lista_productos' %}">
+              Ver catálogo completo <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+            </a>
+          </div>
+          <div class="col-lg-5">
+            <div class="offer-rule-card">
+              <span class="offer-rule-icon"><i class="fa-solid fa-arrow-trend-down" aria-hidden="true"></i></span>
+              <div>
+                <strong>Una oferta real</strong>
+                <p>Solo se activa cuando el último cambio deja el producto a un precio menor.</p>
+              </div>
+              <span class="offer-live-badge"><i class="fa-solid fa-circle" aria-hidden="true"></i> Automático</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="offers-section">
+      <div class="container">
+        <div class="offers-toolbar">
+          <div>
+            <span class="results-label">Ofertas vigentes</span>
+            <strong id="contador-ofertas" aria-live="polite">Cargando ofertas…</strong>
+          </div>
+          <label class="offer-sort" for="orden-ofertas">
+            <span>Ordenar por</span>
+            <select id="orden-ofertas" class="form-select">
+              <option value="recientes">Más recientes</option>
+              <option value="descuento-desc">Mayor descuento</option>
+              <option value="ahorro-desc">Mayor ahorro</option>
+              <option value="precio-asc">Menor precio</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="offers-list" id="contenedor-ofertas" aria-live="polite" aria-busy="true">
+          {% for _ in "123456" %}
+            <div class="offer-skeleton" aria-hidden="true">
+              <span class="offer-skeleton-image"></span>
+              <span class="skeleton-line skeleton-line-small"></span>
+              <span class="skeleton-line"></span>
+              <span class="skeleton-line skeleton-line-medium"></span>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+  </main>
+
+  {% include 'includes/footer_sfi.html' %}
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/security.js' %}"></script>
+  <script src="{% static 'js/ofertas.js' %}"></script>
 </body>
 </html>

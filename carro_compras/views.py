@@ -112,7 +112,7 @@ def vista_carrito(request):
         venta = Venta.objects.filter(id_usuario=request.user, estado_venta='carrito').first()
 
         if venta:
-            detalles = Detalle.objects.filter(id_venta=venta)
+            detalles = Detalle.objects.filter(id_venta=venta).select_related('producto')
             productos_eliminados = []
 
             for detalle in detalles:
@@ -125,15 +125,16 @@ def vista_carrito(request):
                     detalle.subtotal_venta = producto.precio * producto.stock
                     detalle.save()
 
-            detalles = Detalle.objects.filter(id_venta=venta)
+            detalles = Detalle.objects.filter(id_venta=venta).select_related('producto')
             total_carrito = sum(d.subtotal_venta for d in detalles)
             venta.total_venta = total_carrito
-            venta.save()
+            venta.save(update_fields=['total_venta'])
 
             return render(request, 'carro_compras/carrito.html', {
                 'detalles': detalles,
                 'total_carrito': total_carrito,
-                'productos_eliminados': productos_eliminados
+                'productos_eliminados': productos_eliminados,
+                'aviso': request.GET.get('mensaje', '')[:180],
             })
         else:
             # 👇 Mostrar vista sin productos, sin mensaje personalizado
@@ -527,21 +528,29 @@ def respuesta_pago_webpay(request):
     })
 
 
-
-
-
 @login_required
 def ver_boleta(request, venta_id):
-    venta = get_object_or_404(Venta, id=venta_id, estado_venta='pagado')
+    venta = get_object_or_404(
+        Venta.objects.select_related('id_usuario'),
+        id=venta_id,
+        estado_venta='pagado',
+    )
 
     # Solo el dueño o un admin puede verla
     if request.user != venta.id_usuario and not request.user.is_staff:
         return HttpResponseForbidden("No tienes permiso para ver esta boleta.")
 
-    detalles = Detalle.objects.filter(id_venta=venta)
+    detalles = list(Detalle.objects.filter(id_venta=venta).select_related('producto'))
+    origen_mis_compras = request.GET.get('origen') == 'mis-compras'
+    volver_a_mis_compras = (
+        not request.user.is_staff
+        or (origen_mis_compras and request.user == venta.id_usuario)
+    )
     return render(request, 'carro_compras/boleta.html', {
         'venta': venta,
-        'detalles': detalles
+        'detalles': detalles,
+        'cantidad_total': sum(detalle.cantidad_producto for detalle in detalles),
+        'volver_a_mis_compras': volver_a_mis_compras,
     })
 
 #############
@@ -561,17 +570,32 @@ def historial_ventas(request):
 
 @login_required
 def mi_historial_compras(request):
-    ventas = Venta.objects.filter(id_usuario=request.user, estado_venta='pagado').order_by('-fecha_compra')
+    ventas = list(Venta.objects.filter(
+        id_usuario=request.user,
+        estado_venta='pagado',
+        eliminado=False,
+    ).prefetch_related('detalles__producto').order_by('-fecha_compra'))
 
+    total_unidades = 0
     for venta in ventas:
-        venta.detalles_list = venta.detalles.all()  # ← relación desde related_name
+        venta.detalles_list = list(venta.detalles.all())
+        venta.cantidad_unidades = sum(detalle.cantidad_producto for detalle in venta.detalles_list)
+        total_unidades += venta.cantidad_unidades
 
-    return render(request, 'carro_compras/mi_historial.html', {'ventas': ventas})
+    return render(request, 'carro_compras/mi_historial.html', {
+        'ventas': ventas,
+        'total_compras': len(ventas),
+        'total_gastado': sum(venta.total_venta for venta in ventas),
+        'total_unidades': total_unidades,
+        'entregas_pendientes': sum(venta.estado_entrega == 'pendiente' for venta in ventas),
+    })
 
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def api_historial_ventas(request):
-    ventas = Venta.objects.filter(estado_venta='pagado').order_by('-fecha_compra')
+    ventas = Venta.objects.filter(estado_venta='pagado').select_related(
+        'id_usuario'
+    ).prefetch_related('detalles').order_by('-fecha_compra')
     serializer = VentaSerializer(ventas, many=True)
     return Response(serializer.data)
 
@@ -585,7 +609,9 @@ def api_mis_compras(request):
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def api_retiros(request):
-    retiros = Venta.objects.filter(tipo_entrega='retiro', estado_venta='pagado').order_by('-fecha_compra')
+    retiros = Venta.objects.filter(
+        tipo_entrega='retiro', estado_venta='pagado'
+    ).select_related('id_usuario').prefetch_related('detalles').order_by('-fecha_compra')
     serializer = VentaSerializer(retiros, many=True)
     return Response(serializer.data)
 
@@ -593,7 +619,7 @@ def api_retiros(request):
 @api_view(['POST'])
 @permission_classes([IsAdminUser])
 def api_confirmar_retiro(request, venta_id):
-    rut = request.data.get('rut')
+    rut = str(request.data.get('rut') or '').replace('.', '').replace(' ', '').upper()
     venta = get_object_or_404(
         Venta,
         id=venta_id,
@@ -602,17 +628,20 @@ def api_confirmar_retiro(request, venta_id):
         estado_entrega='pendiente',
     )
 
-    if rut != venta.id_usuario.rut:
-        return Response({'detail': '❌ RUT incorrecto'}, status=400)
+    rut_cliente = venta.id_usuario.rut.replace('.', '').replace(' ', '').upper()
+    if not rut or rut != rut_cliente:
+        return Response({'detail': 'El RUT ingresado no corresponde al cliente.'}, status=400)
 
     venta.estado_entrega = 'completado'
     venta.save()
-    return Response({'mensaje': f"✅ Retiro confirmado para la venta #{venta.id}"})
+    return Response({'mensaje': f"Retiro confirmado para la venta #{venta.id}."})
 
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def api_despachos(request):
-    despachos = Venta.objects.filter(tipo_entrega='despacho', estado_venta='pagado').order_by('-fecha_compra')
+    despachos = Venta.objects.filter(
+        tipo_entrega='despacho', estado_venta='pagado'
+    ).select_related('id_usuario').prefetch_related('detalles').order_by('-fecha_compra')
     serializer = VentaSerializer(despachos, many=True)
     return Response(serializer.data)
 
@@ -628,7 +657,7 @@ def api_confirmar_despacho(request, venta_id):
     )
     venta.estado_entrega = 'completado'
     venta.save()
-    return Response({'mensaje': f"✅ Despacho confirmado para la venta #{venta.id}"})
+    return Response({'mensaje': f"Despacho confirmado para la venta #{venta.id}."})
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

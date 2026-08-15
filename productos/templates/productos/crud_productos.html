@@ -2,279 +2,270 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Administrar Productos - FERREMAS</title>
+  <meta name="robots" content="noindex, nofollow">
+  <title>Gestión de productos | SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}">
   <link rel="stylesheet" href="{% static 'css/crud.css' %}">
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
-
-  <style>
-    body {
-      margin: 0;
-      font-family: 'Arial', sans-serif;
-    }
-
-    .fondo {
-      background: url('https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1920,fit=crop/Yle55W6QKWSoQbE4/herramientas-manuales-basicas-02-2022-07-AE0vvPgGKDiqlZEX.jpg') no-repeat center center fixed;
-      background-size: cover;
-      min-height: 100vh;
-      padding: 30px 15px;
-    }
-
-    .container {
-      background-color: rgba(56, 142, 60, 0.95);
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-      padding: 30px;
-      color: black;
-    }
-
-    .card-panel {
-      background-color: rgba(255, 255, 255, 0.95);
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 30px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-
-    .btn-agregar {
-      background: linear-gradient(to bottom, #2E7D32, #81C784);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      padding: 10px 30px;
-      font-size: 1rem;
-      font-weight: bold;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-      transition: background-color 0.3s, transform 0.3s;
-    }
-
-    .btn-agregar:hover {
-      background: linear-gradient(to bottom, #45a049, #66bb6a);
-      transform: scale(1.05);
-    }
-
-    .btn-volver {
-      background: linear-gradient(to bottom, #2E7D32, #81C784);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      padding: 10px 30px;
-      font-size: 1rem;
-      font-weight: bold;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-      transition: background-color 0.3s, transform 0.3s;
-      text-decoration: none;
-      display: inline-block;
-    }
-
-    .btn-volver:hover {
-      background: linear-gradient(to bottom, #45a049, #66bb6a);
-      transform: scale(1.05);
-    }
-
-    .table th, .table td {
-      vertical-align: middle;
-      color: black;
-    }
-
-    .table tbody tr {
-      background-color: rgba(255, 255, 255, 0.95);
-    }
-
-    .img-preview {
-      max-width: 60px;
-      height: 60px;
-      object-fit: cover;
-      border-radius: 5px;
-    }
-
-    h1, h3 {
-      color: black;
-    }
-
-    .form-label {
-      font-weight: bold;
-    }
-
-    .btn:hover {
-      opacity: 0.9;
-    }
-
-    .form-select {
-      width: auto;
-      display: inline-block;
-    }
-  </style>
 </head>
 <body>
-<div class="fondo">
-  <main class="container my-5">
-    <h1 class="text-center mb-4">Panel de Administración de Productos</h1>
+  <a class="skip-link" href="#contenido-productos">Saltar al contenido</a>
 
-    <div class="text-center mb-4">
-      <a href="{% url 'formulario_producto' %}" class="btn btn-agregar me-2">Agregar Producto</a>
-      <a href="/" class="btn btn-volver">Volver al Inicio</a>
+  <div class="admin-shell">
+    <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
+      <div class="offcanvas-header sidebar-mobile-header">
+        <span id="adminSidebarLabel">Menú administrativo</span>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" data-bs-target="#adminSidebar" aria-label="Cerrar menú"></button>
+      </div>
+
+      <div class="offcanvas-body sidebar-body">
+        <a class="sidebar-brand" href="{% url 'panel_administracion' %}" aria-label="Panel SFI">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
+        </a>
+
+        <div class="sidebar-section">
+          <span class="sidebar-label">Principal</span>
+          <nav class="sidebar-nav" aria-label="Secciones administrativas">
+            <a href="{% url 'panel_administracion' %}">
+              <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i>
+              <span>Resumen</span>
+            </a>
+            <a class="active" href="{% url 'lista_productos_crud' %}">
+              <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i>
+              <span>Productos</span>
+            </a>
+            <a href="{% url 'vista_lista_usuarios' %}">
+              <i class="fa-solid fa-users" aria-hidden="true"></i>
+              <span>Usuarios</span>
+            </a>
+            <a href="{% url 'historial_ventas' %}">
+              <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+              <span>Ventas</span>
+            </a>
+          </nav>
+        </div>
+
+        <div class="sidebar-section">
+          <span class="sidebar-label">Operaciones</span>
+          <nav class="sidebar-nav" aria-label="Operaciones de entrega">
+            <a href="{% url 'vista_retiros' %}">
+              <i class="fa-solid fa-store" aria-hidden="true"></i>
+              <span>Retiros</span>
+            </a>
+            <a href="{% url 'vista_despachos' %}">
+              <i class="fa-solid fa-truck-fast" aria-hidden="true"></i>
+              <span>Despachos</span>
+            </a>
+          </nav>
+        </div>
+
+        <div class="sidebar-footer">
+          <a href="{% url 'lista_productos' %}">
+            <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+            Ver catálogo
+          </a>
+          <form method="post" action="{% url 'cerrar_sesion' %}">
+            {% csrf_token %}
+            <button type="submit">
+              <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+              Cerrar sesión
+            </button>
+          </form>
+        </div>
+      </div>
+    </aside>
+
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <div class="topbar-title">
+          <button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-controls="adminSidebar" aria-label="Abrir menú">
+            <i class="fa-solid fa-bars" aria-hidden="true"></i>
+          </button>
+          <div>
+            <span>Administración</span>
+            <strong>Catálogo de productos</strong>
+          </div>
+        </div>
+
+        <div class="admin-profile">
+          <span class="profile-avatar">{{ user.username|first|upper }}</span>
+          <div>
+            <strong>{{ user.get_full_name|default:user.username }}</strong>
+            <span>Administrador</span>
+          </div>
+        </div>
+      </header>
+
+      <main
+        class="product-management"
+        id="contenido-productos"
+        data-api-url="{% url 'api_lista_productos_admin' %}"
+        data-toggle-url="{% url 'api_toggle_activo_producto' 0 %}"
+        data-edit-url="{% url 'editar_producto' 0 %}"
+        data-placeholder-url="{% static 'img/sfi-logo.png' %}"
+      >
+        <section class="management-heading">
+          <div>
+            <span class="management-kicker"><i class="fa-solid fa-circle" aria-hidden="true"></i> Inventario SFI</span>
+            <h1>Gestión de productos</h1>
+            <p>Administra el catálogo, disponibilidad, precios y stock desde un solo lugar.</p>
+          </div>
+          <a class="primary-action" href="{% url 'formulario_producto' %}">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i> Agregar producto
+          </a>
+        </section>
+
+        <section class="inventory-metrics" aria-label="Resumen de inventario">
+          <article>
+            <span class="inventory-icon blue"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i></span>
+            <div><small>Total registrados</small><strong id="metrica-total">—</strong></div>
+          </article>
+          <article>
+            <span class="inventory-icon green"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></span>
+            <div><small>Productos activos</small><strong id="metrica-activos">—</strong></div>
+          </article>
+          <article>
+            <span class="inventory-icon warning"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span>
+            <div><small>Stock bajo</small><strong id="metrica-bajo">—</strong></div>
+          </article>
+          <article>
+            <span class="inventory-icon danger"><i class="fa-solid fa-box-open" aria-hidden="true"></i></span>
+            <div><small>Sin stock</small><strong id="metrica-agotados">—</strong></div>
+          </article>
+        </section>
+
+        <section class="inventory-card">
+          <div class="inventory-card-heading">
+            <div>
+              <span>Inventario completo</span>
+              <h2>Productos registrados</h2>
+            </div>
+            <strong id="contador-resultados" aria-live="polite">Cargando…</strong>
+          </div>
+
+          <div class="inventory-filters">
+            <label class="filter-field search-field" for="buscar-producto">
+              <span>Buscar producto</span>
+              <span class="filter-control">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input type="search" id="buscar-producto" class="form-control" placeholder="Nombre, descripción o ID" autocomplete="off">
+              </span>
+            </label>
+
+            <label class="filter-field" for="filtro-categoria">
+              <span>Categoría</span>
+              <select class="form-select" id="filtro-categoria">
+                <option value="">Todas</option>
+              </select>
+            </label>
+
+            <label class="filter-field" for="filtro-estado">
+              <span>Estado</span>
+              <select class="form-select" id="filtro-estado">
+                <option value="">Todos</option>
+                <option value="activo">Activos</option>
+                <option value="inactivo">Deshabilitados</option>
+              </select>
+            </label>
+
+            <label class="filter-field" for="filtro-stock">
+              <span>Disponibilidad</span>
+              <select class="form-select" id="filtro-stock">
+                <option value="">Todo el stock</option>
+                <option value="disponible">Disponible</option>
+                <option value="bajo">Stock bajo</option>
+                <option value="agotado">Sin stock</option>
+              </select>
+            </label>
+
+            <label class="filter-field" for="orden-productos-admin">
+              <span>Ordenar</span>
+              <select class="form-select" id="orden-productos-admin">
+                <option value="nombre-asc">Nombre: A a Z</option>
+                <option value="recientes">Más recientes</option>
+                <option value="precio-desc">Mayor precio</option>
+                <option value="stock-asc">Menor stock</option>
+              </select>
+            </label>
+
+            <button class="clear-admin-filters" id="limpiar-filtros-admin" type="button" title="Limpiar filtros">
+              <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+              <span>Limpiar</span>
+            </button>
+          </div>
+
+          <div class="inventory-table-wrap">
+            <table class="inventory-table">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Categoría</th>
+                  <th>Precio</th>
+                  <th>Stock</th>
+                  <th>Estado</th>
+                  <th class="text-end">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-productos-admin" aria-live="polite" aria-busy="true">
+                {% for _ in "12345" %}
+                  <tr class="loading-row" aria-hidden="true">
+                    <td><span class="loading-product"></span></td>
+                    <td><span class="loading-line short"></span></td>
+                    <td><span class="loading-line"></span></td>
+                    <td><span class="loading-line short"></span></td>
+                    <td><span class="loading-line"></span></td>
+                    <td><span class="loading-line"></span></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
     </div>
+  </div>
 
-    <div class="card-panel">
-      <label class="form-label">Filtrar por Categoría:</label>
-      <select class="form-select mb-3" id="filtro-categoria">
-        <option value="">Todas</option>
-      </select>
-    </div>
-
-    <div class="card-panel">
-      <h3>Productos Activos</h3>
-      <div class="table-responsive">
-        <table class="table table-bordered">
-          <thead class="table-success text-center">
-            <tr>
-              <th>Nombre</th>
-              <th>Categoría</th>
-              <th>Precio</th>
-              <th>Stock</th>
-              <th>Descripción</th>
-              <th>Imagen</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="tabla-productos" class="text-center"></tbody>
-        </table>
+  <div class="modal fade" id="modalEstadoProducto" tabindex="-1" aria-labelledby="tituloModalEstado" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content status-modal">
+        <div class="modal-header">
+          <span class="modal-status-icon" id="iconoModalEstado"><i class="fa-solid fa-box" aria-hidden="true"></i></span>
+          <div>
+            <span>Confirmar cambio</span>
+            <h2 class="modal-title" id="tituloModalEstado">Cambiar estado</h2>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <p id="mensajeModalEstado"></p>
+          <div class="modal-product-name" id="productoModalEstado"></div>
+          <small id="ayudaModalEstado"></small>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="modal-confirm" id="confirmarEstadoProducto">Confirmar</button>
+        </div>
       </div>
     </div>
+  </div>
 
-    <div class="card-panel">
-      <h3>Productos Deshabilitados</h3>
-      <div class="table-responsive">
-        <table class="table table-bordered">
-          <thead class="table-secondary text-center">
-            <tr>
-              <th>Nombre</th>
-              <th>Categoría</th>
-              <th>Precio</th>
-              <th>Stock</th>
-              <th>Descripción</th>
-              <th>Imagen</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="tabla-deshabilitados" class="text-center"></tbody>
-        </table>
+  <div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div class="toast admin-toast" id="notificacionProducto" role="status" aria-live="polite" aria-atomic="true">
+      <div class="toast-body">
+        <i class="fa-solid fa-circle-check" id="iconoNotificacion" aria-hidden="true"></i>
+        <span id="mensajeNotificacion">Estado actualizado.</span>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="toast" aria-label="Cerrar"></button>
       </div>
     </div>
-  </main>
-</div>
+  </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
-<script src="/static/js/security.js"></script>
-<script>
-const { escapeHtml, safeUrl } = window.FerremasSecurity;
-const categoriasDisponibles = [
-  "Herramientas", "Construcción", "Electricidad", "Pinturas",
-  "Gasfitería", "Adhesivos", "Iluminación", "Ferretería", "Seguridad", "Otra"
-];
-
-const apiUrl = "/productos/api/admin/";
-
-document.addEventListener("DOMContentLoaded", () => {
-  const filtro = document.getElementById("filtro-categoria");
-  categoriasDisponibles.forEach(cat => {
-    const option = document.createElement("option");
-    option.value = cat.toLowerCase();
-    option.textContent = cat;
-    filtro.appendChild(option);
-  });
-
-  fetch(apiUrl)
-    .then(response => response.json())
-    .then(productos => {
-      const tabla = document.getElementById("tabla-productos");
-      const tablaDeshabilitados = document.getElementById("tabla-deshabilitados");
-
-      function render() {
-        const filtroVal = filtro.value.toLowerCase();
-        tabla.innerHTML = "";
-        tablaDeshabilitados.innerHTML = "";
-
-        productos.forEach(producto => {
-          let categoria = producto.categoria?.trim() || "Otra";
-          if (!categoriasDisponibles.includes(categoria)) {
-            categoria = "Otra";
-          }
-
-          if (filtroVal && categoria.toLowerCase() !== filtroVal) return;
-
-          const fila = `
-            <tr>
-              <td>${escapeHtml(producto.nombre)}</td>
-              <td>${escapeHtml(categoria)}</td>
-              <td>$${producto.precio}</td>
-              <td>${producto.stock}</td>
-              <td>${escapeHtml(producto.descripcion)}</td>
-              <td><img src="${safeUrl(producto.imagen)}" class="img-preview" alt="${escapeHtml(producto.nombre)}"></td>
-              <td>
-                <button class="btn btn-${producto.activo ? 'danger' : 'success'} btn-sm mb-1" onclick="toggleActivoProducto(${producto.id})">
-                  <i class="fas fa-${producto.activo ? 'trash' : 'undo'}"></i> ${producto.activo ? 'Desactivar' : 'Reactivar'}
-                </button>
-                ${producto.activo ? `<a href="/productos/editar/${producto.id}/" class="btn btn-warning btn-sm mb-1"><i class="fas fa-pencil-alt"></i> Editar</a>` : ''}
-              </td>
-            </tr>
-          `;
-
-          if (producto.activo) {
-            tabla.insertAdjacentHTML("beforeend", fila);
-          } else {
-            tablaDeshabilitados.insertAdjacentHTML("beforeend", fila);
-          }
-        });
-      }
-
-      filtro.addEventListener("change", render);
-      render();
-    });
-});
-
-function getCookie(name) {
-  let cookieValue = null;
-  if (document.cookie && document.cookie !== '') {
-    const cookies = document.cookie.split(';');
-    for (let i = 0; i < cookies.length; i++) {
-      const cookie = cookies[i].trim();
-      if (cookie.substring(0, name.length + 1) === (name + '=')) {
-        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-        break;
-      }
-    }
-  }
-  return cookieValue;
-}
-const csrftoken = getCookie('csrftoken');
-
-function toggleActivoProducto(id) {
-  if (!confirm("¿Estás seguro de que quieres cambiar el estado de este producto?")) return;
-
-  const toggleUrl = `/productos/api/toggle-activo/${id}/`;
-
-  fetch(toggleUrl, {
-    method: "PATCH",
-    credentials: "same-origin",
-    headers: {
-      "X-CSRFToken": csrftoken
-    }
-  })
-  .then(response => response.json())
-  .then(data => {
-    alert(data.mensaje || "Estado actualizado");
-    location.reload();
-  })
-  .catch(error => {
-    console.error("Error al actualizar producto:", error);
-    alert("Error al conectar con el servidor.");
-  });
-}
-</script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/security.js' %}"></script>
+  <script src="{% static 'js/crud_productos.js' %}"></script>
 </body>
 </html>

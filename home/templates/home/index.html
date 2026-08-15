@@ -11,6 +11,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="{% static 'css/index.css' %}">
+  <link rel="stylesheet" href="{% static 'css/footer_sfi.css' %}">
 </head>
 <body>
   <a class="skip-link" href="#contenido-principal">Saltar al contenido</a>
@@ -253,36 +254,7 @@
     </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="container">
-      <div class="footer-main">
-        <div class="footer-brand">
-          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
-          <p>Herramientas, materiales y soluciones para llevar tus ideas a la realidad.</p>
-        </div>
-        <div class="footer-links">
-          <strong>Explora</strong>
-          <a href="{% url 'lista_productos' %}">Productos</a>
-          <a href="{% url 'vista_ofertas' %}">Ofertas</a>
-          <a href="{% url 'contacto' %}">Nosotros</a>
-        </div>
-        <div class="footer-links">
-          <strong>Tu cuenta</strong>
-          {% if user.is_authenticated %}
-            <a href="{% url 'vista_carrito' %}">Carrito</a>
-            <a href="{% url 'mi_historial_compras' %}">Mis compras</a>
-          {% else %}
-            <a href="{% url 'iniciosesion' %}">Iniciar sesión</a>
-            <a href="{% url 'registro' %}">Crear cuenta</a>
-          {% endif %}
-        </div>
-      </div>
-      <div class="footer-bottom">
-        <span>© 2026 SFI. Todos los derechos reservados.</span>
-        <span>Compra inteligente para construir mejor.</span>
-      </div>
-    </div>
-  </footer>
+  {% include 'includes/footer_sfi.html' %}
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script>

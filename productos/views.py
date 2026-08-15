@@ -39,7 +39,7 @@ class EsAdmin(BasePermission):
 def es_admin(user):
     return user.is_authenticated and user.is_staff
 
-@user_passes_test(es_admin)
+@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def formulario_producto(request):
     return render(request, 'productos/formulario_producto.html')
 
@@ -60,15 +60,15 @@ def detalle_producto(request, id):
         productos = productos.filter(activo=True)
     producto = get_object_or_404(productos, id=id)
 
-    productos_en_carrito = []
+    producto_en_carrito = False
     if request.user.is_authenticated:
         carrito = Venta.objects.filter(id_usuario=request.user, estado_venta='carrito').first()
         if carrito:
-            productos_en_carrito = Detalle.objects.filter(id_venta=carrito).values_list('producto_id', flat=True)
+            producto_en_carrito = Detalle.objects.filter(id_venta=carrito, producto=producto).exists()
 
     return render(request, 'productos/detalle.html', {
         'producto': producto,
-        'productos_en_carrito': productos_en_carrito
+        'producto_en_carrito': producto_en_carrito,
     })
 #--------------------------------
 
@@ -125,17 +125,18 @@ def editar_producto(request, id):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def api_ofertas(request):
-    from django.db.models import OuterRef, Subquery, F
-    from .models import Producto, HistorialPrecio
-
     ultimos = HistorialPrecio.objects.filter(
         producto=OuterRef('pk')
-    ).order_by('-fecha')
+    ).order_by('-fecha', '-id')
 
     productos_con_descuento = Producto.objects.filter(activo=True).annotate(
         precio_anterior=Subquery(ultimos.values('precio_anterior')[:1]),
-        precio_nuevo=Subquery(ultimos.values('precio_nuevo')[:1])
-    ).filter(precio_anterior__gt=F('precio_nuevo'))
+        precio_nuevo=Subquery(ultimos.values('precio_nuevo')[:1]),
+        fecha_oferta=Subquery(ultimos.values('fecha')[:1]),
+    ).filter(
+        precio_anterior__gt=F('precio'),
+        precio_nuevo=F('precio'),
+    ).order_by('-fecha_oferta', 'nombre')
 
     resultado = []
     for p in productos_con_descuento:
@@ -144,9 +145,10 @@ def api_ofertas(request):
             'nombre': p.nombre,
             'descripcion': p.descripcion,
             'precio': p.precio,
-            'imagen': p.imagen,
+            'imagen': request.build_absolute_uri(p.imagen.url) if p.imagen else '',
             'precio_anterior': getattr(p, 'precio_anterior', None),
-            'stock': p.stock  # ✅ se agrega aquí
+            'stock': p.stock,
+            'categoria': p.categoria,
         })
 
     return Response(resultado)

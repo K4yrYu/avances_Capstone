@@ -126,5 +126,5 @@ class UsuarioListaSerializer(serializers.ModelSerializer):
         model = Usuario
         fields = [
             'id', 'rut', 'username', 'first_name', 'last_name',
-            'email', 'telefono', 'is_staff', 'is_active'
+            'email', 'telefono', 'is_staff', 'is_active', 'email_confirmado'
         ]

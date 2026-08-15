@@ -2,146 +2,225 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>¿Quiénes Somos? - FERREMAS</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Conoce SFI y encuentra nuestros canales de contacto y atención.">
+  <title>Nosotros y contacto | SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <style>
-    body {
-      background-color: #f4f4f9;
-      font-family: 'Segoe UI', sans-serif;
-      display: flex;
-      flex-direction: column;
-      min-height: 100vh;
-    }
-
-    main { flex: 1; }
-
-    .info-box {
-      background: white;
-      padding: 30px;
-      border-radius: 15px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    }
-
-    footer {
-      background-color: #2E7D32;
-      color: white;
-      text-align: center;
-      padding: 20px 0;
-    }
-
-    .title {
-      color: #2E7D32;
-      font-weight: bold;
-    }
-
-    .empresa-info p {
-      margin-bottom: 5px;
-    }
-  </style>
+  <link rel="stylesheet" href="{% static 'css/lista_productos.css' %}">
+  <link rel="stylesheet" href="{% static 'css/contacto.css' %}">
+  <link rel="stylesheet" href="{% static 'css/footer_sfi.css' %}">
 </head>
 <body>
+  <a class="skip-link" href="#contenido">Saltar al contenido</a>
 
-<!-- Navbar -->
-<nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #2E7D32;">
-  <div class="container">
-    <a class="navbar-brand" href="/">
-      <img src="{% static 'img/logo.png' %}" alt="logo" style="height: 70px; border-radius: 15px 0 15px 0;">
-    </a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-
-    <div class="collapse navbar-collapse" id="menu">
-      <ul class="navbar-nav ms-auto align-items-center">
-        <li class="nav-item"><a class="nav-link" href="/">Inicio</a></li>
-        <li class="nav-item"><a class="nav-link" href="/productos/">Productos</a></li>
-        <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
-        <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Contacto</a></li>
-
-        {% if user.is_authenticated %}
-          <li class="nav-item ms-3">
-            <span class="text-white me-3">Hola, {{ user.username }}</span>
-          </li>
-          <li class="nav-item ms-2">
-            <form method="post" action="/usuarios/cerrar-sesion/" class="d-inline">
-              {% csrf_token %}
-              <button class="btn btn-outline-light px-3 py-2" type="submit">
-              <i class="fas fa-sign-out-alt me-2"></i> Cerrar Sesión
-              </button>
-            </form>
-          </li>
-        {% else %}
-          <li class="nav-item ms-3">
-            <a class="btn btn-outline-light d-flex align-items-center px-3 py-2" href="/usuarios/iniciosesion/">
-              <i class="fas fa-user me-2"></i> Iniciar Sesión
-            </a>
-          </li>
-        {% endif %}
-
-        {% if user.is_staff %}
-          <li class="nav-item ms-2">
-            <a class="nav-link" href="{% url 'panel_administracion' %}">Panel de Administración</a>
-          </li>
-        {% endif %}
-
-        {% if user.is_authenticated %}
-          <li class="nav-item ms-2">
-            <a class="nav-link" href="{% url 'vista_carrito' %}">
-              <i class="fas fa-shopping-cart"></i> Carrito
-            </a>
-          </li>
-          <li class="nav-item ms-2">
-            <a class="nav-link" href="{% url 'mi_historial_compras' %}">
-              <i class="fas fa-history"></i> Mis Compras
-            </a>
-          </li>
-        {% endif %}
-      </ul>
+  <div class="announcement-bar">
+    <div class="container announcement-content">
+      <span><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Compra protegida con Webpay</span>
+      <span class="announcement-secondary"><i class="fa-solid fa-headset" aria-hidden="true"></i> Estamos para ayudarte con tu proyecto</span>
     </div>
   </div>
-</nav>
 
-<main class="container my-5">
-  <h2 class="text-center mb-4 title">¿Quiénes Somos?</h2>
-  <div class="row justify-content-center">
-    <div class="col-lg-10">
-      <div class="info-box">
-        <p>
-          <strong>FERREMAS</strong> es una empresa chilena dedicada a la venta de productos de ferretería,
-          construcción, electricidad, gasfitería y mucho más. Nos enfocamos en brindar soluciones reales a
-          nuestros clientes, tanto en el ámbito profesional como en el hogar.
-        </p>
-        <p>
-          Con años de experiencia y compromiso, en FERREMAS creemos en ofrecer productos de calidad,
-          atención personalizada y precios competitivos. Estamos aquí para acompañarte en tus proyectos
-          y entregarte las herramientas necesarias para concretarlos.
-        </p>
+  <header class="site-header sticky-top">
+    <nav class="navbar navbar-expand-xl" aria-label="Navegación principal">
+      <div class="container">
+        <a class="navbar-brand" href="{% url 'index' %}" aria-label="SFI, ir al inicio">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente" class="nav-logo">
+        </a>
 
-        <hr class="my-4" />
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menuPrincipal" aria-controls="menuPrincipal" aria-expanded="false" aria-label="Abrir menú">
+          <span class="navbar-toggler-icon"></span>
+        </button>
 
-        <h5 class="mb-3">Datos de la Empresa</h5>
-        <div class="empresa-info">
-          <p><strong>FERREMAS</strong></p>
-          <p>RUT: 76.123.456-7</p>
-          <p>Av. Principal 123, Santiago, Chile</p>
-          <p>Email: contacto@ferremas.cl</p>
-          <p>Teléfono: +56 9 1234 5678</p>
-          <p>Horario: Lunes a Viernes, 9:00 a 18:00 hrs</p>
+        <div class="collapse navbar-collapse" id="menuPrincipal">
+          <ul class="navbar-nav mx-auto align-items-xl-center">
+            <li class="nav-item"><a class="nav-link" href="{% url 'index' %}">Inicio</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'lista_productos' %}">Productos</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
+            <li class="nav-item"><a class="nav-link active" aria-current="page" href="{% url 'contacto' %}">Nosotros</a></li>
+            {% if user.is_staff %}
+              <li class="nav-item"><a class="nav-link" href="{% url 'panel_administracion' %}">Administración</a></li>
+            {% endif %}
+          </ul>
+
+          <div class="nav-actions">
+            {% if user.is_authenticated %}
+              <div class="user-greeting">
+                <span>Hola,</span>
+                <strong>{{ user.first_name|default:user.username }}</strong>
+              </div>
+              <a class="icon-action" href="{% url 'vista_carrito' %}" aria-label="Ver carrito" title="Carrito">
+                <i class="fa-solid fa-cart-shopping" aria-hidden="true"></i>
+              </a>
+              <a class="icon-action" href="{% url 'mi_historial_compras' %}" aria-label="Ver mis compras" title="Mis compras">
+                <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+              </a>
+              <form method="post" action="{% url 'cerrar_sesion' %}">
+                {% csrf_token %}
+                <button class="btn btn-outline-sfi btn-sm" type="submit">Salir</button>
+              </form>
+            {% else %}
+              <a class="btn btn-outline-sfi" href="{% url 'iniciosesion' %}">
+                <i class="fa-regular fa-user" aria-hidden="true"></i> Ingresar
+              </a>
+            {% endif %}
+          </div>
         </div>
       </div>
-    </div>
-  </div>
-</main>
+    </nav>
+  </header>
 
-<footer>
-  <div class="container">
-    <p class="mb-0">© 2025 FERREMAS - Todos los derechos reservados</p>
-  </div>
-</footer>
+  <main id="contenido">
+    <section class="contact-hero">
+      <div class="contact-grid" aria-hidden="true"></div>
+      <div class="container position-relative">
+        <div class="row align-items-center g-5">
+          <div class="col-lg-7">
+            <span class="eyebrow"><i class="fa-solid fa-people-group" aria-hidden="true"></i> Conoce SFI</span>
+            <h1>Soluciones ferreteras para avanzar con confianza.</h1>
+            <p>Reunimos herramientas, materiales y una experiencia de compra simple para acompañarte desde la idea hasta el resultado.</p>
+            <div class="contact-hero-actions">
+              <a class="contact-primary-action" href="{% url 'lista_productos' %}">
+                Explorar productos <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+              </a>
+              <a class="contact-secondary-action" href="#canales">Hablar con nosotros</a>
+            </div>
+          </div>
+          <div class="col-lg-5">
+            <div class="identity-card">
+              <div class="identity-logo-wrap">
+                <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
+              </div>
+              <div class="identity-points">
+                <span><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Catálogo seleccionado</span>
+                <span><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Compra segura</span>
+                <span><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Entrega coordinada</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <section class="about-section">
+      <div class="container">
+        <div class="row g-5 align-items-center">
+          <div class="col-lg-6">
+            <span class="section-kicker">Sistema Ferretero Inteligente</span>
+            <h2>Una ferretería pensada para hacer las cosas más simples.</h2>
+          </div>
+          <div class="col-lg-6">
+            <p class="about-lead">SFI conecta productos confiables con una experiencia digital clara. Queremos que encuentres lo que necesitas, conozcas su disponibilidad y puedas comprar sin pasos innecesarios.</p>
+            <p class="about-copy">Atendemos proyectos del hogar y necesidades profesionales con información transparente, precios actualizados y alternativas de retiro o despacho.</p>
+          </div>
+        </div>
+
+        <div class="values-grid">
+          <article class="value-card">
+            <span class="value-icon"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
+            <h3>Información clara</h3>
+            <p>Productos, precios y stock visibles para que puedas decidir mejor.</p>
+          </article>
+          <article class="value-card featured">
+            <span class="value-icon"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i></span>
+            <h3>Compra confiable</h3>
+            <p>Pagos protegidos y confirmación de cada paso de tu compra.</p>
+          </article>
+          <article class="value-card">
+            <span class="value-icon"><i class="fa-solid fa-handshake-angle" aria-hidden="true"></i></span>
+            <h3>Atención cercana</h3>
+            <p>Orientación directa cuando necesitas resolver una duda.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="service-section">
+      <div class="container">
+        <div class="service-heading">
+          <div>
+            <span class="section-kicker">Cómo trabajamos</span>
+            <h2>Del catálogo a tus manos</h2>
+          </div>
+          <p>Una experiencia conectada para encontrar, comprar y recibir tus productos.</p>
+        </div>
+        <div class="service-steps">
+          <article>
+            <span class="step-number">01</span>
+            <i class="fa-solid fa-box-open" aria-hidden="true"></i>
+            <h3>Elige</h3>
+            <p>Revisa el catálogo y compara las alternativas disponibles.</p>
+          </article>
+          <article>
+            <span class="step-number">02</span>
+            <i class="fa-solid fa-credit-card" aria-hidden="true"></i>
+            <h3>Compra</h3>
+            <p>Paga de forma segura mediante Webpay.</p>
+          </article>
+          <article>
+            <span class="step-number">03</span>
+            <i class="fa-solid fa-store" aria-hidden="true"></i>
+            <h3>Recibe</h3>
+            <p>Coordina el retiro en tienda o el despacho de tu pedido.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="contact-section" id="canales">
+      <div class="container">
+        <div class="contact-panel">
+          <div class="contact-intro">
+            <span class="section-kicker">Estamos para ayudarte</span>
+            <h2>¿Tienes una consulta?</h2>
+            <p>Escríbenos o revisa nuestros datos de atención. Te ayudaremos a resolver dudas sobre productos, compras y entregas.</p>
+            <a class="contact-email-button" href="mailto:ferremas.proyecto2026@gmail.com">
+              <i class="fa-solid fa-envelope" aria-hidden="true"></i> Enviar un correo
+            </a>
+          </div>
+
+          <div class="contact-channels">
+            <a class="channel-card" href="mailto:ferremas.proyecto2026@gmail.com">
+              <span><i class="fa-solid fa-envelope" aria-hidden="true"></i></span>
+              <div>
+                <small>Correo electrónico</small>
+                <strong>ferremas.proyecto2026@gmail.com</strong>
+              </div>
+              <i class="fa-solid fa-arrow-up-right-from-square channel-arrow" aria-hidden="true"></i>
+            </a>
+            <a class="channel-card" href="tel:+56912345678">
+              <span><i class="fa-solid fa-phone" aria-hidden="true"></i></span>
+              <div>
+                <small>Teléfono</small>
+                <strong>+56 9 1234 5678</strong>
+              </div>
+              <i class="fa-solid fa-arrow-up-right-from-square channel-arrow" aria-hidden="true"></i>
+            </a>
+            <div class="channel-card">
+              <span><i class="fa-solid fa-clock" aria-hidden="true"></i></span>
+              <div>
+                <small>Horario de atención</small>
+                <strong>Lunes a viernes, 9:00 a 18:00</strong>
+              </div>
+            </div>
+            <div class="channel-card">
+              <span><i class="fa-solid fa-location-dot" aria-hidden="true"></i></span>
+              <div>
+                <small>Ubicación</small>
+                <strong>Santiago, Chile</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  {% include 'includes/footer_sfi.html' %}
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

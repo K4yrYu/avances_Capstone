@@ -1,8 +1,10 @@
 from django.shortcuts import render
 from django.contrib.auth.decorators import user_passes_test
-from django.db.models import Count
+from django.contrib.auth import get_user_model
+from django.db.models import Count, Sum
 
 from productos.models import Producto
+from carro_compras.models import Venta
 
 
 def index(request):
@@ -41,7 +43,34 @@ def index(request):
 
 @user_passes_test(lambda u: u.is_staff, login_url='/usuarios/iniciosesion/')
 def panel_administracion(request):
-    return render(request, 'home/panel_admin.html')
+    Usuario = get_user_model()
+    productos = Producto.objects.all()
+    productos_activos = productos.filter(activo=True)
+    ventas_pagadas = Venta.objects.filter(estado_venta='pagado', eliminado=False)
+    ingresos = ventas_pagadas.aggregate(total=Sum('total_venta'))['total'] or 0
+
+    resumen = {
+        'productos_activos': productos_activos.count(),
+        'productos_inactivos': productos.filter(activo=False).count(),
+        'stock_bajo': productos_activos.filter(stock__gt=0, stock__lte=5).count(),
+        'sin_stock': productos_activos.filter(stock=0).count(),
+        'clientes_activos': Usuario.objects.filter(is_active=True, is_staff=False).count(),
+        'ventas_pagadas': ventas_pagadas.count(),
+        'ingresos': ingresos,
+        'ingresos_formateados': f"${ingresos:,.0f}".replace(',', '.'),
+        'retiros_pendientes': ventas_pagadas.filter(
+            tipo_entrega='retiro', estado_entrega='pendiente'
+        ).count(),
+        'despachos_pendientes': ventas_pagadas.filter(
+            tipo_entrega='despacho', estado_entrega='pendiente'
+        ).count(),
+    }
+    ventas_recientes = ventas_pagadas.select_related('id_usuario').order_by('-fecha_compra')[:5]
+
+    return render(request, 'home/panel_admin.html', {
+        'resumen': resumen,
+        'ventas_recientes': ventas_recientes,
+    })
 
 def contacto(request):
     return render(request, 'home/contacto.html')

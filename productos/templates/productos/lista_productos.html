@@ -2,277 +2,184 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Productos - FERREMAS</title>
-
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-
-  <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-    }
-
-    body {
-      display: flex;
-      flex-direction: column;
-      background-color: #f4f4f9;
-    }
-
-    main {
-      flex: 1;
-    }
-
-    .navbar { background-color: #2E7D32; }
-    .navbar .nav-link, .navbar-brand { color: white !important; }
-    .navbar .btn-outline-light { border-color: white; color: white; }
-
-    .product-card {
-      border-radius: 15px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
-      transition: transform 0.2s ease;
-      background-color: white;
-      border: none;
-    }
-    .product-card:hover { transform: translateY(-5px); }
-    .product-card-body {
-      padding: 20px;
-      background-color: #fcfcfc;
-      border-radius: 0 0 15px 15px;
-    }
-    .product-img { height: 220px; object-fit: contain; border-radius: 15px 15px 0 0; }
-    .product-title { font-weight: bold; font-size: 1.1rem; margin-bottom: 5px; }
-    .product-price { font-size: 1.3rem; font-weight: 700; color: #e53935; }
-    .product-stock { font-size: 0.95rem; font-weight: 500; color: #555; }
-
-    footer {
-      background-color: #2E7D32;
-      color: white;
-      text-align: center;
-      padding: 20px 0;
-      margin-top: 50px;
-    }
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Catálogo SFI de herramientas, materiales de construcción y pinturas.">
+  <title>Productos | SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/lista_productos.css' %}">
+  <link rel="stylesheet" href="{% static 'css/footer_sfi.css' %}">
 </head>
 <body>
+  <a class="skip-link" href="#catalogo">Saltar al catálogo</a>
 
-<!-- Navbar -->
-<nav class="navbar navbar-expand-lg navbar-dark">
-  <div class="container">
-    <a class="navbar-brand" href="/">
-      <img src="{% static 'img/logo.png' %}" alt="logo" style="height: 70px; border-radius: 15px 0 15px 0;">
-    </a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-
-    <div class="collapse navbar-collapse" id="menu">
-      <ul class="navbar-nav ms-auto align-items-center">
-        <li class="nav-item"><a class="nav-link" href="/">Inicio</a></li>
-        <li class="nav-item"><a class="nav-link" href="/productos/">Productos</a></li>
-        <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
-        <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Contacto</a></li>
-
-        {% if user.is_authenticated %}
-          <li class="nav-item ms-3"><span class="text-white me-3">Hola, {{ user.username }}</span></li>
-          <li class="nav-item ms-2">
-            <form method="post" action="/usuarios/cerrar-sesion/" class="d-inline">
-              {% csrf_token %}
-              <button class="btn btn-outline-light px-3 py-2" type="submit">
-              <i class="fas fa-sign-out-alt me-2"></i> Cerrar Sesión
-              </button>
-            </form>
-          </li>
-        {% else %}
-          <li class="nav-item ms-3">
-            <a class="btn btn-outline-light d-flex align-items-center px-3 py-2" href="/usuarios/iniciosesion/">
-              <i class="fas fa-user me-2"></i> Iniciar Sesión
-            </a>
-          </li>
-        {% endif %}
-
-        {% if user.is_staff %}
-          <li class="nav-item ms-2">
-            <a class="nav-link" href="{% url 'panel_administracion' %}">Panel de Administración</a>
-          </li>
-        {% endif %}
-
-        {% if user.is_authenticated %}
-          <li class="nav-item ms-2">
-            <a class="nav-link" href="{% url 'vista_carrito' %}">
-              <i class="fas fa-shopping-cart"></i> Carrito
-            </a>
-          </li>
-          <li class="nav-item ms-2">
-            <a class="nav-link" href="{% url 'mi_historial_compras' %}">
-              <i class="fas fa-history"></i> Mis Compras
-            </a>
-          </li>
-        {% endif %}
-      </ul>
+  <div class="announcement-bar">
+    <div class="container announcement-content">
+      <span><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Compra protegida con Webpay</span>
+      <span class="announcement-secondary"><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Retiro en tienda y despacho</span>
     </div>
   </div>
-</nav>
 
-<!-- Contenido -->
-<main>
-  <div class="container my-5">
-    <h2 class="text-center mb-4">Nuestros Productos</h2>
+  <header class="site-header sticky-top">
+    <nav class="navbar navbar-expand-xl" aria-label="Navegación principal">
+      <div class="container">
+        <a class="navbar-brand" href="{% url 'index' %}" aria-label="SFI, ir al inicio">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente" class="nav-logo">
+        </a>
 
-    <div class="d-flex flex-wrap justify-content-center align-items-center gap-3 mb-4">
-      <input type="text" id="buscador-productos" class="form-control w-auto" placeholder="Buscar productos...">
-      <select id="filtro-categoria" class="form-select w-auto">
-        <option value="">Todas las categorías</option>
-        <option value="Herramientas">Herramientas</option>
-        <option value="Construcción">Construcción</option>
-        <option value="Electricidad">Electricidad</option>
-        <option value="Pinturas">Pinturas</option>
-        <option value="Gasfitería">Gasfitería</option>
-        <option value="Adhesivos">Adhesivos</option>
-        <option value="Iluminación">Iluminación</option>
-        <option value="Ferretería">Ferretería</option>
-        <option value="Seguridad">Seguridad</option>
-        <option value="Otra">Otra</option>
-      </select>
-      <select id="moneda-selector" class="form-select w-auto">
-        <option value="CLP">CLP - Peso Chileno</option>
-        <option value="USD">USD - Dólar</option>
-        <option value="EUR">EUR - Euro</option>
-        <option value="BRL">BRL - Real</option>
-      </select>
-      <button class="btn btn-outline-dark" id="volver-clp">Volver a CLP</button>
-    </div>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menuPrincipal" aria-controls="menuPrincipal" aria-expanded="false" aria-label="Abrir menú">
+          <span class="navbar-toggler-icon"></span>
+        </button>
 
-    <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-4" id="product-list"></div>
-  </div>
-</main>
+        <div class="collapse navbar-collapse" id="menuPrincipal">
+          <ul class="navbar-nav mx-auto align-items-xl-center">
+            <li class="nav-item"><a class="nav-link" href="{% url 'index' %}">Inicio</a></li>
+            <li class="nav-item"><a class="nav-link active" aria-current="page" href="{% url 'lista_productos' %}">Productos</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Nosotros</a></li>
+            {% if user.is_staff %}
+              <li class="nav-item"><a class="nav-link" href="{% url 'panel_administracion' %}">Administración</a></li>
+            {% endif %}
+          </ul>
 
-<!-- Footer fijo abajo -->
-<footer>
-  <div class="container">
-    <p class="mb-0">© 2025 FERREMAS - Todos los derechos reservados</p>
-  </div>
-</footer>
+          <div class="nav-actions">
+            {% if user.is_authenticated %}
+              <div class="user-greeting">
+                <span>Hola,</span>
+                <strong>{{ user.first_name|default:user.username }}</strong>
+              </div>
+              <a class="icon-action" href="{% url 'vista_carrito' %}" aria-label="Ver carrito" title="Carrito">
+                <i class="fa-solid fa-cart-shopping" aria-hidden="true"></i>
+              </a>
+              <a class="icon-action" href="{% url 'mi_historial_compras' %}" aria-label="Ver mis compras" title="Mis compras">
+                <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+              </a>
+              <form method="post" action="{% url 'cerrar_sesion' %}">
+                {% csrf_token %}
+                <button class="btn btn-outline-sfi btn-sm" type="submit">Salir</button>
+              </form>
+            {% else %}
+              <a class="btn btn-outline-sfi" href="{% url 'iniciosesion' %}">
+                <i class="fa-regular fa-user" aria-hidden="true"></i> Ingresar
+              </a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </nav>
+  </header>
 
-<!-- Scripts -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="/static/js/security.js"></script>
-<script>
-  const { escapeHtml, safeUrl } = window.FerremasSecurity;
-  document.addEventListener("DOMContentLoaded", async function () {
-    const apiUrl = "/productos/api/";
-
-    const monedaSelector = document.getElementById('moneda-selector');
-    const volverClpBtn = document.getElementById('volver-clp');
-    const buscador = document.getElementById('buscador-productos');
-    const filtroCategoria = document.getElementById('filtro-categoria');
-    const productList = document.getElementById('product-list');
-
-    let tasaCambio = 1;
-    let monedaActual = localStorage.getItem("moneda") || "CLP";
-    monedaSelector.value = monedaActual;
-
-    monedaSelector.addEventListener("change", function () {
-      localStorage.setItem("moneda", this.value);
-      location.reload();
-    });
-
-    volverClpBtn.addEventListener("click", function () {
-      localStorage.setItem("moneda", "CLP");
-      location.reload();
-    });
-
-    async function obtenerTasa(monedaDestino) {
-      if (monedaDestino === "CLP") {
-        tasaCambio = 1;
-        return;
-      }
-      try {
-        const res = await fetch("https://open.er-api.com/v6/latest/CLP");
-        const data = await res.json();
-        tasaCambio = data.rates[monedaDestino];
-      } catch (err) {
-        console.error("Error al obtener la tasa:", err);
-        tasaCambio = 1;
-      }
-    }
-
-    function convertirPrecio(precioCLP) {
-      if (monedaActual === "CLP") {
-        return `CLP $${Math.round(precioCLP).toLocaleString("es-CL")}`;
-      }
-      let convertido = precioCLP * tasaCambio;
-      return `${monedaActual} $${convertido.toFixed(2)}`;
-    }
-
-    function renderProductos(lista) {
-      productList.innerHTML = "";
-      lista.forEach(producto => {
-        const disponible = producto.stock > 0;
-
-        const categoria = [
-          "Herramientas", "Construcción", "Electricidad", "Pinturas",
-          "Gasfitería", "Adhesivos", "Iluminación", "Ferretería", "Seguridad"
-        ].includes(producto.categoria) ? producto.categoria : "Otra";
-
-        const stockHTML = disponible
-          ? (producto.stock <= 5
-              ? `<p class="product-stock text-warning">¡Últimas unidades (${producto.stock})!</p>`
-              : `<p class="product-stock">Stock disponible: ${producto.stock}</p>`)
-          : `<p class="product-stock text-danger">No disponible</p>`;
-
-        productList.innerHTML += `
-          <div class="col">
-            <div class="card product-card h-100">
-              <img src="${safeUrl(producto.imagen)}" class="card-img-top product-img" alt="${escapeHtml(producto.nombre)}">
-              <div class="card-body product-card-body d-flex flex-column">
-                <h5 class="product-title">${escapeHtml(producto.nombre)}</h5>
-                <small class="text-muted mb-1">Categoría: ${escapeHtml(categoria)}</small>
-                <p class="product-price">${convertirPrecio(producto.precio)}</p>
-                ${stockHTML}
-                ${disponible
-                  ? `<a href="/productos/${producto.id}/" class="btn btn-primary mt-auto">Ver Producto</a>`
-                  : `<button class="btn btn-secondary mt-auto" disabled>Agotado</button>`}
+  <main
+    id="catalogo"
+    data-api-url="{% url 'api_lista_productos' %}"
+    data-placeholder-url="{% static 'img/sfi-logo.png' %}"
+  >
+    <section class="catalog-hero">
+      <div class="catalog-grid" aria-hidden="true"></div>
+      <div class="container position-relative">
+        <div class="row align-items-end g-4">
+          <div class="col-lg-8">
+            <span class="eyebrow"><i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> Catálogo SFI</span>
+            <h1>Todo para tu proyecto, ordenado a tu manera.</h1>
+            <p>Busca, compara y encuentra rápidamente herramientas, materiales y soluciones con stock actualizado.</p>
+          </div>
+          <div class="col-lg-4">
+            <div class="catalog-highlight">
+              <span class="highlight-icon"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i></span>
+              <div>
+                <strong id="total-productos-hero">—</strong>
+                <span>productos disponibles en el catálogo</span>
               </div>
             </div>
-          </div>`;
-      });
-    }
+          </div>
+        </div>
+      </div>
+    </section>
 
-    let productos = [];
-    await obtenerTasa(monedaActual);
+    <section class="catalog-section">
+      <div class="container">
+        <div class="filter-panel" aria-label="Filtros del catálogo">
+          <div class="filter-heading">
+            <div>
+              <span class="filter-kicker">Encuentra más rápido</span>
+              <h2>Filtrar y ordenar</h2>
+            </div>
+            <button class="clear-filters" id="limpiar-filtros" type="button">
+              <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Limpiar filtros
+            </button>
+          </div>
 
-    try {
-      const response = await fetch(apiUrl + '?nocache=' + new Date().getTime());
-      productos = await response.json();
+          <div class="filter-grid">
+            <label class="control-group search-control" for="buscador-productos">
+              <span>Buscar producto</span>
+              <span class="control-wrap">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input type="search" id="buscador-productos" class="form-control" placeholder="Ej. taladro, pintura o madera" autocomplete="off">
+              </span>
+            </label>
 
-      const actualizarVista = () => {
-        const texto = buscador.value.toLowerCase();
-        const categoriaFiltro = filtroCategoria.value;
+            <label class="control-group" for="filtro-categoria">
+              <span>Categoría</span>
+              <select id="filtro-categoria" class="form-select">
+                <option value="">Todas las categorías</option>
+              </select>
+            </label>
 
-        const filtrados = productos.filter(p => {
-          const categoria = [
-            "Herramientas", "Construcción", "Electricidad", "Pinturas",
-            "Gasfitería", "Adhesivos", "Iluminación", "Ferretería", "Seguridad"
-          ].includes(p.categoria) ? p.categoria : "Otra";
+            <label class="control-group" for="orden-productos">
+              <span>Ordenar por</span>
+              <select id="orden-productos" class="form-select">
+                <option value="destacados">Más recientes</option>
+                <option value="nombre-asc">Nombre: A a Z</option>
+                <option value="nombre-desc">Nombre: Z a A</option>
+                <option value="precio-asc">Precio: menor a mayor</option>
+                <option value="precio-desc">Precio: mayor a menor</option>
+                <option value="stock-desc">Mayor disponibilidad</option>
+              </select>
+            </label>
 
-          return (!categoriaFiltro || categoria === categoriaFiltro) &&
-                 (p.nombre.toLowerCase().includes(texto) || p.descripcion.toLowerCase().includes(texto));
-        });
+            <label class="control-group" for="moneda-selector">
+              <span>Moneda</span>
+              <select id="moneda-selector" class="form-select">
+                <option value="CLP">CLP — Peso chileno</option>
+                <option value="USD">USD — Dólar</option>
+                <option value="EUR">EUR — Euro</option>
+                <option value="BRL">BRL — Real</option>
+              </select>
+            </label>
+          </div>
 
-        renderProductos(filtrados);
-      };
+          <p class="currency-note" id="aviso-moneda" role="status" aria-live="polite"></p>
+        </div>
 
-      buscador.addEventListener("input", actualizarVista);
-      filtroCategoria.addEventListener("change", actualizarVista);
-      actualizarVista();
-    } catch (error) {
-      console.error("Error al cargar productos:", error);
-    }
-  });
-</script>
+        <div class="results-bar">
+          <div>
+            <span class="results-label">Resultados</span>
+            <strong id="contador-resultados" aria-live="polite">Cargando productos…</strong>
+          </div>
+          <div class="view-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Selecciona un producto para ver todos sus detalles</div>
+        </div>
 
+        <div class="product-grid" id="product-list" aria-live="polite" aria-busy="true">
+          {% for _ in "12345678" %}
+            <div class="product-skeleton" aria-hidden="true">
+              <span class="skeleton-image"></span>
+              <span class="skeleton-line skeleton-line-small"></span>
+              <span class="skeleton-line"></span>
+              <span class="skeleton-line skeleton-line-medium"></span>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+  </main>
+
+  {% include 'includes/footer_sfi.html' %}
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/security.js' %}"></script>
+  <script src="{% static 'js/lista_productos.js' %}"></script>
 </body>
 </html>

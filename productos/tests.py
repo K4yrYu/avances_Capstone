@@ -31,6 +31,16 @@ class SeguridadProductosTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_catalogo_publico_usa_identidad_sfi_y_controles_de_orden(self):
+        response = self.client.get(reverse('lista_productos'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Catálogo SFI')
+        self.assertContains(response, 'id="buscador-productos"')
+        self.assertContains(response, 'id="filtro-categoria"')
+        self.assertContains(response, 'id="orden-productos"')
+        self.assertContains(response, reverse('api_lista_productos'))
+
     def test_precio_invalido_no_genera_error_500_ni_historial(self):
         self.client.force_login(self.admin)
         payload = {

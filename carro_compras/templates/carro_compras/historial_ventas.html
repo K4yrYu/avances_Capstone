@@ -2,197 +2,240 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <title>Historial de Ventas - FERREMAS</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Historial de ventas | SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body {
-      background-color: #ffffff;
-      font-family: 'Arial', sans-serif;
-      margin: 0;
-      color: black;
-    }
-    .container {
-      background-color: #388E3C;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-      padding: 30px;
-      color: black;
-      margin-top: 50px;
-    }
-    .venta-card {
-      background-color: rgba(255, 255, 255, 0.8);
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-      padding: 20px;
-      margin-bottom: 30px;
-      color: black;
-    }
-    .volver-btn {
-      margin-bottom: 30px;
-    }
-    .btn-volver {
-      background: linear-gradient(to bottom, #2E7D32, #81C784);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      padding: 10px 30px;
-      font-size: 1.1rem;
-      font-weight: bold;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-      transition: background-color 0.3s, transform 0.3s;
-    }
-    .btn-volver:hover {
-      background: linear-gradient(to bottom, #45a049, #66bb6a);
-      transform: scale(1.05);
-    }
-    .table th, .table td {
-      vertical-align: middle;
-      color: black;
-    }
-    .table tbody tr {
-      background-color: rgba(255, 255, 255, 0.8);
-    }
-    .filtros {
-      background-color: rgba(255, 255, 255, 0.9);
-      border-radius: 10px;
-      padding: 15px;
-      margin-bottom: 30px;
-    }
-  </style>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}">
+  <link rel="stylesheet" href="{% static 'css/historial_ventas.css' %}">
 </head>
 <body>
-<div class="container my-5">
-  <h2 class="text-center mb-4">Historial de Compras</h2>
+  <a class="skip-link" href="#contenido-ventas">Saltar al contenido</a>
 
-  <!-- Botón Volver -->
-  <div class="text-center volver-btn">
-    <a href="{% url 'panel_administracion' %}" class="btn btn-volver">
-      <i class="fas fa-arrow-left me-2"></i> Volver al Panel de Administración
-    </a>
-  </div>
+  <div class="admin-shell">
+    <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
+      <div class="offcanvas-header sidebar-mobile-header">
+        <span id="adminSidebarLabel">Menú administrativo</span>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" data-bs-target="#adminSidebar" aria-label="Cerrar menú"></button>
+      </div>
 
-  <!-- Filtros -->
-  <div class="filtros text-center">
-    <div class="row justify-content-center mb-2">
-      <div class="col-md-3">
-        <input type="text" id="buscadorUsuario" class="form-control" placeholder="Buscar por nombre o apellido">
+      <div class="offcanvas-body sidebar-body">
+        <a class="sidebar-brand" href="{% url 'panel_administracion' %}" aria-label="Panel SFI">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
+        </a>
+
+        <div class="sidebar-section">
+          <span class="sidebar-label">Principal</span>
+          <nav class="sidebar-nav" aria-label="Secciones administrativas">
+            <a href="{% url 'panel_administracion' %}">
+              <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i>
+              <span>Resumen</span>
+            </a>
+            <a href="{% url 'lista_productos_crud' %}">
+              <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i>
+              <span>Productos</span>
+            </a>
+            <a href="{% url 'vista_lista_usuarios' %}">
+              <i class="fa-solid fa-users" aria-hidden="true"></i>
+              <span>Usuarios</span>
+            </a>
+            <a class="active" href="{% url 'historial_ventas' %}">
+              <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+              <span>Ventas</span>
+            </a>
+          </nav>
+        </div>
+
+        <div class="sidebar-section">
+          <span class="sidebar-label">Operaciones</span>
+          <nav class="sidebar-nav" aria-label="Operaciones de entrega">
+            <a href="{% url 'vista_retiros' %}">
+              <i class="fa-solid fa-store" aria-hidden="true"></i>
+              <span>Retiros</span>
+            </a>
+            <a href="{% url 'vista_despachos' %}">
+              <i class="fa-solid fa-truck-fast" aria-hidden="true"></i>
+              <span>Despachos</span>
+            </a>
+          </nav>
+        </div>
+
+        <div class="sidebar-footer">
+          <a href="{% url 'index' %}">
+            <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+            Ver tienda
+          </a>
+          <form method="post" action="{% url 'cerrar_sesion' %}">
+            {% csrf_token %}
+            <button type="submit">
+              <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+              Cerrar sesión
+            </button>
+          </form>
+        </div>
       </div>
-      <div class="col-md-3">
-        <input type="text" id="buscadorRut" class="form-control" placeholder="Buscar por RUT">
-      </div>
-      <div class="col-md-3">
-        <input type="date" id="fechaDesde" class="form-control">
-      </div>
-      <div class="col-md-3">
-        <input type="date" id="fechaHasta" class="form-control">
-      </div>
+    </aside>
+
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <div class="topbar-title">
+          <button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-controls="adminSidebar" aria-label="Abrir menú">
+            <i class="fa-solid fa-bars" aria-hidden="true"></i>
+          </button>
+          <div>
+            <span>Administración</span>
+            <strong>Historial de ventas</strong>
+          </div>
+        </div>
+
+        <div class="admin-profile">
+          <span class="profile-avatar">{{ user.username|first|upper }}</span>
+          <div>
+            <strong>{{ user.get_full_name|default:user.username }}</strong>
+            <span>Administrador</span>
+          </div>
+        </div>
+      </header>
+
+      <main
+        class="sales-management"
+        id="contenido-ventas"
+        data-api-url="{% url 'api_historial_ventas' %}"
+        data-receipt-url="{% url 'ver_boleta' 0 %}"
+      >
+        <section class="sales-heading">
+          <div>
+            <span class="sales-kicker"><i class="fa-solid fa-circle" aria-hidden="true"></i> Registro financiero</span>
+            <h1>Historial de ventas</h1>
+            <p>Consulta las compras pagadas, sus productos y el estado de cada entrega.</p>
+          </div>
+          <a class="secondary-admin-action" href="{% url 'panel_administracion' %}">
+            <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver al resumen
+          </a>
+        </section>
+
+        <section class="sales-metrics" aria-label="Resumen de ventas">
+          <article>
+            <span class="sales-metric-icon blue"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i></span>
+            <div><small>Ventas pagadas</small><strong id="metrica-ventas-total">—</strong></div>
+          </article>
+          <article class="revenue-metric">
+            <span class="sales-metric-icon yellow"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></span>
+            <div><small>Ingresos registrados</small><strong id="metrica-ingresos-total">—</strong></div>
+          </article>
+          <article>
+            <span class="sales-metric-icon green"><i class="fa-solid fa-receipt" aria-hidden="true"></i></span>
+            <div><small>Promedio por venta</small><strong id="metrica-ticket-promedio">—</strong></div>
+          </article>
+          <article>
+            <span class="sales-metric-icon warning"><i class="fa-solid fa-clock" aria-hidden="true"></i></span>
+            <div><small>Entregas pendientes</small><strong id="metrica-entregas-pendientes">—</strong></div>
+          </article>
+        </section>
+
+        <section class="sales-card">
+          <div class="sales-card-heading">
+            <div>
+              <span>Transacciones confirmadas</span>
+              <h2>Ventas registradas</h2>
+            </div>
+            <strong id="contador-ventas" aria-live="polite">Cargando…</strong>
+          </div>
+
+          <div class="sales-filters">
+            <label class="sale-filter search-sale-filter" for="buscar-venta">
+              <span>Buscar venta</span>
+              <span class="sale-filter-control">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input type="search" id="buscar-venta" class="form-control" placeholder="Cliente, RUT, usuario o número de venta" autocomplete="off">
+              </span>
+            </label>
+
+            <label class="sale-filter" for="fecha-desde-venta">
+              <span>Desde</span>
+              <input type="date" id="fecha-desde-venta" class="form-control">
+            </label>
+
+            <label class="sale-filter" for="fecha-hasta-venta">
+              <span>Hasta</span>
+              <input type="date" id="fecha-hasta-venta" class="form-control">
+            </label>
+
+            <label class="sale-filter" for="filtro-entrega-venta">
+              <span>Tipo de entrega</span>
+              <select class="form-select" id="filtro-entrega-venta">
+                <option value="">Todas</option>
+                <option value="retiro">Retiro en tienda</option>
+                <option value="despacho">Despacho</option>
+              </select>
+            </label>
+
+            <label class="sale-filter" for="filtro-estado-entrega">
+              <span>Estado de entrega</span>
+              <select class="form-select" id="filtro-estado-entrega">
+                <option value="">Todos</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="completado">Completado</option>
+              </select>
+            </label>
+
+            <label class="sale-filter" for="orden-ventas">
+              <span>Ordenar</span>
+              <select class="form-select" id="orden-ventas">
+                <option value="recientes">Más recientes</option>
+                <option value="antiguas">Más antiguas</option>
+                <option value="total-desc">Mayor total</option>
+                <option value="total-asc">Menor total</option>
+              </select>
+            </label>
+
+            <button class="clear-sales-filters" id="limpiar-filtros-ventas" type="button" title="Limpiar filtros">
+              <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+              <span>Limpiar</span>
+            </button>
+          </div>
+
+          <div class="sales-table-wrap">
+            <table class="admin-sales-table">
+              <thead>
+                <tr>
+                  <th>Venta</th>
+                  <th>Cliente</th>
+                  <th>Fecha</th>
+                  <th>Pago</th>
+                  <th>Entrega</th>
+                  <th>Estado</th>
+                  <th class="text-end">Total</th>
+                  <th class="text-end">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-historial-ventas" aria-live="polite" aria-busy="true">
+                {% for _ in "12345" %}
+                  <tr class="sale-loading-row" aria-hidden="true">
+                    <td><span class="sale-loading-line short"></span></td>
+                    <td><span class="sale-loading-profile"></span></td>
+                    <td><span class="sale-loading-line long"></span></td>
+                    <td><span class="sale-loading-line"></span></td>
+                    <td><span class="sale-loading-line"></span></td>
+                    <td><span class="sale-loading-line"></span></td>
+                    <td><span class="sale-loading-line"></span></td>
+                    <td><span class="sale-loading-line long"></span></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
     </div>
   </div>
 
-  <!-- Contenedor dinámico de ventas -->
-  <div id="ventasContainer"></div>
-
-  <div id="mensajeVacio" class="alert alert-info text-center d-none">No hay ventas registradas.</div>
-</div>
-
-<script src="/static/js/security.js"></script>
-<script>
-const { escapeHtml, safeUrl } = window.FerremasSecurity;
-  const apiUrl = "/api/historial-ventas/";
-
-  async function cargarVentas() {
-    const response = await fetch(apiUrl);
-    const ventas = await response.json();
-    const contenedor = document.getElementById("ventasContainer");
-    contenedor.innerHTML = "";
-
-    if (ventas.length === 0) {
-      document.getElementById("mensajeVacio").classList.remove("d-none");
-      return;
-    }
-
-    document.getElementById("mensajeVacio").classList.add("d-none");
-
-    ventas.forEach(venta => {
-      const ventaHTML = `
-        <div class="venta-card"
-             data-usuario="${escapeHtml(venta.id_usuario.first_name)} ${escapeHtml(venta.id_usuario.last_name)}"
-             data-rut="${escapeHtml(venta.id_usuario.rut)}"
-             data-fecha="${escapeHtml(venta.fecha_compra.split('T')[0])}">
-          <div class="row mb-3">
-            <div class="col-md-4">
-              <strong>Venta ID:</strong> ${venta.id}<br>
-              <strong>Fecha:</strong> ${new Date(venta.fecha_compra).toLocaleString()}
-            </div>
-            <div class="col-md-4">
-              <strong>Usuario:</strong> ${escapeHtml(venta.id_usuario.first_name)} ${escapeHtml(venta.id_usuario.last_name)} (${escapeHtml(venta.id_usuario.rut)})
-            </div>
-            <div class="col-md-4">
-              <strong>Total:</strong> $${venta.total_venta}
-            </div>
-          </div>
-          <div class="row mb-3">
-            <div class="col-md-6"><strong>Estado WebPay:</strong> ${escapeHtml(venta.webpay_payment_status)}</div>
-          </div>
-
-          <table class="table table-sm table-bordered">
-            <thead class="table-light">
-              <tr>
-                <th>Producto</th>
-                <th>Cantidad</th>
-                <th>Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${venta.detalles.map(detalle => `
-                <tr>
-                  <td>${escapeHtml(detalle.nombre_producto)}</td>
-                  <td>${detalle.cantidad_producto}</td>
-                  <td>$${detalle.subtotal_venta}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-
-          <div class="text-end mt-2">
-            <a href="/boleta/${venta.id}/" class="btn btn-outline-success btn-sm">Ver Boleta</a>
-          </div>
-        </div>`;
-      contenedor.insertAdjacentHTML("beforeend", ventaHTML);
-    });
-
-    aplicarFiltros();
-  }
-
-  function aplicarFiltros() {
-    const nombreFiltro = document.getElementById("buscadorUsuario").value.toLowerCase();
-    const rutFiltro = document.getElementById("buscadorRut").value.toLowerCase();
-    const fechaDesde = document.getElementById("fechaDesde").value;
-    const fechaHasta = document.getElementById("fechaHasta").value;
-
-    const cards = document.querySelectorAll(".venta-card");
-    cards.forEach(card => {
-      const nombre = card.dataset.usuario.toLowerCase();
-      const rut = card.dataset.rut.toLowerCase();
-      const fecha = card.dataset.fecha;
-
-      const cumpleNombre = nombre.includes(nombreFiltro);
-      const cumpleRut = rut.includes(rutFiltro);
-      const cumpleDesde = !fechaDesde || fecha >= fechaDesde;
-      const cumpleHasta = !fechaHasta || fecha <= fechaHasta;
-
-      card.style.display = (cumpleNombre && cumpleRut && cumpleDesde && cumpleHasta) ? "block" : "none";
-    });
-  }
-
-  document.getElementById("buscadorUsuario").addEventListener("input", aplicarFiltros);
-  document.getElementById("buscadorRut").addEventListener("input", aplicarFiltros);
-  document.getElementById("fechaDesde").addEventListener("change", aplicarFiltros);
-  document.getElementById("fechaHasta").addEventListener("change", aplicarFiltros);
-
-  window.addEventListener("DOMContentLoaded", cargarVentas);
-</script>
-
-<script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/security.js' %}"></script>
+  <script src="{% static 'js/historial_ventas.js' %}"></script>
 </body>
 </html>

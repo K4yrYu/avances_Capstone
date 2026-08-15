@@ -3,176 +3,237 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Agregar Usuario - FERREMAS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Agregar usuario | Administración SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body {
-      margin: 0;
-      font-family: 'Arial', sans-serif;
-    }
-
-    .fondo {
-      background: url('https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1920,fit=crop/Yle55W6QKWSoQbE4/herramientas-manuales-basicas-02-2022-07-AE0vvPgGKDiqlZEX.jpg') no-repeat center center fixed;
-      background-size: cover;
-      min-height: 100vh;
-      padding-top: 30px;
-    }
-
-    .logo-container {
-      text-align: center;
-      padding-top: 20px;
-    }
-
-    .logo-container img {
-      height: 80px;
-      border-radius: 15px;
-      background-color: white;
-      padding: 8px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-    }
-
-    .container {
-      background-color: rgba(255, 255, 255, 0.95);
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-      padding: 40px;
-      margin-top: 30px;
-      color: black;
-      max-width: 800px;
-    }
-
-    h2 {
-      text-align: center;
-      margin-bottom: 30px;
-      color: black;
-    }
-
-    .btn-guardar {
-      background: linear-gradient(to bottom, #2E7D32, #81C784);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      padding: 10px 30px;
-      font-size: 1rem;
-      font-weight: bold;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-      transition: background-color 0.3s, transform 0.3s;
-    }
-
-    .btn-guardar:hover {
-      background: linear-gradient(to bottom, #45a049, #66bb6a);
-      transform: scale(1.05);
-    }
-
-    .btn-secondary {
-      background: linear-gradient(to bottom, #455A64, #90A4AE);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      padding: 10px 30px;
-      font-weight: bold;
-    }
-
-    .btn-secondary:hover {
-      background: linear-gradient(to bottom, #607D8B, #B0BEC5);
-      transform: scale(1.05);
-    }
-
-    .form-control, .form-select {
-      border-radius: 8px;
-    }
-  </style>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}">
+  <link rel="stylesheet" href="{% static 'css/agregar_usuario_admin.css' %}">
 </head>
 <body>
-<div class="fondo">
+  <a class="skip-link" href="#contenido-agregar-usuario">Saltar al formulario</a>
 
-  <!-- Logo superior -->
-  <div class="logo-container">
-    <img src="{% static 'img/logo.png' %}" alt="FERREMAS Logo">
+  <div class="admin-shell">
+    <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
+      <div class="offcanvas-header sidebar-mobile-header">
+        <span id="adminSidebarLabel">Menú administrativo</span>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#adminSidebar" aria-label="Cerrar menú"></button>
+      </div>
+
+      <div class="offcanvas-body sidebar-body">
+        <a class="sidebar-brand" href="{% url 'panel_administracion' %}" aria-label="Panel SFI">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
+        </a>
+
+        <div class="sidebar-section">
+          <span class="sidebar-label">Principal</span>
+          <nav class="sidebar-nav" aria-label="Secciones administrativas">
+            <a href="{% url 'panel_administracion' %}"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i><span>Resumen</span></a>
+            <a href="{% url 'lista_productos_crud' %}"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><span>Productos</span></a>
+            <a class="active" href="{% url 'vista_lista_usuarios' %}"><i class="fa-solid fa-users" aria-hidden="true"></i><span>Usuarios</span></a>
+            <a href="{% url 'historial_ventas' %}"><i class="fa-solid fa-receipt" aria-hidden="true"></i><span>Ventas</span></a>
+          </nav>
+        </div>
+
+        <div class="sidebar-section">
+          <span class="sidebar-label">Operaciones</span>
+          <nav class="sidebar-nav" aria-label="Operaciones de entrega">
+            <a href="{% url 'vista_retiros' %}"><i class="fa-solid fa-store" aria-hidden="true"></i><span>Retiros</span></a>
+            <a href="{% url 'vista_despachos' %}"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i><span>Despachos</span></a>
+          </nav>
+        </div>
+
+        <div class="sidebar-footer">
+          <a href="{% url 'index' %}"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Ver tienda</a>
+          <form method="post" action="{% url 'cerrar_sesion' %}">
+            {% csrf_token %}
+            <button type="submit"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Cerrar sesión</button>
+          </form>
+        </div>
+      </div>
+    </aside>
+
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <div class="topbar-title">
+          <button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-controls="adminSidebar" aria-label="Abrir menú"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
+          <div><span>Administración</span><strong>Nuevo usuario</strong></div>
+        </div>
+
+        <div class="admin-profile">
+          <span class="profile-avatar">{{ user.username|first|upper }}</span>
+          <div><strong>{{ user.get_full_name|default:user.username }}</strong><span>Administrador</span></div>
+        </div>
+      </header>
+
+      <main
+        class="user-form-page"
+        id="contenido-agregar-usuario"
+        data-submit-url="{% url 'api_agregar_usuario' %}"
+        data-users-url="{% url 'vista_lista_usuarios' %}"
+      >
+        <section class="user-form-heading">
+          <div>
+            <span class="user-form-kicker"><i class="fa-solid fa-circle" aria-hidden="true"></i> Control de accesos</span>
+            <h1>Agregar usuario</h1>
+            <p>Crea una cuenta activa y asigna sus permisos dentro de la plataforma SFI.</p>
+          </div>
+          <a class="back-users-link" href="{% url 'vista_lista_usuarios' %}"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver a usuarios</a>
+        </section>
+
+        <form id="form-usuario" class="user-create-form" novalidate>
+          {% csrf_token %}
+          <div class="user-form-main">
+            <section class="user-admin-card">
+              <div class="user-card-heading">
+                <span class="user-section-icon"><i class="fa-regular fa-address-card" aria-hidden="true"></i></span>
+                <div><small>Información personal</small><h2>Datos del usuario</h2></div>
+              </div>
+
+              <div class="user-fields-grid">
+                <div class="user-field">
+                  <label for="first_name">Nombres <span>*</span></label>
+                  <div class="user-input-icon"><i class="fa-regular fa-user" aria-hidden="true"></i><input type="text" class="form-control" id="first_name" name="first_name" maxlength="150" autocomplete="given-name" placeholder="Ej. Alonso" required></div>
+                  <span class="user-field-error" data-error-for="first_name"></span>
+                </div>
+
+                <div class="user-field">
+                  <label for="last_name">Apellidos <span>*</span></label>
+                  <div class="user-input-icon"><i class="fa-regular fa-user" aria-hidden="true"></i><input type="text" class="form-control" id="last_name" name="last_name" maxlength="150" autocomplete="family-name" placeholder="Ej. Urrutia" required></div>
+                  <span class="user-field-error" data-error-for="last_name"></span>
+                </div>
+
+                <div class="user-field">
+                  <label for="rut">RUT <span>*</span></label>
+                  <div class="user-input-icon"><i class="fa-solid fa-id-card" aria-hidden="true"></i><input type="text" class="form-control" id="rut" name="rut" maxlength="12" autocomplete="off" placeholder="12345678-9" required></div>
+                  <small class="user-field-help">Sin puntos y con guion.</small>
+                  <span class="user-field-error" data-error-for="rut"></span>
+                </div>
+
+                <div class="user-field">
+                  <label for="telefono">Teléfono <span>*</span></label>
+                  <div class="user-input-icon"><i class="fa-solid fa-phone" aria-hidden="true"></i><input type="tel" class="form-control" id="telefono" name="telefono" maxlength="15" autocomplete="tel" placeholder="+56912345678" required></div>
+                  <small class="user-field-help">Entre 9 y 15 dígitos.</small>
+                  <span class="user-field-error" data-error-for="telefono"></span>
+                </div>
+              </div>
+            </section>
+
+            <section class="user-admin-card">
+              <div class="user-card-heading">
+                <span class="user-section-icon blue"><i class="fa-solid fa-at" aria-hidden="true"></i></span>
+                <div><small>Credenciales</small><h2>Datos de acceso</h2></div>
+              </div>
+
+              <div class="user-fields-grid">
+                <div class="user-field">
+                  <label for="username">Nombre de usuario <span>*</span></label>
+                  <div class="user-input-icon"><i class="fa-solid fa-user-tag" aria-hidden="true"></i><input type="text" class="form-control" id="username" name="username" maxlength="150" autocomplete="off" placeholder="Ej. alonso.urrutia" required></div>
+                  <small class="user-field-help">Será utilizado para iniciar sesión.</small>
+                  <span class="user-field-error" data-error-for="username"></span>
+                </div>
+
+                <div class="user-field">
+                  <label for="email">Correo electrónico <span>*</span></label>
+                  <div class="user-input-icon"><i class="fa-regular fa-envelope" aria-hidden="true"></i><input type="email" class="form-control" id="email" name="email" maxlength="254" autocomplete="email" placeholder="usuario@correo.cl" required></div>
+                  <small class="user-field-help">Debe ser único dentro de SFI.</small>
+                  <span class="user-field-error" data-error-for="email"></span>
+                </div>
+              </div>
+            </section>
+
+            <section class="user-admin-card">
+              <div class="user-card-heading">
+                <span class="user-section-icon green"><i class="fa-solid fa-key" aria-hidden="true"></i></span>
+                <div><small>Seguridad</small><h2>Contraseña inicial</h2></div>
+              </div>
+
+              <div class="user-fields-grid">
+                <div class="user-field">
+                  <label for="password">Contraseña <span>*</span></label>
+                  <div class="password-control"><input type="password" class="form-control" id="password" name="password" autocomplete="new-password" placeholder="Crea una contraseña segura" required><button type="button" data-password-toggle="password" aria-label="Mostrar contraseña"><i class="fa-regular fa-eye" aria-hidden="true"></i></button></div>
+                  <span class="user-field-error" data-error-for="password"></span>
+                </div>
+
+                <div class="user-field">
+                  <label for="password2">Confirmar contraseña <span>*</span></label>
+                  <div class="password-control"><input type="password" class="form-control" id="password2" name="password2" autocomplete="new-password" placeholder="Repite la contraseña" required><button type="button" data-password-toggle="password2" aria-label="Mostrar confirmación"><i class="fa-regular fa-eye" aria-hidden="true"></i></button></div>
+                  <span class="user-field-error" data-error-for="password2"></span>
+                </div>
+              </div>
+
+              <div class="password-requirements" aria-label="Requisitos de contraseña">
+                <span id="password-length"><i class="fa-solid fa-circle" aria-hidden="true"></i> Mínimo 8 caracteres</span>
+                <span id="password-nonnumeric"><i class="fa-solid fa-circle" aria-hidden="true"></i> No completamente numérica</span>
+                <span id="password-match"><i class="fa-solid fa-circle" aria-hidden="true"></i> Ambas contraseñas coinciden</span>
+              </div>
+            </section>
+          </div>
+
+          <aside class="user-form-side">
+            <section class="user-admin-card role-card">
+              <div class="user-card-heading">
+                <span class="user-section-icon yellow"><i class="fa-solid fa-user-shield" aria-hidden="true"></i></span>
+                <div><small>Permisos</small><h2>Rol del usuario</h2></div>
+              </div>
+
+              <div class="role-options">
+                <label class="role-option">
+                  <input type="radio" name="is_staff" value="false" checked>
+                  <span class="role-option-icon"><i class="fa-solid fa-user" aria-hidden="true"></i></span>
+                  <span><strong>Cliente</strong><small>Puede comprar, revisar sus pedidos y descargar sus boletas.</small></span>
+                  <i class="fa-solid fa-circle-check role-check" aria-hidden="true"></i>
+                </label>
+                <label class="role-option admin-role">
+                  <input type="radio" name="is_staff" value="true">
+                  <span class="role-option-icon"><i class="fa-solid fa-user-gear" aria-hidden="true"></i></span>
+                  <span><strong>Administrador</strong><small>Acceso al panel, usuarios, inventario, ventas y entregas.</small></span>
+                  <i class="fa-solid fa-circle-check role-check" aria-hidden="true"></i>
+                </label>
+              </div>
+
+              <div class="admin-role-warning" id="admin-role-warning" hidden><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span><strong>Permisos elevados</strong>Asigna este rol únicamente a personal autorizado.</span></div>
+            </section>
+
+            <section class="account-status-card">
+              <span><i class="fa-solid fa-circle-check" aria-hidden="true"></i></span>
+              <div><strong>Cuenta disponible de inmediato</strong><small>Las cuentas creadas por administración quedan activas y con el correo validado.</small></div>
+            </section>
+
+            <section class="user-guidance-card">
+              <strong><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Creación segura</strong>
+              <ul>
+                <li>Verifica que el RUT y correo pertenezcan a la persona.</li>
+                <li>Entrega la contraseña inicial por un canal seguro.</li>
+                <li>Otorga permisos administrativos solo cuando sea necesario.</li>
+              </ul>
+            </section>
+          </aside>
+
+          <div class="user-submit-bar">
+            <div><i class="fa-solid fa-lock" aria-hidden="true"></i><span><strong>Acción administrativa</strong><small>El usuario quedará registrado inmediatamente.</small></span></div>
+            <div class="user-submit-actions">
+              <a href="{% url 'vista_lista_usuarios' %}">Cancelar</a>
+              <button type="submit" id="submit-user"><i class="fa-solid fa-user-plus" aria-hidden="true"></i><span>Crear usuario</span></button>
+            </div>
+          </div>
+
+          <div class="user-general-error" id="user-general-error" role="alert" aria-live="assertive" hidden></div>
+        </form>
+      </main>
+    </div>
   </div>
 
-  <div class="container">
-    <h2>Agregar Nuevo Usuario</h2>
-    <form id="form-usuario" method="post">
-      {% csrf_token %}
-      <div class="row mb-3">
-        <div class="col">
-          <input type="text" class="form-control" name="rut" placeholder="RUT (ej: 12345678-9)" required>
-        </div>
-        <div class="col">
-          <input type="text" class="form-control" name="username" placeholder="Nombre de usuario" required>
-        </div>
-      </div>
-      <div class="row mb-3">
-        <div class="col">
-          <input type="text" class="form-control" name="first_name" placeholder="Nombres" required>
-        </div>
-        <div class="col">
-          <input type="text" class="form-control" name="last_name" placeholder="Apellidos" required>
-        </div>
-      </div>
-      <div class="mb-3">
-        <input type="email" class="form-control" name="email" placeholder="Correo electrónico" required>
-      </div>
-      <div class="mb-3">
-        <input type="text" class="form-control" name="telefono" placeholder="Teléfono (ej: +56912345678)" required>
-      </div>
-      <div class="row mb-3">
-        <div class="col">
-          <input type="password" class="form-control" name="password" placeholder="Contraseña" required>
-        </div>
-        <div class="col">
-          <input type="password" class="form-control" name="password2" placeholder="Repetir contraseña" required>
-        </div>
-      </div>
-      <div class="mb-4">
-        <label class="form-label">Rol del Usuario</label>
-        <select name="is_staff" class="form-select" required>
-          <option value="false" selected>Usuario Normal</option>
-          <option value="true">Administrador</option>
-        </select>
-      </div>
-      <div class="text-center">
-        <button type="submit" class="btn btn-guardar me-2">Guardar</button>
-        <a href="{% url 'vista_lista_usuarios' %}" class="btn btn-secondary">Cancelar</a>
-      </div>
-    </form>
-
-    <div id="mensaje" class="mt-4"></div>
+  <div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="user-form-toast" class="toast user-form-toast" role="status" aria-live="polite" aria-atomic="true">
+      <div class="toast-body"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>Usuario creado correctamente.</span></div>
+    </div>
   </div>
 
-</div>
-
-<script src="/static/js/security.js"></script>
-<script>
-  const { escapeHtml } = window.FerremasSecurity;
-  document.getElementById("form-usuario").addEventListener("submit", function (e) {
-    e.preventDefault();
-    const form = e.target;
-    const datos = Object.fromEntries(new FormData(form).entries());
-
-    datos.is_staff = datos.is_staff === "true";
-    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-
-    fetch('/api/usuarios/agregar/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': csrfToken
-      },
-      body: JSON.stringify(datos)
-    })
-    .then(res => res.json().then(data => ({status: res.status, body: data})))
-    .then(result => {
-      const mensaje = document.getElementById("mensaje");
-      if (result.status === 201) {
-        mensaje.innerHTML = `<div class="alert alert-success">Usuario creado exitosamente.</div>`;
-        form.reset();
-      } else {
-        mensaje.innerHTML = `<div class="alert alert-danger">Error: ${escapeHtml(JSON.stringify(result.body))}</div>`;
-      }
-    });
-  });
-</script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/agregar_usuario.js' %}"></script>
 </body>
 </html>

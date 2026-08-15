@@ -2,188 +2,311 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel de Administración - FERREMAS</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
-    <style>
-        body {
-            background: url('https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1920,fit=crop/Yle55W6QKWSoQbE4/herramientas-manuales-basicas-02-2022-07-AE0vvPgGKDiqlZEX.jpg') no-repeat center center fixed;
-            background-size: cover;
-            font-family: 'Arial', sans-serif;
-            color: #fff;
-        }
-
-        .hero {
-            background-color: #2E7D32;
-            padding: 20px;
-            text-align: center;
-            border-radius: 10px;
-            margin-top: 30px;
-        }
-
-        .hero h1 {
-            font-size: 2.5rem;
-            color: white;
-            margin: 0;
-        }
-
-        .panel-image {
-            display: block;
-            max-width: 180px;
-            margin: 30px auto 20px;
-            border-radius: 50%;
-        }
-
-        .card {
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            border-radius: 15px;
-            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
-            background-color: rgba(255, 255, 255, 0.8);
-        }
-
-        .card:hover {
-            transform: translateY(-10px);
-            box-shadow: 0 12px 25px rgba(0, 0, 0, 0.15);
-        }
-
-        .card-img-top {
-            height: 180px;
-            object-fit: contain;
-            padding: 1rem;
-            border-radius: 10px;
-        }
-
-        .card-body {
-            padding: 2rem;
-        }
-
-        .card-title {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #495057;
-        }
-
-        .card-text {
-            font-size: 1rem;
-            color: #6c757d;
-        }
-
-        .btn-success {
-            background-color: #006400;
-            border-color: #006400;
-            transition: background-color 0.3s ease;
-        }
-
-        .btn-success:hover {
-            background-color: #004d00;
-            border-color: #004d00;
-        }
-
-        .volver-btn {
-            display: block;
-            margin: 30px auto;
-            text-align: center;
-        }
-
-        .volver-btn .btn {
-            background-color: #006400;
-            border-color: #006400;
-        }
-
-        .volver-btn .btn:hover {
-            background-color: #004d00;
-            border-color: #004d00;
-        }
-
-        .row {
-            margin-top: 40px;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Panel administrativo | SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}">
 </head>
 <body>
-    <div class="container">
-        <!-- Título Panel -->
-        <div class="hero">
-            <h1>Panel de Administración</h1>
-        </div>
+  <a class="skip-link" href="#contenido-panel">Saltar al contenido</a>
 
-        <!-- Imagen decorativa -->
-        <img src="{% static 'img/logo.png' %}" alt="FERREMAS" class="panel-image rounded">
+  <div class="admin-shell">
+    <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
+      <div class="offcanvas-header sidebar-mobile-header">
+        <span id="adminSidebarLabel">Menú administrativo</span>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" data-bs-target="#adminSidebar" aria-label="Cerrar menú"></button>
+      </div>
 
-        <!-- Tarjetas de Secciones -->
-        <div class="row justify-content-center g-4">
-            <!-- Productos -->
-            <div class="col-md-4">
-                <div class="card text-center">
-                    <img src="https://i.pinimg.com/564x/ec/1e/05/ec1e050c503a1ad2441e88b0bdff9528.jpg" alt="Productos Ferretería" class="card-img-top">
-                    <div class="card-body">
-                        <h5 class="card-title">Administrar Productos</h5>
-                        <p class="card-text">Gestiona el catálogo de productos disponibles.</p>
-                        <a href="{% url 'lista_productos_crud' %}" class="btn btn-success">Ir</a>
-                    </div>
-                </div>
-            </div>
+      <div class="offcanvas-body sidebar-body">
+        <a class="sidebar-brand" href="{% url 'panel_administracion' %}" aria-label="Panel SFI">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
+        </a>
 
-            <!-- Usuarios -->
-            <div class="col-md-4">
-                <div class="card text-center">
-                    <img src="https://cdn-icons-png.flaticon.com/512/847/847969.png" alt="Usuarios" class="card-img-top">
-                    <div class="card-body">
-                        <h5 class="card-title">Administrar Usuarios</h5>
-                        <p class="card-text">Administra los usuarios registrados en el sistema.</p>
-                        <a href="{% url 'vista_lista_usuarios' %}" class="btn btn-success">Ir</a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Ventas -->
-            <div class="col-md-4">
-                <div class="card text-center">
-                    <img src="https://cdn-icons-png.flaticon.com/512/891/891419.png" alt="Ventas" class="card-img-top">
-                    <div class="card-body">
-                        <h5 class="card-title">Administrar Ventas</h5>
-                        <p class="card-text">Consulta y gestiona el historial de ventas totales en la tienda.</p>
-                        <a href="{% url 'historial_ventas' %}" class="btn btn-success">Ir</a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Retiros en tienda -->
-            <div class="col-md-4">
-                <div class="card text-center">
-                    <img src="https://chalada.cl/cdn/shop/t/96/assets/retiro-en-tienda.png?v=73769260809667671351745541558" alt="Retiros en tienda" class="card-img-top">
-                    <div class="card-body">
-                        <h5 class="card-title">Retiros en Tienda</h5>
-                        <p class="card-text">Gestiona y valida los retiros con verificación por RUT.</p>
-                        <a href="{% url 'vista_retiros' %}" class="btn btn-success">Ver Retiros</a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Despachos -->
-            <div class="col-md-4">
-                <div class="card text-center">
-                    <img src="https://cdn-icons-png.freepik.com/512/12719/12719879.png" alt="Despachos" class="card-img-top">
-                    <div class="card-body">
-                        <h5 class="card-title">Despachos</h5>
-                        <p class="card-text">Visualiza y gestiona los despachos a domicilio.</p>
-                        <a href="{% url 'vista_despachos' %}" class="btn btn-success">Ver Despachos</a>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Botón Volver -->
-        <div class="volver-btn">
-            <a href="{% url 'index' %}" class="btn btn-outline-light mt-4">
-                <i class="fas fa-arrow-left me-2"></i>Volver al Inicio
+        <div class="sidebar-section">
+          <span class="sidebar-label">Principal</span>
+          <nav class="sidebar-nav" aria-label="Secciones administrativas">
+            <a class="active" href="{% url 'panel_administracion' %}">
+              <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i>
+              <span>Resumen</span>
             </a>
+            <a href="{% url 'lista_productos_crud' %}">
+              <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i>
+              <span>Productos</span>
+              {% if resumen.stock_bajo or resumen.sin_stock %}<b>{{ resumen.stock_bajo|add:resumen.sin_stock }}</b>{% endif %}
+            </a>
+            <a href="{% url 'vista_lista_usuarios' %}">
+              <i class="fa-solid fa-users" aria-hidden="true"></i>
+              <span>Usuarios</span>
+            </a>
+            <a href="{% url 'historial_ventas' %}">
+              <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+              <span>Ventas</span>
+            </a>
+          </nav>
         </div>
-    </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js"></script>
+        <div class="sidebar-section">
+          <span class="sidebar-label">Operaciones</span>
+          <nav class="sidebar-nav" aria-label="Operaciones de entrega">
+            <a href="{% url 'vista_retiros' %}">
+              <i class="fa-solid fa-store" aria-hidden="true"></i>
+              <span>Retiros</span>
+              {% if resumen.retiros_pendientes %}<b>{{ resumen.retiros_pendientes }}</b>{% endif %}
+            </a>
+            <a href="{% url 'vista_despachos' %}">
+              <i class="fa-solid fa-truck-fast" aria-hidden="true"></i>
+              <span>Despachos</span>
+              {% if resumen.despachos_pendientes %}<b>{{ resumen.despachos_pendientes }}</b>{% endif %}
+            </a>
+          </nav>
+        </div>
+
+        <div class="sidebar-footer">
+          <a href="{% url 'index' %}">
+            <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+            Ver tienda
+          </a>
+          <form method="post" action="{% url 'cerrar_sesion' %}">
+            {% csrf_token %}
+            <button type="submit">
+              <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+              Cerrar sesión
+            </button>
+          </form>
+        </div>
+      </div>
+    </aside>
+
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <div class="topbar-title">
+          <button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-controls="adminSidebar" aria-label="Abrir menú">
+            <i class="fa-solid fa-bars" aria-hidden="true"></i>
+          </button>
+          <div>
+            <span>Panel administrativo</span>
+            <strong>Resumen general</strong>
+          </div>
+        </div>
+
+        <div class="admin-profile">
+          <span class="profile-avatar">{{ user.username|first|upper }}</span>
+          <div>
+            <strong>{{ user.get_full_name|default:user.username }}</strong>
+            <span>Administrador</span>
+          </div>
+        </div>
+      </header>
+
+      <main class="dashboard" id="contenido-panel">
+        <section class="dashboard-heading">
+          <div>
+            <span class="dashboard-kicker"><i class="fa-solid fa-circle" aria-hidden="true"></i> Sistema operativo</span>
+            <h1>Hola, {{ user.first_name|default:user.username }}</h1>
+            <p>Este es el estado actual de la tienda SFI.</p>
+          </div>
+          <div class="heading-actions">
+            <span class="last-update"><i class="fa-regular fa-clock" aria-hidden="true"></i> {% now "d/m/Y H:i" %}</span>
+            <a class="primary-action" href="{% url 'formulario_producto' %}">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i> Nuevo producto
+            </a>
+          </div>
+        </section>
+
+        <section class="metrics-grid" aria-label="Indicadores principales">
+          <article class="metric-card">
+            <div class="metric-card-top">
+              <span class="metric-icon blue"><i class="fa-solid fa-box" aria-hidden="true"></i></span>
+              <a href="{% url 'lista_productos_crud' %}" aria-label="Administrar productos"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            </div>
+            <span class="metric-label">Productos activos</span>
+            <strong>{{ resumen.productos_activos }}</strong>
+            <small>{{ resumen.productos_inactivos }} deshabilitados</small>
+          </article>
+
+          <article class="metric-card">
+            <div class="metric-card-top">
+              <span class="metric-icon yellow"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i></span>
+              <a href="{% url 'historial_ventas' %}" aria-label="Ver ventas"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            </div>
+            <span class="metric-label">Ventas pagadas</span>
+            <strong>{{ resumen.ventas_pagadas }}</strong>
+            <small>Compras confirmadas</small>
+          </article>
+
+          <article class="metric-card emphasis">
+            <div class="metric-card-top">
+              <span class="metric-icon light"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></span>
+              <span class="metric-status"><i class="fa-solid fa-circle" aria-hidden="true"></i> Confirmado</span>
+            </div>
+            <span class="metric-label">Ingresos registrados</span>
+            <strong>{{ resumen.ingresos_formateados }}</strong>
+            <small>Total de ventas pagadas</small>
+          </article>
+
+          <article class="metric-card">
+            <div class="metric-card-top">
+              <span class="metric-icon slate"><i class="fa-solid fa-user-group" aria-hidden="true"></i></span>
+              <a href="{% url 'vista_lista_usuarios' %}" aria-label="Administrar usuarios"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            </div>
+            <span class="metric-label">Clientes activos</span>
+            <strong>{{ resumen.clientes_activos }}</strong>
+            <small>Sin incluir administradores</small>
+          </article>
+        </section>
+
+        <div class="dashboard-layout">
+          <section class="dashboard-card operations-card">
+            <div class="card-heading">
+              <div>
+                <span>Gestión diaria</span>
+                <h2>Áreas administrativas</h2>
+              </div>
+              <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+            </div>
+
+            <div class="operation-list">
+              <a href="{% url 'lista_productos_crud' %}">
+                <span class="operation-icon blue"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i></span>
+                <div><strong>Catálogo de productos</strong><small>Precios, stock, imágenes y disponibilidad</small></div>
+                <span class="operation-meta">{{ resumen.productos_activos }} activos</span>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </a>
+              <a href="{% url 'vista_lista_usuarios' %}">
+                <span class="operation-icon slate"><i class="fa-solid fa-users-gear" aria-hidden="true"></i></span>
+                <div><strong>Gestión de usuarios</strong><small>Cuentas, permisos y estados de acceso</small></div>
+                <span class="operation-meta">{{ resumen.clientes_activos }} clientes</span>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </a>
+              <a href="{% url 'historial_ventas' %}">
+                <span class="operation-icon yellow"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i></span>
+                <div><strong>Historial de ventas</strong><small>Pagos confirmados y comprobantes</small></div>
+                <span class="operation-meta">{{ resumen.ventas_pagadas }} ventas</span>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </a>
+              <a href="{% url 'vista_retiros' %}">
+                <span class="operation-icon green"><i class="fa-solid fa-store" aria-hidden="true"></i></span>
+                <div><strong>Retiros en tienda</strong><small>Validación y entrega de pedidos</small></div>
+                <span class="operation-meta attention">{{ resumen.retiros_pendientes }} pendientes</span>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </a>
+              <a href="{% url 'vista_despachos' %}">
+                <span class="operation-icon purple"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i></span>
+                <div><strong>Despachos</strong><small>Seguimiento de entregas a domicilio</small></div>
+                <span class="operation-meta attention">{{ resumen.despachos_pendientes }} pendientes</span>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </a>
+            </div>
+          </section>
+
+          <aside class="dashboard-side">
+            <section class="dashboard-card attention-card">
+              <div class="card-heading compact">
+                <div>
+                  <span>Requiere atención</span>
+                  <h2>Alertas</h2>
+                </div>
+                <span class="alert-total">{{ resumen.stock_bajo|add:resumen.sin_stock|add:resumen.retiros_pendientes|add:resumen.despachos_pendientes }}</span>
+              </div>
+              <div class="alert-list">
+                <a href="{% url 'lista_productos_crud' %}">
+                  <span class="alert-dot danger"></span>
+                  <div><strong>Productos sin stock</strong><small>Revisar disponibilidad</small></div>
+                  <b>{{ resumen.sin_stock }}</b>
+                </a>
+                <a href="{% url 'lista_productos_crud' %}">
+                  <span class="alert-dot warning"></span>
+                  <div><strong>Stock bajo</strong><small>5 unidades o menos</small></div>
+                  <b>{{ resumen.stock_bajo }}</b>
+                </a>
+                <a href="{% url 'vista_retiros' %}">
+                  <span class="alert-dot info"></span>
+                  <div><strong>Retiros pendientes</strong><small>Pedidos por entregar</small></div>
+                  <b>{{ resumen.retiros_pendientes }}</b>
+                </a>
+                <a href="{% url 'vista_despachos' %}">
+                  <span class="alert-dot purple"></span>
+                  <div><strong>Despachos pendientes</strong><small>Entregas por completar</small></div>
+                  <b>{{ resumen.despachos_pendientes }}</b>
+                </a>
+              </div>
+            </section>
+
+            <section class="dashboard-card quick-card">
+              <span>Accesos rápidos</span>
+              <div>
+                <a href="{% url 'formulario_producto' %}"><i class="fa-solid fa-plus" aria-hidden="true"></i> Agregar producto</a>
+                <a href="{% url 'lista_productos' %}"><i class="fa-solid fa-eye" aria-hidden="true"></i> Ver catálogo</a>
+                <a href="{% url 'vista_ofertas' %}"><i class="fa-solid fa-tags" aria-hidden="true"></i> Revisar ofertas</a>
+              </div>
+            </section>
+          </aside>
+        </div>
+
+        <section class="dashboard-card recent-sales">
+          <div class="card-heading">
+            <div>
+              <span>Actividad reciente</span>
+              <h2>Últimas ventas</h2>
+            </div>
+            <a class="text-action" href="{% url 'historial_ventas' %}">Ver historial <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </div>
+
+          {% if ventas_recientes %}
+            <div class="table-responsive">
+              <table class="sales-table">
+                <thead>
+                  <tr>
+                    <th>Venta</th>
+                    <th>Cliente</th>
+                    <th>Fecha</th>
+                    <th>Entrega</th>
+                    <th>Estado</th>
+                    <th class="text-end">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for venta in ventas_recientes %}
+                    <tr>
+                      <td><strong>#{{ venta.id }}</strong></td>
+                      <td>
+                        <div class="customer-cell">
+                          <span>{{ venta.id_usuario.username|first|upper }}</span>
+                          <div>
+                            <strong>{{ venta.id_usuario.get_full_name|default:venta.id_usuario.username }}</strong>
+                            <small>{{ venta.id_usuario.email }}</small>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{{ venta.fecha_compra|date:"d/m/Y H:i" }}</td>
+                      <td>{{ venta.get_tipo_entrega_display }}</td>
+                      <td>
+                        <span class="delivery-status {% if venta.estado_entrega == 'completado' %}completed{% else %}pending{% endif %}">
+                          <i class="fa-solid fa-circle" aria-hidden="true"></i> {{ venta.get_estado_entrega_display }}
+                        </span>
+                      </td>
+                      <td class="sale-total">${{ venta.total_venta }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty-sales">
+              <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+              <div><strong>Aún no hay ventas pagadas</strong><span>Las compras confirmadas aparecerán aquí.</span></div>
+            </div>
+          {% endif %}
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

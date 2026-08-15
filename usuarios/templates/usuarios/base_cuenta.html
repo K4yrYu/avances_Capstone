@@ -1,0 +1,43 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{% block description %}Gestiona tu cuenta SFI de forma segura.{% endblock %}">
+  <title>{% block title %}Cuenta{% endblock %} | SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/lista_productos.css' %}">
+  <link rel="stylesheet" href="{% static 'css/cuentas.css' %}">
+  <link rel="stylesheet" href="{% static 'css/footer_sfi.css' %}">
+  {% block extra_css %}{% endblock %}
+</head>
+<body class="account-flow-body">
+  <a class="skip-link" href="#contenido-cuenta">Saltar al contenido</a>
+  <div class="announcement-bar">
+    <div class="container announcement-content">
+      <span><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Tu cuenta protegida en SFI</span>
+      <span class="announcement-secondary"><i class="fa-solid fa-lock" aria-hidden="true"></i> Datos transmitidos de forma segura</span>
+    </div>
+  </div>
+  <header class="account-header">
+    <div class="container account-header-content">
+      <a class="account-logo" href="{% url 'index' %}" aria-label="SFI, ir al inicio"><img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente"></a>
+      <nav aria-label="Navegación de cuenta">
+        <a href="{% url 'index' %}"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver a la tienda</a>
+        {% block header_action %}<a class="account-header-action" href="{% url 'iniciosesion' %}">Iniciar sesión</a>{% endblock %}
+      </nav>
+    </div>
+  </header>
+  <main id="contenido-cuenta" class="account-flow-main">
+    <div class="account-grid-pattern" aria-hidden="true"></div>
+    <div class="container account-flow-container">{% block content %}{% endblock %}</div>
+  </main>
+  {% include 'includes/footer_sfi.html' %}
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

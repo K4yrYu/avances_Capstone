@@ -40,7 +40,7 @@ class VentaSerializer(serializers.ModelSerializer):
         ]
 
     def get_detalles(self, obj):
-        detalles = Detalle.objects.filter(id_venta=obj)
+        detalles = obj.detalles.all()
         return DetalleSerializer(detalles, many=True).data
 
 

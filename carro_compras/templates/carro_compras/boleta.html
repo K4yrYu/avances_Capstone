@@ -3,201 +3,186 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Boleta FERREMAS</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-    }
-
-    .fondo {
-      background: url('https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1920,fit=crop/Yle55W6QKWSoQbE4/herramientas-manuales-basicas-02-2022-07-AE0vvPgGKDiqlZEX.jpg') no-repeat center center fixed;
-      background-size: cover;
-      min-height: 100vh;
-      padding: 40px 15px;
-    }
-
-    .logo-container {
-      text-align: center;
-      margin-bottom: 20px;
-    }
-
-    .logo-container img {
-      height: 80px;
-      background-color: white;
-      padding: 10px;
-      border-radius: 15px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-    }
-
-    .boleta-container {
-      background: rgba(255, 255, 255, 0.97);
-      padding: 40px;
-      border-radius: 10px;
-      max-width: 800px;
-      margin: auto;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-      color: black;
-    }
-
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 2px solid #ddd;
-      padding-bottom: 10px;
-      margin-bottom: 30px;
-    }
-
-    .empresa-info {
-      text-align: right;
-      font-size: 14px;
-    }
-
-    .datos-cliente {
-      margin-bottom: 30px;
-      font-size: 15px;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 20px;
-      font-size: 14px;
-    }
-
-    th, td {
-      padding: 10px;
-      border: 1px solid #ccc;
-    }
-
-    th {
-      background-color: #f0f0f0;
-      text-align: left;
-    }
-
-    .total {
-      text-align: right;
-      font-size: 18px;
-      font-weight: bold;
-    }
-
-    .print-btn {
-      text-align: center;
-      margin-top: 20px;
-    }
-
-    .print-btn button {
-      background: linear-gradient(to bottom, #2E7D32, #81C784);
-      color: white;
-      padding: 10px 30px;
-      font-size: 16px;
-      border: none;
-      border-radius: 50px;
-      cursor: pointer;
-      font-weight: bold;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-      transition: transform 0.3s;
-      margin-bottom: 10px;
-    }
-
-    .print-btn button:hover {
-      background: linear-gradient(to bottom, #45a049, #66bb6a);
-      transform: scale(1.05);
-    }
-
-    .btn-volver {
-      background: linear-gradient(to bottom, #455A64, #90A4AE);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      padding: 10px 30px;
-      font-size: 16px;
-      font-weight: bold;
-      text-decoration: none;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-      display: inline-block;
-      transition: background-color 0.3s, transform 0.3s;
-    }
-
-    .btn-volver:hover {
-      background: linear-gradient(to bottom, #607D8B, #B0BEC5);
-      transform: scale(1.05);
-    }
-
-    @media print {
-      .print-btn {
-        display: none;
-      }
-    }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Comprobante de compra SFI número {{ venta.id }}.">
+  <title>Comprobante #{{ venta.id }} | SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/lista_productos.css' %}">
+  <link rel="stylesheet" href="{% static 'css/boleta.css' %}">
+  <link rel="stylesheet" href="{% static 'css/footer_sfi.css' %}">
 </head>
-<body>
-<div class="fondo">
+<body class="receipt-body">
+  <a class="skip-link no-print" href="#comprobante">Saltar al comprobante</a>
 
-  <!-- Logo flotante -->
-  <div class="logo-container">
-    <img src="{% static 'img/logo.png' %}" alt="FERREMAS">
+  <div class="announcement-bar no-print">
+    <div class="container announcement-content">
+      <span><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Compra protegida con Webpay</span>
+      <span class="announcement-secondary"><i class="fa-solid fa-file-invoice" aria-hidden="true"></i> Comprobante de compra SFI</span>
+    </div>
   </div>
 
-  <div class="boleta-container">
-    <div class="header">
-      <div>
-        <strong>FERREMAS</strong><br>
-        RUT: 76.123.456-7<br>
-        Av. Principal 123, Santiago<br>
-        contacto@ferremas.cl<br>
-        +56 9 1234 5678
+  <header class="site-header no-print">
+    <nav class="navbar navbar-expand-xl" aria-label="Navegación principal">
+      <div class="container">
+        <a class="navbar-brand" href="{% url 'index' %}" aria-label="SFI, ir al inicio">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente" class="nav-logo">
+        </a>
+
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menuPrincipal" aria-controls="menuPrincipal" aria-expanded="false" aria-label="Abrir menú">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="menuPrincipal">
+          <ul class="navbar-nav mx-auto align-items-xl-center">
+            <li class="nav-item"><a class="nav-link" href="{% url 'index' %}">Inicio</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'lista_productos' %}">Productos</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Nosotros</a></li>
+            {% if user.is_staff %}<li class="nav-item"><a class="nav-link" href="{% url 'panel_administracion' %}">Administración</a></li>{% endif %}
+          </ul>
+
+          <div class="nav-actions">
+            <div class="user-greeting"><span>Hola,</span><strong>{{ user.first_name|default:user.username }}</strong></div>
+            <a class="icon-action" href="{% url 'vista_carrito' %}" aria-label="Ver carrito" title="Carrito"><i class="fa-solid fa-cart-shopping" aria-hidden="true"></i></a>
+            <a class="icon-action" href="{% url 'mi_historial_compras' %}" aria-label="Ver mis compras" title="Mis compras"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i></a>
+            <form method="post" action="{% url 'cerrar_sesion' %}">
+              {% csrf_token %}
+              <button class="btn btn-outline-sfi btn-sm" type="submit">Salir</button>
+            </form>
+          </div>
+        </div>
       </div>
-      <div class="empresa-info">
-        <strong>Boleta Nº:</strong> {{ venta.id }}<br>
-        <strong>Fecha:</strong> {{ venta.fecha_compra|date:"d/m/Y H:i" }}<br>
-        <strong>Cliente:</strong><br>
-        {{ venta.id_usuario.first_name }} {{ venta.id_usuario.last_name }}<br>
-        ({{ venta.id_usuario.rut }})<br>
-        <strong>Método de Pago:</strong> WebPay<br>
-        <strong>Tarjeta:</strong>
-        {% if venta.ultimos_digitos %}
-        **** **** **** {{ venta.ultimos_digitos }}
+    </nav>
+  </header>
+
+  <main id="comprobante" class="receipt-page">
+    <div class="container receipt-page-container">
+      <div class="receipt-toolbar no-print">
+        {% if volver_a_mis_compras %}
+          <a href="{% url 'mi_historial_compras' %}"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver a mis compras</a>
         {% else %}
-        No disponible
+          <a href="{% url 'historial_ventas' %}"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver al historial de ventas</a>
         {% endif %}
+        <button type="button" id="print-receipt"><i class="fa-solid fa-print" aria-hidden="true"></i> Imprimir o guardar PDF</button>
       </div>
-    </div>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Producto</th>
-          <th>Cantidad</th>
-          <th>Precio Unitario</th>
-          <th>Subtotal</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for d in detalles %}
-        <tr>
-          <td>{{ d.nombre_producto }}</td>
-          <td>{{ d.cantidad_producto }}</td>
-          <td>${{ d.precio_unitario }}</td>
-          <td>${{ d.subtotal_venta }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+      <article class="receipt-sheet" aria-labelledby="receipt-title">
+        <div class="receipt-accent" aria-hidden="true"></div>
 
-    <div class="total">
-      Total: ${{ venta.total_venta }}
-    </div>
+        <header class="receipt-header">
+          <div class="receipt-brand">
+            <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
+            <p>Sistema Ferretero Inteligente</p>
+          </div>
+          <div class="receipt-title-block">
+            <span class="paid-badge"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Pago confirmado</span>
+            <h1 id="receipt-title">Comprobante de compra</h1>
+            <p>N.º <strong>{{ venta.id|stringformat:"06d" }}</strong></p>
+          </div>
+        </header>
 
-    <div class="print-btn">
-      <button onclick="window.print()">Imprimir / Guardar como PDF</button>
-    </div>
+        <section class="receipt-reference" aria-label="Referencia del comprobante">
+          <div>
+            <small>Fecha de compra</small>
+            <strong>{{ venta.fecha_compra|date:"d/m/Y" }}</strong>
+            <span>{{ venta.fecha_compra|time:"H:i" }} hrs.</span>
+          </div>
+          <div>
+            <small>Estado del pago</small>
+            <strong class="text-success"><i class="fa-solid fa-check" aria-hidden="true"></i> Aprobado</strong>
+            <span>Webpay</span>
+          </div>
+          <div>
+            <small>Estado de entrega</small>
+            <strong class="delivery-value {{ venta.estado_entrega }}">
+              {% if venta.estado_entrega == 'completado' %}Completada{% else %}Por entregar{% endif %}
+            </strong>
+            <span>{% if venta.tipo_entrega == 'despacho' %}Despacho a domicilio{% else %}Retiro en tienda{% endif %}</span>
+          </div>
+        </section>
 
-    <div class="print-btn">
-      <a href="{% url 'historial_ventas' %}" class="btn-volver">Volver a Historial</a>
+        <section class="receipt-information-grid">
+          <div class="receipt-info-card">
+            <div class="receipt-section-title"><span><i class="fa-regular fa-user" aria-hidden="true"></i></span><h2>Datos del cliente</h2></div>
+            <dl>
+              <div><dt>Nombre</dt><dd>{{ venta.id_usuario.get_full_name|default:venta.id_usuario.username }}</dd></div>
+              <div><dt>RUT</dt><dd>{{ venta.id_usuario.rut }}</dd></div>
+              <div><dt>Correo</dt><dd>{{ venta.id_usuario.email }}</dd></div>
+            </dl>
+          </div>
+
+          <div class="receipt-info-card">
+            <div class="receipt-section-title"><span><i class="fa-solid fa-credit-card" aria-hidden="true"></i></span><h2>Pago y entrega</h2></div>
+            <dl>
+              <div><dt>Método de pago</dt><dd>Webpay</dd></div>
+              <div><dt>Tarjeta</dt><dd>{% if venta.ultimos_digitos %}•••• {{ venta.ultimos_digitos }}{% else %}Información protegida{% endif %}</dd></div>
+              <div>
+                <dt>{% if venta.tipo_entrega == 'despacho' %}Dirección{% else %}Entrega{% endif %}</dt>
+                <dd>{% if venta.tipo_entrega == 'despacho' %}{{ venta.direccion_despacho|default:"Dirección no registrada" }}{% else %}Retiro coordinado en tienda{% endif %}</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+
+        <section class="receipt-products" aria-labelledby="products-title">
+          <div class="receipt-products-heading">
+            <div><span>Detalle de la compra</span><h2 id="products-title">Productos</h2></div>
+            <strong>{{ cantidad_total }} unidad{{ cantidad_total|pluralize:"es" }}</strong>
+          </div>
+
+          <div class="receipt-table-wrap">
+            <table class="receipt-table">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th class="text-center">Cantidad</th>
+                  <th class="text-end">Precio unitario</th>
+                  <th class="text-end">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for detalle in detalles %}
+                  <tr>
+                    <td data-label="Producto">
+                      <strong>{{ detalle.nombre_producto }}</strong>
+                      <small>Código SFI {{ detalle.producto_id|stringformat:"04d" }}</small>
+                    </td>
+                    <td class="text-center" data-label="Cantidad">{{ detalle.cantidad_producto }}</td>
+                    <td class="text-end money-value" data-label="Precio unitario" data-clp="{{ detalle.precio_unitario }}">${{ detalle.precio_unitario }}</td>
+                    <td class="text-end money-value" data-label="Subtotal" data-clp="{{ detalle.subtotal_venta }}">${{ detalle.subtotal_venta }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="receipt-total-section">
+          <div class="receipt-note">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            <p><strong>Comprobante generado por SFI</strong>Conserva este documento como respaldo de tu compra.</p>
+          </div>
+          <div class="receipt-total">
+            <span>Total pagado</span>
+            <strong class="money-value" data-clp="{{ venta.total_venta }}">${{ venta.total_venta }}</strong>
+            <small>Pago realizado en CLP</small>
+          </div>
+        </section>
+
+        <footer class="receipt-document-footer">
+          <span><i class="fa-solid fa-lock" aria-hidden="true"></i> Transacción procesada de forma segura con Webpay</span>
+          <span>Compra #{{ venta.id }} · SFI</span>
+        </footer>
+      </article>
     </div>
-  </div>
-</div>
+  </main>
+
+  <div class="no-print">{% include 'includes/footer_sfi.html' %}</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/boleta.js' %}"></script>
 </body>
 </html>

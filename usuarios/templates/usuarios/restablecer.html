@@ -1,49 +1,36 @@
+{% extends 'usuarios/base_cuenta.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <title>Restablecer Contraseña</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="bg-light">
-  <div class="container mt-5">
-    <div class="row justify-content-center">
-      <div class="col-md-6">
-        <div class="card p-4 shadow">
-          <h4 class="mb-3 text-center">Crea una nueva contraseña</h4>
-
-          {% if form.errors %}
-            <div class="alert alert-danger">
-              <ul class="mb-0">
-                {% for field in form %}
-                  {% for error in field.errors %}
-                    <li><strong>{{ field.label }}:</strong> {{ error }}</li>
-                  {% endfor %}
-                {% endfor %}
-                {% for error in form.non_field_errors %}
-                  <li>{{ error }}</li>
-                {% endfor %}
-              </ul>
-            </div>
-          {% endif %}
-
-          <form method="post">
-            {% csrf_token %}
-            <div class="mb-3">
-              {{ form.new_password1.label_tag }}
-              {{ form.new_password1 }}
-            </div>
-            <div class="mb-3">
-              {{ form.new_password2.label_tag }}
-              {{ form.new_password2 }}
-            </div>
-            <button type="submit" class="btn btn-success w-100">Guardar contraseña</button>
-          </form>
-
+{% block title %}Nueva contraseña{% endblock %}
+{% block content %}
+  <section class="account-state-card reset-card" id="reset-password-card">
+    {% if validlink %}
+      <span class="account-state-icon"><i class="fa-solid fa-lock" aria-hidden="true"></i></span>
+      <span class="account-state-kicker">Último paso</span>
+      <h1>Crea una nueva contraseña</h1>
+      <p>Elige una clave que no hayas utilizado antes y que sea difícil de adivinar.</p>
+      {% if form.non_field_errors %}<div class="account-alert danger">{% for error in form.non_field_errors %}{{ error }}{% endfor %}</div>{% endif %}
+      <form method="post" class="recovery-form" id="reset-password-form">
+        {% csrf_token %}
+        <div class="account-field">
+          <label for="{{ form.new_password1.id_for_label }}">Nueva contraseña</label>
+          <div class="account-input password-control"><i class="fa-solid fa-key" aria-hidden="true"></i>{{ form.new_password1 }}<button type="button" data-password-toggle="{{ form.new_password1.id_for_label }}" aria-label="Mostrar contraseña"><i class="fa-regular fa-eye" aria-hidden="true"></i></button></div>
+          {% for error in form.new_password1.errors %}<span>{{ error }}</span>{% endfor %}
         </div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
+        <div class="account-field">
+          <label for="{{ form.new_password2.id_for_label }}">Confirmar nueva contraseña</label>
+          <div class="account-input password-control"><i class="fa-solid fa-key" aria-hidden="true"></i>{{ form.new_password2 }}<button type="button" data-password-toggle="{{ form.new_password2.id_for_label }}" aria-label="Mostrar confirmación"><i class="fa-regular fa-eye" aria-hidden="true"></i></button></div>
+          {% for error in form.new_password2.errors %}<span>{{ error }}</span>{% endfor %}
+        </div>
+        <div class="account-password-rules"><span id="reset-rule-length"><i class="fa-solid fa-circle"></i> 8 caracteres o más</span><span id="reset-rule-nonnumeric"><i class="fa-solid fa-circle"></i> No solo números</span><span id="reset-rule-match"><i class="fa-solid fa-circle"></i> Contraseñas coinciden</span></div>
+        <button class="account-submit" type="submit"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>Guardar nueva contraseña</span></button>
+      </form>
+    {% else %}
+      <span class="account-state-icon danger"><i class="fa-solid fa-link-slash" aria-hidden="true"></i></span>
+      <span class="account-state-kicker danger-text">Enlace no disponible</span>
+      <h1>Este enlace ya no es válido</h1>
+      <p>Puede haber expirado o haber sido utilizado anteriormente. Solicita uno nuevo para continuar.</p>
+      <a class="account-primary-link" href="{% url 'password_reset' %}">Solicitar otro enlace</a>
+    {% endif %}
+  </section>
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/restablecer_password.js' %}"></script>{% endblock %}

@@ -2,264 +2,287 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <title>Usuarios - FERREMAS</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Gestión de usuarios | SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
- body {
-      background: url('https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1920,fit=crop/Yle55W6QKWSoQbE4/herramientas-manuales-basicas-02-2022-07-AE0vvPgGKDiqlZEX.jpg') no-repeat center center fixed;
-      background-size: cover;
-      font-family: 'Arial', sans-serif;
-      margin: 0;
-      color: black;
-    }
-
-    .container {
-      background-color: #388E3C;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-      padding: 30px;
-      margin-top: 50px;
-      color: black;
-    }
-
-    .usuarios-card {
-      background-color: rgba(255, 255, 255, 0.95);
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 30px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-
-    .btn-volver {
-      background: linear-gradient(to bottom, #2E7D32, #81C784);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      padding: 10px 30px;
-      font-size: 1.1rem;
-      font-weight: bold;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-      transition: background-color 0.3s, transform 0.3s;
-    }
-
-    .btn-volver:hover {
-      background: linear-gradient(to bottom, #45a049, #66bb6a);
-      transform: scale(1.05);
-    }
-
-    .table th, .table td {
-      vertical-align: middle;
-      color: black;
-    }
-
-    .table tbody tr {
-      background-color: rgba(255, 255, 255, 0.9);
-    }
-
-    .filtros input,
-    .filtros select {
-      max-width: 250px;
-      margin-right: 10px;
-    }
-
-    .alert,
-    .usuarios-card .alert {
-      margin-top: 20px;
-    }
-  </style>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}">
+  <link rel="stylesheet" href="{% static 'css/gestion_usuarios.css' %}">
 </head>
 <body>
+  <a class="skip-link" href="#contenido-usuarios">Saltar al contenido</a>
 
-<div class="container">
-  <h2 class="mb-4 text-center">Panel de Usuarios</h2>
-
-  <!-- Botón Volver -->
-  <div class="text-center mb-4">
-    <a href="{% url 'panel_administracion' %}" class="btn btn-volver">
-      <i class="fas fa-arrow-left me-2"></i> Volver al Panel de Administración
-    </a>
-  </div>
-
-  {% if messages %}
-    {% for message in messages %}
-      <div class="alert alert-warning alert-dismissible fade show" role="alert">
-        {{ message }}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+  <div class="admin-shell">
+    <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
+      <div class="offcanvas-header sidebar-mobile-header">
+        <span id="adminSidebarLabel">Menú administrativo</span>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" data-bs-target="#adminSidebar" aria-label="Cerrar menú"></button>
       </div>
-    {% endfor %}
-  {% endif %}
 
-  <div id="alerta-error" class="alert alert-danger d-none" role="alert"></div>
+      <div class="offcanvas-body sidebar-body">
+        <a class="sidebar-brand" href="{% url 'panel_administracion' %}" aria-label="Panel SFI">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
+        </a>
 
-  <div class="usuarios-card">
-    <div class="d-flex justify-content-between flex-wrap align-items-center mb-3">
-      <div class="d-flex flex-wrap filtros mb-2">
-        <input type="text" id="filtro-nombre" class="form-control mb-2" placeholder="Buscar por nombre">
-        <input type="text" id="filtro-rut" class="form-control mb-2" placeholder="Buscar por RUT">
-        <select id="filtro-rol" class="form-select mb-2">
-          <option value="">Todos</option>
-          <option value="admin">Administradores</option>
-          <option value="usuario">Usuarios</option>
-        </select>
+        <div class="sidebar-section">
+          <span class="sidebar-label">Principal</span>
+          <nav class="sidebar-nav" aria-label="Secciones administrativas">
+            <a href="{% url 'panel_administracion' %}">
+              <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i>
+              <span>Resumen</span>
+            </a>
+            <a href="{% url 'lista_productos_crud' %}">
+              <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i>
+              <span>Productos</span>
+            </a>
+            <a class="active" href="{% url 'vista_lista_usuarios' %}">
+              <i class="fa-solid fa-users" aria-hidden="true"></i>
+              <span>Usuarios</span>
+            </a>
+            <a href="{% url 'historial_ventas' %}">
+              <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+              <span>Ventas</span>
+            </a>
+          </nav>
+        </div>
+
+        <div class="sidebar-section">
+          <span class="sidebar-label">Operaciones</span>
+          <nav class="sidebar-nav" aria-label="Operaciones de entrega">
+            <a href="{% url 'vista_retiros' %}">
+              <i class="fa-solid fa-store" aria-hidden="true"></i>
+              <span>Retiros</span>
+            </a>
+            <a href="{% url 'vista_despachos' %}">
+              <i class="fa-solid fa-truck-fast" aria-hidden="true"></i>
+              <span>Despachos</span>
+            </a>
+          </nav>
+        </div>
+
+        <div class="sidebar-footer">
+          <a href="{% url 'index' %}">
+            <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+            Ver tienda
+          </a>
+          <form method="post" action="{% url 'cerrar_sesion' %}">
+            {% csrf_token %}
+            <button type="submit">
+              <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+              Cerrar sesión
+            </button>
+          </form>
+        </div>
       </div>
-      <a href="{% url 'vista_agregar_usuario' %}" class="btn btn-success mb-2">Agregar Usuario</a>
+    </aside>
+
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <div class="topbar-title">
+          <button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-controls="adminSidebar" aria-label="Abrir menú">
+            <i class="fa-solid fa-bars" aria-hidden="true"></i>
+          </button>
+          <div>
+            <span>Administración</span>
+            <strong>Gestión de usuarios</strong>
+          </div>
+        </div>
+
+        <div class="admin-profile">
+          <span class="profile-avatar">{{ user.username|first|upper }}</span>
+          <div>
+            <strong>{{ user.get_full_name|default:user.username }}</strong>
+            <span>Administrador</span>
+          </div>
+        </div>
+      </header>
+
+      <main
+        class="user-management"
+        id="contenido-usuarios"
+        data-api-url="{% url 'api_lista_usuarios' %}"
+        data-toggle-url="{% url 'api_toggle_activo_usuario' 0 %}"
+        data-edit-url="{% url 'vista_editar_usuario' 0 %}"
+        data-current-user-id="{{ request.user.id }}"
+      >
+        <section class="user-heading">
+          <div>
+            <span class="user-kicker"><i class="fa-solid fa-circle" aria-hidden="true"></i> Control de accesos</span>
+            <h1>Gestión de usuarios</h1>
+            <p>Administra cuentas, roles, verificación de correo y estados de acceso.</p>
+          </div>
+          <a class="primary-action" href="{% url 'vista_agregar_usuario' %}">
+            <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Agregar usuario
+          </a>
+        </section>
+
+        {% if messages %}
+          <div class="django-messages">
+            {% for message in messages %}
+              <div class="admin-message" role="status">
+                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                <span>{{ message }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <section class="user-metrics" aria-label="Resumen de usuarios">
+          <article>
+            <span class="user-metric-icon blue"><i class="fa-solid fa-users" aria-hidden="true"></i></span>
+            <div><small>Total de cuentas</small><strong id="metrica-usuarios-total">—</strong></div>
+          </article>
+          <article>
+            <span class="user-metric-icon green"><i class="fa-solid fa-user-check" aria-hidden="true"></i></span>
+            <div><small>Cuentas activas</small><strong id="metrica-usuarios-activos">—</strong></div>
+          </article>
+          <article>
+            <span class="user-metric-icon danger"><i class="fa-solid fa-user-lock" aria-hidden="true"></i></span>
+            <div><small>Cuentas suspendidas</small><strong id="metrica-usuarios-suspendidos">—</strong></div>
+          </article>
+          <article>
+            <span class="user-metric-icon warning"><i class="fa-solid fa-envelope-circle-check" aria-hidden="true"></i></span>
+            <div><small>Esperando verificación</small><strong id="metrica-usuarios-pendientes">—</strong></div>
+          </article>
+        </section>
+
+        <section class="users-card">
+          <div class="users-card-heading">
+            <div>
+              <span>Directorio de cuentas</span>
+              <h2>Usuarios registrados</h2>
+            </div>
+            <strong id="contador-usuarios" aria-live="polite">Cargando…</strong>
+          </div>
+
+          <div class="users-filters">
+            <label class="user-filter search-user-filter" for="buscar-usuario">
+              <span>Buscar usuario</span>
+              <span class="user-filter-control">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input type="search" id="buscar-usuario" class="form-control" placeholder="Nombre, usuario, correo o RUT" autocomplete="off">
+              </span>
+            </label>
+
+            <label class="user-filter" for="filtro-rol-usuario">
+              <span>Rol</span>
+              <select class="form-select" id="filtro-rol-usuario">
+                <option value="">Todos los roles</option>
+                <option value="admin">Administradores</option>
+                <option value="cliente">Clientes</option>
+              </select>
+            </label>
+
+            <label class="user-filter" for="filtro-estado-usuario">
+              <span>Estado</span>
+              <select class="form-select" id="filtro-estado-usuario">
+                <option value="">Todos los estados</option>
+                <option value="activo">Activos</option>
+                <option value="suspendido">Suspendidos</option>
+                <option value="pendiente">Pendientes</option>
+              </select>
+            </label>
+
+            <label class="user-filter" for="filtro-verificacion-usuario">
+              <span>Correo</span>
+              <select class="form-select" id="filtro-verificacion-usuario">
+                <option value="">Cualquier estado</option>
+                <option value="verificado">Verificado</option>
+                <option value="sin-verificar">Sin verificar</option>
+              </select>
+            </label>
+
+            <label class="user-filter" for="orden-usuarios">
+              <span>Ordenar</span>
+              <select class="form-select" id="orden-usuarios">
+                <option value="nombre-asc">Nombre: A a Z</option>
+                <option value="recientes">Más recientes</option>
+                <option value="usuario-asc">Nombre de usuario</option>
+              </select>
+            </label>
+
+            <button class="clear-user-filters" id="limpiar-filtros-usuarios" type="button" title="Limpiar filtros">
+              <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+              <span>Limpiar</span>
+            </button>
+          </div>
+
+          <div class="users-table-wrap">
+            <table class="users-table">
+              <thead>
+                <tr>
+                  <th>Usuario</th>
+                  <th>RUT</th>
+                  <th>Contacto</th>
+                  <th>Rol</th>
+                  <th>Correo</th>
+                  <th>Estado</th>
+                  <th class="text-end">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-usuarios-admin" aria-live="polite" aria-busy="true">
+                {% for _ in "12345" %}
+                  <tr class="user-loading-row" aria-hidden="true">
+                    <td><span class="user-loading-profile"></span></td>
+                    <td><span class="user-loading-line short"></span></td>
+                    <td><span class="user-loading-line long"></span></td>
+                    <td><span class="user-loading-line"></span></td>
+                    <td><span class="user-loading-line"></span></td>
+                    <td><span class="user-loading-line"></span></td>
+                    <td><span class="user-loading-line long"></span></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
     </div>
   </div>
 
-  <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-  <input type="hidden" id="usuario-actual-id" value="{{ request.user.id }}">
-
-  <!-- Usuarios activos -->
-  <div class="usuarios-card">
-    <h4>👤 Usuarios Activos</h4>
-    <table class="table table-bordered table-hover">
-      <thead class="table-success text-center">
-        <tr>
-          <th>RUT</th>
-          <th>Nombre</th>
-          <th>Usuario</th>
-          <th>Email</th>
-          <th>Teléfono</th>
-          <th>Rol</th>
-          <th>Acción</th>
-        </tr>
-      </thead>
-      <tbody id="tabla-activos" class="text-center"></tbody>
-    </table>
+  <div class="modal fade" id="modalEstadoUsuario" tabindex="-1" aria-labelledby="tituloModalUsuario" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content user-status-modal">
+        <div class="modal-header">
+          <span class="user-modal-icon" id="iconoModalUsuario"><i class="fa-solid fa-user-lock" aria-hidden="true"></i></span>
+          <div>
+            <span>Confirmar cambio de acceso</span>
+            <h2 class="modal-title" id="tituloModalUsuario">Suspender cuenta</h2>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <p id="mensajeModalUsuario"></p>
+          <div class="modal-user-summary">
+            <span id="avatarModalUsuario">U</span>
+            <div><strong id="nombreModalUsuario"></strong><small id="correoModalUsuario"></small></div>
+          </div>
+          <small id="ayudaModalUsuario"></small>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="user-modal-cancel" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="user-modal-confirm" id="confirmarEstadoUsuario">Confirmar</button>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <!-- Usuarios baneados -->
-  <div class="usuarios-card">
-    <h4>🚫 Usuarios Baneados</h4>
-    <table class="table table-bordered table-hover">
-      <thead class="table-danger text-center">
-        <tr>
-          <th>RUT</th>
-          <th>Nombre</th>
-          <th>Usuario</th>
-          <th>Email</th>
-          <th>Teléfono</th>
-          <th>Rol</th>
-          <th>Acción</th>
-        </tr>
-      </thead>
-      <tbody id="tabla-baneados" class="text-center"></tbody>
-    </table>
+  <div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div class="toast user-admin-toast" id="notificacionUsuario" role="status" aria-live="polite" aria-atomic="true">
+      <div class="toast-body">
+        <i class="fa-solid fa-circle-check" id="iconoNotificacionUsuario" aria-hidden="true"></i>
+        <span id="mensajeNotificacionUsuario">Estado actualizado.</span>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="toast" aria-label="Cerrar"></button>
+      </div>
+    </div>
   </div>
-</div>
 
-<script src="/static/js/security.js"></script>
-<script>
-  const { escapeHtml } = window.FerremasSecurity;
-  let usuarios = [];
-
-  function mostrarAlerta(mensaje) {
-    const alerta = document.getElementById("alerta-error");
-    alerta.textContent = mensaje;
-    alerta.classList.remove("d-none");
-    setTimeout(() => {
-      alerta.classList.add("d-none");
-    }, 3000);
-  }
-
-  function renderTablas() {
-    const idActual = parseInt(document.getElementById("usuario-actual-id").value);
-    const activos = usuarios.filter(u => u.is_active);
-    const baneados = usuarios.filter(u => !u.is_active);
-    const filtroNombre = document.getElementById("filtro-nombre").value.toLowerCase();
-    const filtroRut = document.getElementById("filtro-rut").value.toLowerCase();
-    const filtroRol = document.getElementById("filtro-rol").value;
-
-    const coincide = (u) => {
-      const nombre = `${u.first_name} ${u.last_name}`.toLowerCase();
-      const rolOK = (filtroRol === "" || (filtroRol === "admin" && u.is_staff) || (filtroRol === "usuario" && !u.is_staff));
-      return nombre.includes(filtroNombre) && u.rut.toLowerCase().includes(filtroRut) && rolOK;
-    };
-
-    const tbodyActivos = document.getElementById("tabla-activos");
-    const tbodyBaneados = document.getElementById("tabla-baneados");
-    tbodyActivos.innerHTML = "";
-    tbodyBaneados.innerHTML = "";
-
-    activos.filter(coincide).forEach(u => {
-      const fila = document.createElement("tr");
-      fila.innerHTML = `
-        <td>${escapeHtml(u.rut)}</td>
-        <td>${escapeHtml(u.first_name)} ${escapeHtml(u.last_name)}</td>
-        <td>${escapeHtml(u.username)}</td>
-        <td>${escapeHtml(u.email)}</td>
-        <td>${escapeHtml(u.telefono)}</td>
-        <td>${u.is_staff ? 'Administrador' : 'Usuario'}</td>
-        <td>
-          ${u.id !== idActual ? ` 
-            <a href="/usuarios/editar/${u.id}/" class="btn btn-success btn-sm me-2">Editar</a>
-            <button class="btn btn-danger btn-sm btn-ban" data-id="${u.id}">Banear</button>
-          ` : `<span class="text-muted">Sesión actual</span>`}
-        </td>
-      `;
-      tbodyActivos.appendChild(fila);
-    });
-
-    baneados.filter(coincide).forEach(u => {
-      const fila = document.createElement("tr");
-      fila.innerHTML = `
-        <td>${escapeHtml(u.rut)}</td>
-        <td>${escapeHtml(u.first_name)} ${escapeHtml(u.last_name)}</td>
-        <td>${escapeHtml(u.username)}</td>
-        <td>${escapeHtml(u.email)}</td>
-        <td>${escapeHtml(u.telefono)}</td>
-        <td>${u.is_staff ? 'Administrador' : 'Usuario'}</td>
-        <td>
-          ${u.id !== idActual ? `
-            <button class="btn btn-success btn-sm btn-ban" data-id="${u.id}">Reactivar</button>
-          ` : `<span class="text-muted">Sin acciones</span>`}
-        </td>
-      `;
-      tbodyBaneados.appendChild(fila);
-    });
-
-    document.querySelectorAll(".btn-ban").forEach(btn => {
-      btn.addEventListener("click", function (event) {
-        event.preventDefault();
-        const id = this.dataset.id;
-        fetch(`/api/usuarios/toggle-activo/${id}/`, {
-          method: "PATCH",
-          headers: {
-            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-          }
-        })
-        .then(response => response.json().then(data => ({ status: response.status, data })))
-        .then(result => {
-          if (result.status === 403 && result.data.error) {
-            mostrarAlerta(result.data.error);
-          } else {
-            cargarUsuarios();
-          }
-        });
-      });
-    });
-  }
-
-  function cargarUsuarios() {
-    fetch('/api/usuarios/')
-      .then(r => r.json())
-      .then(data => {
-        usuarios = data;
-        renderTablas();
-      });
-  }
-
-  document.addEventListener("DOMContentLoaded", function () {
-    cargarUsuarios();
-    document.getElementById("filtro-nombre").addEventListener("input", renderTablas);
-    document.getElementById("filtro-rut").addEventListener("input", renderTablas);
-    document.getElementById("filtro-rol").addEventListener("change", renderTablas);
-  });
-</script>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/security.js' %}"></script>
+  <script src="{% static 'js/gestion_usuarios.js' %}"></script>
 </body>
 </html>

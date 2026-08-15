@@ -1,35 +1,23 @@
-{% load static %}
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <title>Recuperar Contraseña</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="bg-light">
-  <div class="container mt-5">
-    <div class="row justify-content-center">
-      <div class="col-md-6">
-        <div class="card p-4 shadow">
-          <h4 class="mb-3 text-center">Recuperar Contraseña</h4>
-          <p class="text-muted">Ingresa tu correo para enviarte instrucciones.</p>
-
-          {% if messages %}
-            {% for message in messages %}
-              <div class="alert alert-danger">{{ message }}</div>
-            {% endfor %}
-          {% endif %}
-
-          <form method="post">
-            {% csrf_token %}
-            {{ form.as_p }}
-            <button type="submit" class="btn btn-success w-100 mb-2">Enviar enlace</button>
-            <a href="{% url 'iniciosesion' %}" class="btn btn-secondary w-100">Volver</a>
-          </form>
-
-        </div>
+{% extends 'usuarios/base_cuenta.html' %}
+{% block title %}Recuperar contraseña{% endblock %}
+{% block content %}
+  <section class="account-state-card recovery-card">
+    <span class="account-state-icon"><i class="fa-solid fa-key" aria-hidden="true"></i></span>
+    <span class="account-state-kicker">Recuperación segura</span>
+    <h1>Recupera tu contraseña</h1>
+    <p>Ingresa el correo asociado a tu cuenta. Si lo encontramos, te enviaremos un enlace para crear una nueva contraseña.</p>
+    {% if rate_limited %}<div class="account-alert danger"><i class="fa-solid fa-clock" aria-hidden="true"></i> Has realizado demasiadas solicitudes. Intenta nuevamente dentro de una hora.</div>{% endif %}
+    {% if messages %}{% for message in messages %}<div class="account-alert danger"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ message }}</div>{% endfor %}{% endif %}
+    <form method="post" class="recovery-form" novalidate>
+      {% csrf_token %}
+      <div class="account-field">
+        <label for="{{ form.email.id_for_label }}">Correo electrónico</label>
+        <div class="account-input"><i class="fa-regular fa-envelope" aria-hidden="true"></i>{{ form.email }}</div>
+        {% for error in form.email.errors %}<span>{{ error }}</span>{% endfor %}
       </div>
-    </div>
-  </div>
-</body>
-</html>
+      <button class="account-submit" type="submit" {% if rate_limited %}disabled{% endif %}><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span>Enviar enlace de recuperación</span></button>
+    </form>
+    <div class="account-security-note"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><span>Por seguridad, mostraremos el mismo resultado exista o no una cuenta asociada al correo.</span></div>
+    <a class="account-back-link" href="{% url 'iniciosesion' %}"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver al inicio de sesión</a>
+  </section>
+{% endblock %}

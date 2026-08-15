@@ -1,0 +1,58 @@
+{% load static %}
+<footer class="sfi-footer">
+  <div class="container">
+    <div class="sfi-footer-services" aria-label="Beneficios de comprar en SFI">
+      <div class="sfi-footer-service">
+        <span class="sfi-footer-service-icon"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i></span>
+        <div><strong>Compra protegida</strong><small>Pago seguro mediante Webpay</small></div>
+      </div>
+      <div class="sfi-footer-service">
+        <span class="sfi-footer-service-icon"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i></span>
+        <div><strong>Stock actualizado</strong><small>Disponibilidad validada al pagar</small></div>
+      </div>
+      <div class="sfi-footer-service">
+        <span class="sfi-footer-service-icon"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i></span>
+        <div><strong>Entrega flexible</strong><small>Retiro en tienda o despacho</small></div>
+      </div>
+    </div>
+
+    <div class="sfi-footer-main">
+      <div class="sfi-footer-brand">
+        <a class="sfi-footer-logo" href="{% url 'index' %}" aria-label="SFI, ir al inicio">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
+        </a>
+        <p>Todo lo que necesitas para construir, reparar y mejorar, en un solo lugar.</p>
+      </div>
+
+      <nav class="sfi-footer-column" aria-label="Enlaces para comprar">
+        <strong>Comprar</strong>
+        <a href="{% url 'lista_productos' %}">Todos los productos</a>
+        <a href="{% url 'vista_ofertas' %}">Ofertas</a>
+        <a href="{% url 'vista_carrito' %}">Mi carrito</a>
+      </nav>
+
+      <nav class="sfi-footer-column" aria-label="Enlaces de cuenta">
+        <strong>Mi cuenta</strong>
+        {% if user.is_authenticated %}
+          <a href="{% url 'mi_historial_compras' %}">Mis compras</a>
+          {% if user.is_staff %}<a href="{% url 'panel_administracion' %}">Administración</a>{% endif %}
+        {% else %}
+          <a href="{% url 'iniciosesion' %}">Iniciar sesión</a>
+          <a href="{% url 'registro' %}">Crear cuenta</a>
+        {% endif %}
+      </nav>
+
+      <nav class="sfi-footer-column" aria-label="Enlaces de SFI">
+        <strong>SFI</strong>
+        <a href="{% url 'index' %}">Inicio</a>
+        <a href="{% url 'contacto' %}">Nosotros y contacto</a>
+        <span class="sfi-footer-secure"><i class="fa-solid fa-lock" aria-hidden="true"></i> Sitio de compra segura</span>
+      </nav>
+    </div>
+
+    <div class="sfi-footer-bottom">
+      <span>© 2026 SFI — Sistema Ferretero Inteligente</span>
+      <span>Compra inteligente para cada proyecto.</span>
+    </div>
+  </div>
+</footer>
