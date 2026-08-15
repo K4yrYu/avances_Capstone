@@ -10,6 +10,7 @@ from productos.models import Producto
 from .serializers import AnalisisFotoPinturaSerializer, ConsultaAsistenteSerializer
 from .services import AsistenteNoDisponible, procesar_consulta
 from .services.analisis_foto import analizar_foto_pintura
+from .services.gemini import GeminiNoDisponible
 from .services.recomendacion_colores import color_publico, pinturas_compatibles
 from .throttles import AsistenteRateThrottle
 
@@ -54,7 +55,7 @@ def api_analizar_foto_pintura(request):
             entrada.validated_data['color_hex'],
             producto,
         )
-    except AsistenteNoDisponible as exc:
+    except GeminiNoDisponible as exc:
         return Response({'detail': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     contexto = analisis.get('contexto_pintura', 'no_determinado')
     recomendaciones = (

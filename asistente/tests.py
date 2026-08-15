@@ -8,7 +8,8 @@ from django.urls import reverse
 
 from productos.models import Producto
 from .services import procesar_consulta, resolver_interpretacion
-from .services.gemini import interpretar_con_gemini
+from .services.cliente_gemini import cliente_gemini
+from .services.gemini import GeminiNoDisponible, interpretar_con_gemini
 
 
 class AsistenteSfiTests(TestCase):
@@ -90,6 +91,22 @@ class AsistenteSfiTests(TestCase):
         )
 
         self.assertEqual(respuesta.status_code, 400)
+
+    @patch('asistente.views.analizar_foto_pintura')
+    def test_error_de_gemini_en_foto_responde_503_controlado(self, analizar):
+        analizar.side_effect = GeminiNoDisponible('Gemini no disponible temporalmente.')
+        png = base64.b64decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+        )
+        foto = SimpleUploadedFile('muro.png', png, content_type='image/png')
+
+        respuesta = self.client.post(
+            reverse('api_analizar_foto_pintura'),
+            {'imagen': foto, 'color_hex': '#FFFFFF'},
+        )
+
+        self.assertEqual(respuesta.status_code, 503)
+        self.assertEqual(respuesta.json()['detail'], 'Gemini no disponible temporalmente.')
 
     def test_calculo_pide_los_datos_que_faltan(self):
         resultado = resolver_interpretacion({
@@ -316,7 +333,7 @@ class AsistenteSfiTests(TestCase):
         GEMINI_MODEL='gemini-3.5-flash-lite',
         GEMINI_TIMEOUT_SECONDS=10,
     )
-    @patch('asistente.services.gemini.requests.post')
+    @patch('asistente.services.gemini.cliente_gemini.post')
     def test_clave_gemini_viaja_en_header_y_no_en_url(self, post):
         respuesta = Mock()
         respuesta.raise_for_status.return_value = None
@@ -338,3 +355,18 @@ class AsistenteSfiTests(TestCase):
         opciones = post.call_args.kwargs
         self.assertNotIn('clave-secreta-prueba', url)
         self.assertEqual(opciones['headers']['x-goog-api-key'], 'clave-secreta-prueba')
+
+    @patch.object(cliente_gemini.session, 'post')
+    def test_cliente_gemini_exige_tls_y_endpoint_oficial(self, post):
+        cliente_gemini.post(
+            'https://generativelanguage.googleapis.com/v1beta/models/modelo:generateContent',
+            json={'contents': []},
+        )
+
+        self.assertTrue(post.call_args.kwargs['verify'])
+        with self.assertRaisesMessage(ValueError, 'endpoint oficial'):
+            cliente_gemini.post('https://example.com/v1beta/models/modelo:generateContent')
+        with self.assertRaisesMessage(ValueError, 'endpoint oficial'):
+            cliente_gemini.post(
+                'http://generativelanguage.googleapis.com/v1beta/models/modelo:generateContent'
+            )

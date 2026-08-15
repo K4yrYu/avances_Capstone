@@ -7,6 +7,7 @@ tzdata==2026.3
 django-cors-headers==4.9.0
 whitenoise==6.9.0
 requests==2.34.2
+truststore==0.10.4
 transbank-sdk==6.1.0
 xhtml2pdf==0.2.17
 python-dotenv==1.2.2

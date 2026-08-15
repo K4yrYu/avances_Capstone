@@ -5,6 +5,7 @@ import requests
 from django.conf import settings
 
 from productos.models import Producto
+from .cliente_gemini import cliente_gemini
 
 
 logger = logging.getLogger(__name__)
@@ -153,7 +154,7 @@ def interpretar_con_gemini(mensaje, historial):
         },
     }
     try:
-        respuesta = requests.post(
+        respuesta = cliente_gemini.post(
             endpoint,
             headers={'x-goog-api-key': api_key},
             json=payload,

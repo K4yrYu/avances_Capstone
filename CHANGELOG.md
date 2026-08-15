@@ -17,6 +17,22 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ---
 
+## [0.2.1-beta] - 2026-08-15
+
+### Arreglo carrito TBK y asistente
+
+#### Corregido
+
+- Conexión TLS del asistente con Gemini mediante un cliente limitado al endpoint oficial.
+- Manejo controlado de errores del análisis fotográfico, evitando respuestas internas 500.
+- Conexión TLS de Webpay Plus mediante un cliente dedicado a los endpoints oficiales de Transbank.
+
+#### Seguridad y verificación
+
+- Se mantiene obligatoria la validación TLS y se rechazan dominios externos.
+- Se agregaron pruebas de regresión para Gemini, análisis de fotografías y Webpay.
+- No se requieren migraciones ni nuevas variables de entorno.
+
 ## [0.2.0-beta] - 2026-08-15
 
 ### IA integrada beta

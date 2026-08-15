@@ -5,6 +5,7 @@ import logging
 import requests
 from django.conf import settings
 
+from .cliente_gemini import cliente_gemini
 from .gemini import GeminiNoDisponible
 
 
@@ -99,7 +100,7 @@ def analizar_foto_pintura(imagen, color_hex, producto=None):
         },
     }
     try:
-        respuesta = requests.post(
+        respuesta = cliente_gemini.post(
             endpoint,
             headers={'x-goog-api-key': settings.GEMINI_API_KEY},
             json=payload,

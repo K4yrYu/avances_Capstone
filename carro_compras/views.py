@@ -26,6 +26,7 @@ from productos.models import Producto
 from productos.services import calcular_producto_pintura
 from usuarios.models import Usuario
 from .models import Detalle, Venta
+from .services import configurar_transbank_tls
 from .serializers import (
     CantidadProductoSerializer,
     DetalleCarritoEntradaSerializer,
@@ -69,6 +70,7 @@ def _recalcular_total(venta):
 
 
 def _webpay_transaction():
+    configurar_transbank_tls()
     environment = str(settings.TRANSBANK['ENVIRONMENT']).upper()
     integration_type = IntegrationType.LIVE if environment == 'LIVE' else IntegrationType.TEST
     options = WebpayOptions(

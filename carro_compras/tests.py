@@ -3,10 +3,13 @@ from decimal import Decimal
 
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from transbank.common import request_service as sdk_request_service
 
 from productos.models import Producto
 from usuarios.models import Usuario
 from .models import Detalle, Venta
+from .services.transbank_tls import cliente_http_transbank
+from .views import _webpay_transaction
 
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
@@ -257,6 +260,30 @@ class SeguridadWebpayTests(TestCase):
         }
         response.update(overrides)
         return response
+
+    @patch.object(cliente_http_transbank.session, 'request')
+    def test_cliente_transbank_exige_tls_y_endpoint_oficial(self, request):
+        cliente_http_transbank.post(
+            'https://webpay3gint.transbank.cl/rswebpaytransaction/api/webpay/v1.2/transactions/',
+            data='{}',
+        )
+
+        self.assertEqual(request.call_args.args[0], 'POST')
+        self.assertTrue(request.call_args.kwargs['verify'])
+        with self.assertRaisesMessage(ValueError, 'endpoints oficiales'):
+            cliente_http_transbank.post('https://example.com/transaccion')
+        with self.assertRaisesMessage(ValueError, 'endpoints oficiales'):
+            cliente_http_transbank.post(
+                'http://webpay3gint.transbank.cl/rswebpaytransaction/api/webpay/v1.2/transactions/'
+            )
+
+    def test_factory_conecta_solo_el_sdk_al_cliente_tls_dedicado(self):
+        cliente_anterior = sdk_request_service.requests
+        try:
+            _webpay_transaction()
+            self.assertIs(sdk_request_service.requests, cliente_http_transbank)
+        finally:
+            sdk_request_service.requests = cliente_anterior
 
     def test_iniciar_pago_congela_total_y_referencia(self):
         tx = Mock()
