@@ -1,0 +1,166 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Asistente inteligente SFI para consultar productos, calcular materiales y preparar proyectos.">
+  <title>Asistente SFI | Sistema Ferretero Inteligente</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'asistente/asistente.css' %}">
+  <link rel="stylesheet" href="{% static 'asistente/asistente_integrado.css' %}">
+  <link rel="stylesheet" href="{% static 'css/footer_sfi.css' %}">
+</head>
+<body>
+  <a class="skip-link" href="#chat-sfi">Saltar al asistente</a>
+  <div class="announcement-bar"><div class="container announcement-content"><span><i class="fa-solid fa-sparkles"></i> Asistente conectado al cat&aacute;logo SFI</span><span><i class="fa-solid fa-shield-halved"></i> Precios y c&aacute;lculos validados por el sistema</span></div></div>
+
+  <header class="site-header sticky-top">
+    <nav class="navbar navbar-expand-xl" aria-label="Navegaci&oacute;n principal">
+      <div class="container">
+        <a class="navbar-brand" href="{% url 'index' %}"><img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente"></a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menuPrincipal" aria-controls="menuPrincipal" aria-expanded="false" aria-label="Abrir men&uacute;"><span class="navbar-toggler-icon"></span></button>
+        <div class="collapse navbar-collapse" id="menuPrincipal">
+          <ul class="navbar-nav mx-auto align-items-xl-center">
+            <li class="nav-item"><a class="nav-link" href="{% url 'index' %}">Inicio</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'lista_productos' %}">Productos</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
+            <li class="nav-item"><a class="nav-link active" aria-current="page" href="{% url 'asistente_sfi' %}">Asistente IA</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Nosotros</a></li>
+            {% if user.is_staff %}<li class="nav-item"><a class="nav-link" href="{% url 'panel_administracion' %}">Administraci&oacute;n</a></li>{% endif %}
+          </ul>
+          <div class="nav-actions">
+            {% if user.is_authenticated %}
+              <div class="user-greeting"><span>Hola,</span><strong>{{ user.first_name|default:user.username }}</strong></div>
+              <a class="icon-action" href="{% url 'vista_carrito' %}" aria-label="Ver carrito"><i class="fa-solid fa-cart-shopping"></i></a>
+              <form method="post" action="{% url 'cerrar_sesion' %}">{% csrf_token %}<button class="btn btn-outline-sfi btn-sm" type="submit">Salir</button></form>
+            {% else %}
+              <a class="btn btn-outline-sfi" href="{% url 'iniciosesion' %}?next={% url 'asistente_sfi' %}"><i class="fa-regular fa-user"></i> Ingresar</a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main
+    id="chat-sfi"
+    class="assistant-page"
+    data-api-url="{% url 'api_consultar_asistente' %}"
+    data-photo-api-url="{% url 'api_analizar_foto_pintura' %}"
+    data-add-cart-url="{% url 'agregar_calculo_pintura_carrito' %}"
+    data-add-product-url="{% url 'agregar_producto_carrito' %}"
+    data-login-url="{% url 'iniciosesion' %}?next={% url 'asistente_sfi' %}"
+    data-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}"
+    data-placeholder-url="{% static 'img/sfi-logo.png' %}"
+  >
+    <section class="assistant-hero">
+      <div class="assistant-grid" aria-hidden="true"></div>
+      <div class="container position-relative">
+        <span class="assistant-eyebrow"><i class="fa-solid fa-wand-magic-sparkles"></i> Tu asesor de proyectos</span>
+        <h1>Preg&uacute;ntale a SFI.</h1>
+        <p>Describe lo que quieres construir, reparar o pintar. El asistente consultar&aacute; productos reales y usar&aacute; las calculadoras de SFI para ayudarte.</p>
+      </div>
+    </section>
+
+    <section class="assistant-workspace">
+      <div class="container">
+        {% if not ia_configurada %}
+          <div class="setup-notice" role="status"><i class="fa-solid fa-key"></i><div><strong>Falta conectar la clave de Gemini</strong><span>La interfaz est&aacute; lista. Agrega <code>GEMINI_API_KEY</code> al archivo <code>.env</code> y reinicia SFI.</span></div></div>
+        {% endif %}
+        <div class="assistant-layout">
+          <aside class="assistant-info">
+            <div class="assistant-avatar"><i class="fa-solid fa-robot"></i></div>
+            <span>Asistente SFI</span>
+            <h2>Orientaci&oacute;n basada en tu cat&aacute;logo.</h2>
+            <p>La IA entiende la consulta. Django comprueba productos, precios, stock y cantidades antes de responder.</p>
+            <ul>
+              <li><i class="fa-solid fa-calculator"></i><span><strong>Calcula materiales y presupuesto</strong> usando fichas verificadas.</span></li>
+              <li><i class="fa-solid fa-magnifying-glass"></i><span><strong>Busca productos</strong> por uso, marca o categor&iacute;a.</span></li>
+              <li><i class="fa-solid fa-cart-plus"></i><span><strong>Prepara tu compra</strong> con cantidades completas.</span></li>
+            </ul>
+            <a class="assistant-photo-cta" href="#paint-workbench" data-open-visualizer><i class="fa-solid fa-camera"></i><span><strong>Prueba un color en tu foto</strong>La IA analizará y recomendará colores compatibles.</span><i class="fa-solid fa-arrow-right"></i></a>
+            <div class="assistant-limit"><i class="fa-solid fa-helmet-safety"></i><span>Los trabajos el&eacute;ctricos, de gas o estructurales requieren evaluaci&oacute;n profesional.</span></div>
+          </aside>
+
+          <section class="chat-card" aria-label="Conversaci&oacute;n con el asistente SFI">
+            <header class="chat-header"><div><span class="online-dot"></span><div><strong>Asistente SFI</strong><small>Conversación, fotografías, catálogo y cálculos en un solo lugar</small></div></div><button id="clear-chat" type="button"><i class="fa-solid fa-arrow-rotate-left"></i> Nueva consulta</button></header>
+            <div id="chat-messages" class="chat-messages" aria-live="polite">
+              <article class="chat-message assistant-message"><span class="message-avatar"><i class="fa-solid fa-robot"></i></span><div class="message-content"><p>Hola, soy el asistente SFI. Cu&eacute;ntame qu&eacute; necesitas para tu proyecto y te ayudar&eacute; a calcular o encontrar productos.</p></div></article>
+            </div>
+            <section id="paint-workbench" class="chat-paint-workbench" aria-labelledby="paint-workbench-title" hidden>
+              <header class="chat-paint-header">
+                <div><span><i class="fa-solid fa-camera"></i></span><div><small>Herramienta del asistente</small><h2 id="paint-workbench-title">Visualizar pintura en una fotografía</h2></div></div>
+                <button id="close-paint-workbench" type="button" aria-label="Cerrar herramienta"><i class="fa-solid fa-xmark"></i></button>
+              </header>
+              <div class="chat-paint-body">
+                <div class="chat-photo-stage">
+                  <label id="paint-photo-dropzone" class="chat-photo-upload" for="paint-photo-input">
+                    <i class="fa-solid fa-cloud-arrow-up"></i><strong>Adjuntar fotografía</strong><span id="paint-photo-name">JPG, PNG o WebP · máximo 4 MB</span>
+                  </label>
+                  <input id="paint-photo-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+                  <div id="paint-canvas-shell" class="paint-canvas-shell compact">
+                    <div id="paint-empty-state" class="paint-empty-state"><i class="fa-regular fa-image"></i><strong>La foto aparecerá aquí</strong><span>Primero adjunta una imagen.</span></div>
+                    <canvas id="paint-photo-canvas" aria-label="Vista previa de la fotografía con el color recomendado" hidden></canvas>
+                    <span id="paint-canvas-hint" class="paint-canvas-hint" hidden><i class="fa-solid fa-hand-pointer"></i> Elige una recomendación y marca la pared</span>
+                  </div>
+                </div>
+                <div class="chat-paint-controls">
+                  <div class="paint-ai-intro"><i class="fa-solid fa-wand-magic-sparkles"></i><div><strong>La IA elegirá las opciones</strong><span>Detectará si corresponde a interior, exterior o piscina y solo mostrará colores compatibles con stock.</span></div></div>
+                  <button id="analyze-paint-photo" type="button" class="primary-action" disabled><i class="fa-solid fa-wand-magic-sparkles"></i> Analizar foto y recomendar</button>
+                  <section id="paint-analysis" class="paint-analysis compact-analysis" aria-live="polite" hidden>
+                    <div>
+                      <span>Análisis de la superficie</span>
+                      <h3 id="paint-analysis-title">Revisión lista</h3>
+                      <p id="paint-analysis-summary"></p>
+                      <div class="paint-analysis-columns"><div><strong>Observaciones</strong><ul id="paint-analysis-observations"></ul></div><div><strong>Preparación</strong><ul id="paint-analysis-preparation"></ul></div></div>
+                      <div id="paint-recommended-colors" class="paint-recommended-colors" hidden><strong>Colores recomendados</strong><div id="paint-recommended-color-list"></div></div>
+                      <a id="paint-analysis-product" href="#" hidden>Ver pintura seleccionada <i class="fa-solid fa-arrow-right"></i></a>
+                    </div>
+                  </section>
+                  <div class="compact-paint-adjustments">
+                    <label class="tolerance-label" for="paint-tolerance"><span>Sensibilidad al marcar</span><output id="paint-tolerance-value">55</output></label>
+                    <input id="paint-tolerance" type="range" min="20" max="120" value="55" step="5">
+                    <span id="selected-paint-product" class="selected-paint-product">Analiza la foto para recibir colores recomendados.</span>
+                  </div>
+                  <div class="compact-paint-actions">
+                    <button id="reset-paint-mask" type="button" disabled><i class="fa-solid fa-eraser"></i> Borrar zona</button>
+                    <button id="compare-original" type="button" disabled><i class="fa-solid fa-eye"></i> Ver antes</button>
+                    <button id="download-paint-preview" type="button" disabled><i class="fa-solid fa-download"></i> Descargar</button>
+                  </div>
+                  <p class="paint-reference-warning"><i class="fa-solid fa-lock"></i> La foto no se guarda en SFI. El color es una referencia visual.</p>
+                </div>
+              </div>
+            </section>
+            <div id="chat-suggestions" class="chat-suggestions" aria-label="Consultas de ejemplo">
+              <button type="button" data-open-visualizer><i class="fa-solid fa-camera"></i> Probar color en mi foto</button>
+              <button type="button" data-suggestion="Quiero pintar una habitación interior de 50 metros cuadrados"><i class="fa-solid fa-paint-roller"></i> Pintar 50 m&sup2;</button>
+              <button type="button" data-suggestion="Necesito un taladro para trabajos en casa"><i class="fa-solid fa-screwdriver-wrench"></i> Buscar un taladro</button>
+              <button type="button" data-suggestion="¿Qué necesito para preparar un muro antes de pintar?"><i class="fa-solid fa-list-check"></i> Preparar un muro</button>
+            </div>
+            <div id="chat-error" class="chat-error" role="alert" hidden></div>
+            <form id="assistant-form" class="chat-form">
+              {% csrf_token %}
+              <button id="attach-paint-photo" class="chat-attach-button" type="button" aria-label="Adjuntar fotografía para probar pintura"><i class="fa-solid fa-camera"></i></button>
+              <label class="visually-hidden" for="assistant-message">Escribe tu consulta</label>
+              <textarea id="assistant-message" name="mensaje" rows="2" maxlength="700" placeholder="Ej.: Tengo un dormitorio de 50 m² y quiero pintarlo..." required></textarea>
+              <button id="send-assistant-message" type="submit" aria-label="Enviar consulta"><i class="fa-solid fa-paper-plane"></i><span>Enviar</span></button>
+            </form>
+            <p class="chat-disclaimer"><i class="fa-solid fa-circle-info"></i> Verifica medidas y condiciones reales antes de comprar o ejecutar un trabajo.</p>
+          </section>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  {% include 'includes/footer_sfi.html' %}
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/security.js' %}"></script>
+  <script src="{% static 'asistente/asistente.js' %}"></script>
+  <script src="{% static 'asistente/visualizador_pintura.js' %}"></script>
+</body>
+</html>

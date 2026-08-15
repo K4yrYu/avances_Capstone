@@ -1,0 +1,102 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Proveedores | Administraci&oacute;n SFI</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}">
+  <link rel="stylesheet" href="{% static 'css/proveedores.css' %}">
+</head>
+<body>
+  <a class="skip-link" href="#contenido-proveedores">Saltar al contenido</a>
+  <div class="admin-shell">
+    {% include 'includes/admin_sidebar.html' %}
+    {% comment %}
+    <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
+      <div class="offcanvas-header sidebar-mobile-header"><span id="adminSidebarLabel">Men&uacute; administrativo</span><button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar men&uacute;"></button></div>
+      <div class="offcanvas-body sidebar-body">
+        <a class="sidebar-brand" href="{% url 'panel_administracion' %}" aria-label="Panel SFI"><img src="{% static 'img/sfi-logo.png' %}" alt="SFI"></a>
+        <div class="sidebar-section">
+          <span class="sidebar-label">Principal</span>
+          <nav class="sidebar-nav" aria-label="Secciones administrativas">
+            <a href="{% url 'panel_administracion' %}"><i class="fa-solid fa-table-cells-large"></i><span>Resumen</span></a>
+            <a href="{% url 'lista_productos_crud' %}"><i class="fa-solid fa-boxes-stacked"></i><span>Productos</span></a>
+            <a class="active" href="{% url 'gestion_proveedores' %}"><i class="fa-solid fa-building"></i><span>Proveedores</span></a>
+            <a href="{% url 'gestion_reposicion' %}"><i class="fa-solid fa-truck-ramp-box"></i><span>Reposici&oacute;n</span></a>
+            <a href="{% url 'vista_lista_usuarios' %}"><i class="fa-solid fa-users"></i><span>Usuarios</span></a>
+            <a href="{% url 'historial_ventas' %}"><i class="fa-solid fa-receipt"></i><span>Ventas</span></a>
+          </nav>
+        </div>
+        <div class="sidebar-section"><span class="sidebar-label">Operaciones</span><nav class="sidebar-nav"><a href="{% url 'vista_retiros' %}"><i class="fa-solid fa-store"></i><span>Retiros</span></a><a href="{% url 'vista_despachos' %}"><i class="fa-solid fa-truck-fast"></i><span>Despachos</span></a></nav></div>
+        <div class="sidebar-footer"><a href="{% url 'index' %}"><i class="fa-solid fa-arrow-up-right-from-square"></i> Ver tienda</a><form method="post" action="{% url 'cerrar_sesion' %}">{% csrf_token %}<button type="submit"><i class="fa-solid fa-right-from-bracket"></i> Cerrar sesi&oacute;n</button></form></div>
+      </div>
+    </aside>
+    {% endcomment %}
+
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <div class="topbar-title"><button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-label="Abrir men&uacute;"><i class="fa-solid fa-bars"></i></button><div><span>Administraci&oacute;n</span><strong>Directorio de proveedores</strong></div></div>
+        <div class="admin-profile"><span class="profile-avatar">{{ user.username|first|upper }}</span><div><strong>{{ user.get_full_name|default:user.username }}</strong><span>Administrador</span></div></div>
+      </header>
+
+      <main class="providers-page" id="contenido-proveedores">
+        <section class="providers-heading">
+          <div><span class="providers-kicker"><i class="fa-solid fa-circle"></i> Red de abastecimiento</span><h1>Proveedores</h1><p>Administra sus datos de contacto y revisa qu&eacute; productos maneja cada empresa.</p></div>
+          <button class="providers-primary" type="button" data-bs-toggle="modal" data-bs-target="#modalNuevoProveedor"><i class="fa-solid fa-plus"></i> Agregar proveedor</button>
+        </section>
+
+        {% if messages %}<section class="provider-messages" aria-live="polite">{% for message in messages %}<div class="{{ message.tags }}"><i class="fa-solid {% if message.tags == 'success' %}fa-circle-check{% else %}fa-circle-exclamation{% endif %}"></i>{{ message }}</div>{% endfor %}</section>{% endif %}
+
+        <section class="provider-metrics" aria-label="Resumen de proveedores">
+          <article><span><i class="fa-solid fa-building"></i></span><div><small>Total proveedores</small><strong>{{ total_proveedores }}</strong></div></article>
+          <article><span class="green"><i class="fa-solid fa-circle-check"></i></span><div><small>Proveedores activos</small><strong>{{ proveedores_activos }}</strong></div></article>
+          <article><span class="blue"><i class="fa-solid fa-boxes-stacked"></i></span><div><small>Productos asignados</small><strong>{{ productos_asignados }}</strong></div></article>
+          <article><span class="warning"><i class="fa-solid fa-link-slash"></i></span><div><small>Sin proveedor</small><strong>{{ productos_sin_proveedor }}</strong></div></article>
+        </section>
+
+        <section class="provider-directory-card">
+          <div class="provider-section-heading"><div><span>Directorio comercial</span><h2>Empresas registradas</h2></div><a href="{% url 'gestion_reposicion' %}">Ir a reposici&oacute;n <i class="fa-solid fa-arrow-right"></i></a></div>
+          {% if proveedores %}
+            <div class="provider-grid">
+              {% for proveedor in proveedores %}
+                <article class="provider-card">
+                  <header>
+                    <span class="provider-logo">{{ proveedor.nombre|first|upper }}</span>
+                    <div><h3>{{ proveedor.nombre }}</h3><p>{{ proveedor.nombre_contacto|default:"Contacto no informado" }}</p></div>
+                    <span class="provider-status {% if not proveedor.activo %}inactive{% endif %}">{% if proveedor.activo %}Activo{% else %}Inactivo{% endif %}</span>
+                  </header>
+                  <div class="provider-contact"><a href="mailto:{{ proveedor.email }}"><i class="fa-regular fa-envelope"></i>{{ proveedor.email }}</a><span><i class="fa-solid fa-phone"></i>{{ proveedor.telefono|default:"Sin telefono" }}</span></div>
+                  <div class="provider-products-heading"><div><small>Cat&aacute;logo asociado</small><strong>{{ proveedor.productos.all|length }} producto{{ proveedor.productos.all|length|pluralize }}</strong></div><a href="{% url 'formulario_producto' %}?proveedor={{ proveedor.id }}"><i class="fa-solid fa-plus"></i> Asociar producto</a></div>
+                  {% if proveedor.productos.all %}
+                    <div class="provider-product-list">
+                      {% for producto in proveedor.productos.all %}
+                        <a href="{% url 'editar_producto' producto.id %}">
+                          <span class="provider-product-image">{% if producto.imagen %}<img src="{{ producto.imagen.url }}" alt="">{% else %}<i class="fa-solid fa-box"></i>{% endif %}</span>
+                          <span><strong>{{ producto.nombre }}</strong><small>{{ producto.categoria }} &middot; Stock {{ producto.stock }}</small></span>
+                          <i class="fa-solid fa-chevron-right"></i>
+                        </a>
+                      {% endfor %}
+                    </div>
+                  {% else %}<p class="provider-no-products">Este proveedor todav&iacute;a no tiene productos asociados.</p>{% endif %}
+                  <details class="provider-edit">
+                    <summary><i class="fa-solid fa-pen"></i> Editar datos del proveedor</summary>
+                    <form method="post" action="{% url 'editar_proveedor' proveedor.id %}">{% csrf_token %}<input type="hidden" name="origen" value="proveedores"><label>Empresa<input name="nombre" value="{{ proveedor.nombre }}" maxlength="160" required></label><label>Contacto<input name="nombre_contacto" value="{{ proveedor.nombre_contacto }}" maxlength="160"></label><label>Email<input type="email" name="email" value="{{ proveedor.email }}" required></label><label>Tel&eacute;fono<input name="telefono" value="{{ proveedor.telefono }}" maxlength="40"></label><button type="submit">Guardar cambios</button></form>
+                  </details>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}<div class="providers-empty"><i class="fa-solid fa-building-circle-xmark"></i><h3>A&uacute;n no hay proveedores</h3><p>Agrega la primera empresa para asociarla a tus productos.</p></div>{% endif %}
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal fade" id="modalNuevoProveedor" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content provider-create-modal"><div class="modal-header"><div><small>Directorio comercial</small><h2 class="modal-title">Nuevo proveedor</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><form method="post" action="{% url 'crear_proveedor' %}">{% csrf_token %}<input type="hidden" name="origen" value="proveedores"><div class="modal-body"><label>Empresa <span>*</span><input name="nombre" maxlength="160" required></label><label>Persona de contacto<input name="nombre_contacto" maxlength="160"></label><label>Correo para pedidos <span>*</span><input type="email" name="email" required></label><label>Tel&eacute;fono<input name="telefono" maxlength="40"></label></div><div class="modal-footer"><button type="button" class="cancel-provider" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="save-provider"><i class="fa-solid fa-building-circle-check"></i> Guardar proveedor</button></div></form></div></div></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

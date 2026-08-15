@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#eef3f7;font-family:Arial,sans-serif;color:#153047;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef3f7;padding:28px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:100%;max-width:640px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(8,38,62,.10);">
+        <tr><td style="padding:26px 32px;background:#0b3554;color:#fff;border-bottom:5px solid #ffbc00;">
+          <div style="font-size:12px;font-weight:700;letter-spacing:1.5px;color:#ffcf48;">SISTEMA FERRETERO INTELIGENTE</div>
+          <h1 style="margin:8px 0 4px;font-size:25px;">Solicitud de reposición</h1>
+          <p style="margin:0;color:#c8d8e5;font-size:14px;">Orden {{ solicitud.numero }}</p>
+        </td></tr>
+        <tr><td style="padding:30px 32px;">
+          <p style="margin:0 0 12px;font-size:16px;">Estimado equipo de <strong>{{ solicitud.proveedor.nombre }}</strong>:</p>
+          <p style="margin:0 0 22px;color:#60788b;line-height:1.6;">Solicitamos confirmar disponibilidad y plazo de entrega para los siguientes productos.</p>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #dbe5ec;border-radius:12px;overflow:hidden;">
+            <tr style="background:#f3f7fa;color:#587084;font-size:11px;text-transform:uppercase;letter-spacing:.6px;">
+              <th align="left" style="padding:12px;">Producto</th><th align="left" style="padding:12px;">Marca</th><th align="right" style="padding:12px;">Cantidad</th>
+            </tr>
+            {% for item in items %}
+              <tr style="border-top:1px solid #e2eaf0;">
+                <td style="padding:14px 12px;font-size:14px;font-weight:700;">{{ item.producto.nombre }}</td>
+                <td style="padding:14px 12px;font-size:13px;color:#60788b;">{{ item.producto.marca }}</td>
+                <td align="right" style="padding:14px 12px;font-size:14px;font-weight:700;color:#0b3554;">{{ item.cantidad_solicitada }} {{ item.producto.get_unidad_venta_display|lower }}(s)</td>
+              </tr>
+            {% endfor %}
+          </table>
+          {% if solicitud.observaciones %}
+            <div style="margin-top:20px;padding:15px 17px;background:#fff8dc;border-left:4px solid #ffbc00;border-radius:9px;">
+              <strong style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;">Observaciones</strong>
+              <p style="margin:7px 0 0;color:#5e6670;line-height:1.5;">{{ solicitud.observaciones|linebreaksbr }}</p>
+            </div>
+          {% endif %}
+          <p style="margin:24px 0 0;color:#6a7d8c;font-size:12px;line-height:1.6;">Emitida por {{ solicitud.creada_por.get_full_name|default:solicitud.creada_por.username }} el {{ solicitud.creada_en|date:"d/m/Y H:i" }}.</p>
+        </td></tr>
+        <tr><td style="padding:18px 32px;background:#f5f8fa;color:#718596;font-size:11px;border-top:1px solid #e1e9ef;">SFI · Sistema Ferretero Inteligente · Área de Administración</td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

@@ -40,6 +40,7 @@
             <li class="nav-item"><a class="nav-link" href="{% url 'index' %}">Inicio</a></li>
             <li class="nav-item"><a class="nav-link active" aria-current="page" href="{% url 'lista_productos' %}">Productos</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'asistente_sfi' %}">Asistente IA</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Nosotros</a></li>
             {% if user.is_staff %}
               <li class="nav-item"><a class="nav-link" href="{% url 'panel_administracion' %}">Administración</a></li>
@@ -191,6 +192,79 @@
             <div><i class="fa-solid fa-truck-fast" aria-hidden="true"></i><span><strong>Despacho</strong><small>A domicilio</small></span></div>
           </div>
         </div>
+      </section>
+
+      <section class="technical-detail-card" aria-labelledby="titulo-ficha-tecnica">
+        <div class="technical-detail-heading">
+          <div>
+            <span>Información del producto</span>
+            <h2 id="titulo-ficha-tecnica">Ficha técnica</h2>
+          </div>
+          {% if producto.informacion_tecnica_verificada %}
+            <span class="verified-technical-badge"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Información verificada</span>
+          {% endif %}
+        </div>
+
+        <div class="technical-summary-grid">
+          <article><span><i class="fa-solid fa-box-open" aria-hidden="true"></i></span><div><small>Presentación</small><strong>{{ producto.presentacion }}</strong></div></article>
+          <article><span><i class="fa-solid fa-copyright" aria-hidden="true"></i></span><div><small>Marca</small><strong>{{ producto.marca|default:"No especificada" }}</strong></div></article>
+          <article><span{% if producto.color_hex %} class="technical-color-swatch" style="--product-color: {{ producto.color_hex }}"{% endif %}><i class="fa-solid fa-palette" aria-hidden="true"></i></span><div><small>Color</small><strong>{{ producto.color|default:"No especificado" }}</strong></div></article>
+          <article><span><i class="fa-solid fa-calculator" aria-hidden="true"></i></span><div><small>Cálculo de material</small><strong>{% if producto.apto_para_calculo %}Disponible{% else %}No disponible{% endif %}</strong></div></article>
+        </div>
+
+        {% if producto.rendimiento_legible or producto.capas_recomendadas or producto.ambiente_uso != 'no_aplica' or producto.tipo_pintura != 'no_aplica' or producto.uso_recomendado or producto.especificaciones %}
+          <div class="technical-information-grid">
+            {% if producto.tipo_pintura != 'no_aplica' %}
+              <div><dt>Tipo de pintura</dt><dd>{{ producto.get_tipo_pintura_display }}</dd></div>
+            {% endif %}
+            {% if producto.terminacion != 'no_aplica' %}
+              <div><dt>Terminaci&oacute;n</dt><dd>{{ producto.get_terminacion_display }}</dd></div>
+            {% endif %}
+            {% if producto.ambiente_uso != 'no_aplica' %}
+              <div><dt>Ambiente de uso</dt><dd>{{ producto.get_ambiente_uso_display }}</dd></div>
+            {% endif %}
+            {% if producto.superficies_compatibles_display %}
+              <div class="technical-wide"><dt>Superficies compatibles</dt><dd>{{ producto.superficies_compatibles_display|join:", " }}</dd></div>
+            {% endif %}
+            {% if producto.propiedades_pintura_display %}
+              <div class="technical-wide"><dt>Propiedades</dt><dd>{{ producto.propiedades_pintura_display|join:", " }}</dd></div>
+            {% endif %}
+            {% if producto.preparaciones_recomendadas_display %}
+              <div class="technical-wide"><dt>Preparaci&oacute;n recomendada</dt><dd>{{ producto.preparaciones_recomendadas_display|join:", " }}</dd></div>
+            {% endif %}
+            {% if producto.secado_tacto_horas %}
+              <div><dt>Secado al tacto</dt><dd>{{ producto.secado_tacto_horas }} horas</dd></div>
+            {% endif %}
+            {% if producto.tiempo_repintado_legible %}
+              <div><dt>Tiempo de repintado</dt><dd>{{ producto.tiempo_repintado_legible }}</dd></div>
+            {% endif %}
+            {% if producto.rendimiento_legible %}
+              <div><dt>Rendimiento</dt><dd>{{ producto.rendimiento_legible }}</dd></div>
+            {% endif %}
+            {% if producto.capas_recomendadas %}
+              <div><dt>Aplicación recomendada</dt><dd>{{ producto.capas_recomendadas }} capa{{ producto.capas_recomendadas|pluralize }}</dd></div>
+            {% endif %}
+            {% if producto.uso_recomendado %}
+              <div class="technical-wide"><dt>Uso recomendado</dt><dd>{{ producto.uso_recomendado|linebreaksbr }}</dd></div>
+            {% endif %}
+            {% for clave, valor in producto.especificaciones.items %}
+              <div>
+                <dt>{{ clave }}</dt>
+                <dd>
+                  {% if clave == "Fuente técnica" %}
+                    <a class="technical-source-link" href="{{ valor }}" target="_blank" rel="noopener noreferrer">
+                      Ver ficha oficial <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                    </a>
+                  {% else %}
+                    {{ valor }}
+                  {% endif %}
+                </dd>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="technical-empty-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> La información técnica detallada de este producto se encuentra en actualización.</p>
+        {% endif %}
       </section>
 
       <section class="product-support-strip" aria-label="Información útil de compra">

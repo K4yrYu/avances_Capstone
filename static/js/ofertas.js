@@ -31,6 +31,11 @@
             return Number.isFinite(numero) ? numero : 0;
         }
 
+        function colorHexSeguro(valor) {
+            const color = String(valor || "").trim();
+            return /^#[0-9a-f]{6}$/i.test(color) ? color : "";
+        }
+
         function precioClp(valor) {
             return new Intl.NumberFormat("es-CL", {
                 style: "currency",
@@ -47,9 +52,9 @@
             return {precioAnterior, precioActual, ahorro, porcentaje};
         }
 
-        function datosStock(stock) {
+        function datosStock(stock, minimo) {
             if (stock <= 0) return {clase: "out", texto: "Agotado"};
-            if (stock <= 5) return {clase: "low", texto: `Últimas ${stock}`};
+            if (stock <= minimo) return {clase: "low", texto: `Últimas ${stock}`};
             return {clase: "", texto: `${stock} disponibles`};
         }
 
@@ -74,13 +79,21 @@
         function tarjeta(producto) {
             const id = Math.max(0, Math.trunc(numeroSeguro(producto.id)));
             const stock = Math.max(0, Math.trunc(numeroSeguro(producto.stock)));
+            const stockMinimo = Math.max(0, Math.trunc(numeroSeguro(producto.stock_minimo)));
             const nombre = escapeHtml(producto.nombre || "Producto sin nombre");
             const categoria = escapeHtml(producto.categoria || "Oferta SFI");
             const descripcion = escapeHtml(producto.descripcion || "Producto con precio rebajado.");
             const imagen = safeUrl(producto.imagen) || escapeHtml(imagenAlternativa);
             const detalleUrl = `/productos/${id}/`;
             const oferta = calcularOferta(producto);
-            const stockInfo = datosStock(stock);
+            const stockInfo = datosStock(stock, stockMinimo);
+            const marca = escapeHtml(producto.marca || "SFI");
+            const presentacion = escapeHtml(producto.presentacion || "Unidad");
+            const color = escapeHtml(producto.color || "");
+            const colorHex = colorHexSeguro(producto.color_hex);
+            const colorMeta = color
+                ? `<span class="offer-color-meta">${colorHex ? `<i style="--product-color:${colorHex}" aria-hidden="true"></i>` : ""}${color}</span>`
+                : "";
             const boton = stock > 0
                 ? `<a class="offer-detail-button" href="${detalleUrl}">Ver producto <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>`
                 : `<span class="offer-detail-button disabled" aria-disabled="true">Sin stock</span>`;
@@ -95,6 +108,7 @@
                     <div class="offer-card-body">
                         <p class="offer-category">${categoria}</p>
                         <h2><a href="${detalleUrl}">${nombre}</a></h2>
+                        <div class="offer-technical-meta"><span>${marca}</span><span>${presentacion}</span>${colorMeta}</div>
                         <p class="offer-description">${descripcion}</p>
                         <div class="offer-pricing">
                             <div class="offer-price-values">

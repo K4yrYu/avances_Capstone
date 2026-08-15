@@ -16,6 +16,8 @@
   <a class="skip-link" href="#contenido-panel">Saltar al contenido</a>
 
   <div class="admin-shell">
+    {% include 'includes/admin_sidebar.html' %}
+    {% comment %}
     <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
       <div class="offcanvas-header sidebar-mobile-header">
         <span id="adminSidebarLabel">Menú administrativo</span>
@@ -38,6 +40,15 @@
               <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i>
               <span>Productos</span>
               {% if resumen.stock_bajo or resumen.sin_stock %}<b>{{ resumen.stock_bajo|add:resumen.sin_stock }}</b>{% endif %}
+            </a>
+            <a href="{% url 'gestion_reposicion' %}">
+              <i class="fa-solid fa-truck-ramp-box" aria-hidden="true"></i>
+              <span>Reposición</span>
+              {% if resumen.solicitudes_reposicion %}<b>{{ resumen.solicitudes_reposicion }}</b>{% endif %}
+            </a>
+            <a href="{% url 'gestion_proveedores' %}">
+              <i class="fa-solid fa-building" aria-hidden="true"></i>
+              <span>Proveedores</span>
             </a>
             <a href="{% url 'vista_lista_usuarios' %}">
               <i class="fa-solid fa-users" aria-hidden="true"></i>
@@ -81,6 +92,7 @@
         </div>
       </div>
     </aside>
+    {% endcomment %}
 
     <div class="admin-main">
       <header class="admin-topbar">
@@ -173,8 +185,14 @@
             <div class="operation-list">
               <a href="{% url 'lista_productos_crud' %}">
                 <span class="operation-icon blue"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i></span>
-                <div><strong>Catálogo de productos</strong><small>Precios, stock, imágenes y disponibilidad</small></div>
-                <span class="operation-meta">{{ resumen.productos_activos }} activos</span>
+                <div><strong>Catálogo de productos</strong><small>Precios, stock, imágenes y fichas técnicas</small></div>
+                <span class="operation-meta">{{ resumen.productos_activos }} activos · {{ resumen.fichas_calculo }} listos para IA</span>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </a>
+              <a href="{% url 'gestion_reposicion' %}">
+                <span class="operation-icon yellow"><i class="fa-solid fa-truck-ramp-box" aria-hidden="true"></i></span>
+                <div><strong>Reposición de inventario</strong><small>Stock mínimo, proveedores y solicitudes por correo</small></div>
+                <span class="operation-meta attention">{{ resumen.solicitudes_reposicion }} órdenes abiertas</span>
                 <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
               </a>
               <a href="{% url 'vista_lista_usuarios' %}">
@@ -214,14 +232,14 @@
                 <span class="alert-total">{{ resumen.stock_bajo|add:resumen.sin_stock|add:resumen.retiros_pendientes|add:resumen.despachos_pendientes }}</span>
               </div>
               <div class="alert-list">
-                <a href="{% url 'lista_productos_crud' %}">
+                <a href="{% url 'gestion_reposicion' %}">
                   <span class="alert-dot danger"></span>
                   <div><strong>Productos sin stock</strong><small>Revisar disponibilidad</small></div>
                   <b>{{ resumen.sin_stock }}</b>
                 </a>
-                <a href="{% url 'lista_productos_crud' %}">
+                <a href="{% url 'gestion_reposicion' %}">
                   <span class="alert-dot warning"></span>
-                  <div><strong>Stock bajo</strong><small>5 unidades o menos</small></div>
+                  <div><strong>Stock bajo</strong><small>Según el mínimo de cada producto</small></div>
                   <b>{{ resumen.stock_bajo }}</b>
                 </a>
                 <a href="{% url 'vista_retiros' %}">
@@ -241,6 +259,8 @@
               <span>Accesos rápidos</span>
               <div>
                 <a href="{% url 'formulario_producto' %}"><i class="fa-solid fa-plus" aria-hidden="true"></i> Agregar producto</a>
+                <a href="{% url 'gestion_proveedores' %}"><i class="fa-solid fa-building" aria-hidden="true"></i> Ver proveedores</a>
+                <a href="{% url 'gestion_reposicion' %}"><i class="fa-solid fa-truck-ramp-box" aria-hidden="true"></i> Reponer stock</a>
                 <a href="{% url 'lista_productos' %}"><i class="fa-solid fa-eye" aria-hidden="true"></i> Ver catálogo</a>
                 <a href="{% url 'vista_ofertas' %}"><i class="fa-solid fa-tags" aria-hidden="true"></i> Revisar ofertas</a>
               </div>

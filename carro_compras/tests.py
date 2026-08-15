@@ -1,4 +1,5 @@
 from unittest.mock import Mock, patch
+from decimal import Decimal
 
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -95,6 +96,124 @@ class SeguridadCarritoTests(TestCase):
         self.assertEqual(retiros.status_code, 200)
         self.assertEqual(retiros.json(), [])
         self.assertEqual(boleta.status_code, 404)
+
+
+@override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
+class CalculadoraCarritoTests(TestCase):
+    def setUp(self):
+        self.usuario = Usuario.objects.create_user(
+            rut='33333333-3', username='calculador', email='calculador@example.com',
+            telefono='+56933333333', password='Ferremas!2026Clave',
+        )
+        self.pintura = Producto.objects.create(
+            nombre='Pintura calculable carrito', descripcion='Ficha verificada',
+            precio=20000, imagen='productos/pintura-calculo.webp', stock=5,
+            categoria='Pinturas', marca='SFI', color='Blanco', color_hex='#FFFFFF',
+            ambiente_uso='interior',
+            superficies_compatibles=['hormigon', 'yeso_carton'],
+            tipo_pintura='latex', terminacion='mate',
+            propiedades_pintura=['base_agua', 'bajo_olor'],
+            preparaciones_recomendadas=['limpieza', 'sellador'],
+            repintado_min_horas=Decimal('3.00'), repintado_max_horas=Decimal('6.00'),
+            unidad_venta='envase', contenido=Decimal('4.000'), unidad_contenido='l',
+            tipo_calculo='pintura', rendimiento=Decimal('10.000'), unidad_rendimiento='m2_l',
+            capas_recomendadas=2, porcentaje_desperdicio=Decimal('10.00'),
+            informacion_tecnica_verificada=True, activo=True,
+        )
+
+    def test_servidor_calcula_cantidad_y_total_antes_de_agregar(self):
+        self.client.force_login(self.usuario)
+
+        response = self.client.post(
+            reverse('agregar_calculo_pintura_carrito'),
+            {
+                'producto': self.pintura.id, 'superficie': 51,
+                'ambiente': 'interior', 'tipo_superficie': 'hormigon',
+                'estado_superficie': 'nueva', 'terminacion': 'cualquiera',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        detalle = Detalle.objects.get(id_venta__id_usuario=self.usuario)
+        self.assertEqual(detalle.cantidad_producto, 3)
+        self.assertEqual(detalle.subtotal_venta, 60000)
+        self.assertEqual(detalle.id_venta.total_venta, 60000)
+
+    def test_recomendacion_reemplaza_cantidad_existente_sin_duplicar(self):
+        venta = Venta.objects.create(id_usuario=self.usuario, estado_venta='carrito')
+        Detalle.objects.create(id_venta=venta, producto=self.pintura, cantidad_producto=1)
+        self.client.force_login(self.usuario)
+
+        response = self.client.post(
+            reverse('agregar_calculo_pintura_carrito'),
+            {
+                'producto': self.pintura.id, 'superficie': 51,
+                'ambiente': 'interior', 'tipo_superficie': 'hormigon',
+                'estado_superficie': 'nueva', 'terminacion': 'cualquiera',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(venta.detalles.count(), 1)
+        self.assertEqual(venta.detalles.get().cantidad_producto, 3)
+
+    def test_stock_insuficiente_no_modifica_el_carrito(self):
+        self.pintura.stock = 2
+        self.pintura.save(update_fields=['stock'])
+        self.client.force_login(self.usuario)
+
+        response = self.client.post(
+            reverse('agregar_calculo_pintura_carrito'),
+            {
+                'producto': self.pintura.id, 'superficie': 51,
+                'ambiente': 'interior', 'tipo_superficie': 'hormigon',
+                'estado_superficie': 'nueva', 'terminacion': 'cualquiera',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Venta.objects.filter(id_usuario=self.usuario).exists())
+
+    def test_no_agrega_una_pintura_incompatible_con_el_proyecto(self):
+        self.client.force_login(self.usuario)
+
+        response = self.client.post(
+            reverse('agregar_calculo_pintura_carrito'),
+            {
+                'producto': self.pintura.id,
+                'superficie': 51,
+                'ambiente': 'exterior',
+                'tipo_superficie': 'hormigon',
+                'estado_superficie': 'nueva',
+                'terminacion': 'cualquiera',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Venta.objects.filter(id_usuario=self.usuario).exists())
+
+    def test_no_agrega_una_pintura_con_terminacion_distinta(self):
+        self.client.force_login(self.usuario)
+
+        response = self.client.post(
+            reverse('agregar_calculo_pintura_carrito'),
+            {
+                'producto': self.pintura.id,
+                'superficie': 51,
+                'ambiente': 'interior',
+                'tipo_superficie': 'hormigon',
+                'estado_superficie': 'nueva',
+                'terminacion': 'satinado',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Venta.objects.filter(id_usuario=self.usuario).exists())
 
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])

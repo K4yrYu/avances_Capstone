@@ -1,0 +1,56 @@
+{% load static %}
+{% with active=request.resolver_match.url_name %}
+<aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
+  <div class="offcanvas-header sidebar-mobile-header">
+    <span id="adminSidebarLabel">Men&uacute; administrativo</span>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#adminSidebar" aria-label="Cerrar men&uacute;"></button>
+  </div>
+
+  <div class="offcanvas-body sidebar-body">
+    <a class="sidebar-brand" href="{% url 'panel_administracion' %}" aria-label="Panel administrativo SFI">
+      <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
+    </a>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">Principal</span>
+      <nav class="sidebar-nav" aria-label="Secciones administrativas">
+        <a class="{% if active == 'panel_administracion' %}active{% endif %}" href="{% url 'panel_administracion' %}">
+          <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i><span>Resumen</span>
+        </a>
+        <a class="{% if active == 'lista_productos_crud' or active == 'formulario_producto' or active == 'editar_producto' %}active{% endif %}" href="{% url 'lista_productos_crud' %}">
+          <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><span>Productos</span>
+        </a>
+        <a class="{% if active == 'gestion_proveedores' %}active{% endif %}" href="{% url 'gestion_proveedores' %}">
+          <i class="fa-solid fa-building" aria-hidden="true"></i><span>Proveedores</span>
+        </a>
+        <a class="{% if active == 'gestion_reposicion' %}active{% endif %}" href="{% url 'gestion_reposicion' %}">
+          <i class="fa-solid fa-truck-ramp-box" aria-hidden="true"></i><span>Reposici&oacute;n</span>
+        </a>
+        <a class="{% if active == 'vista_lista_usuarios' or active == 'vista_agregar_usuario' or active == 'vista_editar_usuario' %}active{% endif %}" href="{% url 'vista_lista_usuarios' %}">
+          <i class="fa-solid fa-users" aria-hidden="true"></i><span>Usuarios</span>
+        </a>
+        <a class="{% if active == 'historial_ventas' %}active{% endif %}" href="{% url 'historial_ventas' %}">
+          <i class="fa-solid fa-receipt" aria-hidden="true"></i><span>Ventas</span>
+        </a>
+      </nav>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">Operaciones</span>
+      <nav class="sidebar-nav" aria-label="Operaciones de entrega">
+        <a class="{% if active == 'vista_retiros' %}active{% endif %}" href="{% url 'vista_retiros' %}">
+          <i class="fa-solid fa-store" aria-hidden="true"></i><span>Retiros</span>
+        </a>
+        <a class="{% if active == 'vista_despachos' %}active{% endif %}" href="{% url 'vista_despachos' %}">
+          <i class="fa-solid fa-truck-fast" aria-hidden="true"></i><span>Despachos</span>
+        </a>
+      </nav>
+    </div>
+
+    <div class="sidebar-footer">
+      <a href="{% url 'index' %}"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Ver tienda</a>
+      <form method="post" action="{% url 'cerrar_sesion' %}">{% csrf_token %}<button type="submit"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Cerrar sesi&oacute;n</button></form>
+    </div>
+  </div>
+</aside>
+{% endwith %}

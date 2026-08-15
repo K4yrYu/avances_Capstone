@@ -50,3 +50,26 @@ class CantidadProductoSerializer(serializers.Serializer):
 
 class DetalleCarritoEntradaSerializer(CantidadProductoSerializer):
     producto = serializers.IntegerField(min_value=1)
+
+
+class RecomendacionPinturaCarritoSerializer(serializers.Serializer):
+    producto = serializers.IntegerField(min_value=1)
+    superficie = serializers.IntegerField(min_value=1, max_value=100000)
+    ambiente = serializers.ChoiceField(choices=[
+        valor for valor, _ in Producto.AMBIENTE_USO_CHOICES if valor != 'no_aplica'
+    ])
+    tipo_superficie = serializers.ChoiceField(choices=Producto.SUPERFICIE_CHOICES)
+    estado_superficie = serializers.ChoiceField(choices=Producto.ESTADO_SUPERFICIE_CHOICES)
+    terminacion = serializers.ChoiceField(choices=[
+        ('cualquiera', 'Sin preferencia'),
+        *[opcion for opcion in Producto.TERMINACION_CHOICES if opcion[0] != 'no_aplica'],
+    ])
+    capas = serializers.IntegerField(required=False, allow_null=True, min_value=1, max_value=10)
+    desperdicio = serializers.DecimalField(
+        required=False,
+        allow_null=True,
+        max_digits=5,
+        decimal_places=2,
+        min_value=0,
+        max_value=50,
+    )

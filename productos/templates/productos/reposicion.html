@@ -1,0 +1,124 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Reposición de inventario | SFI</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}">
+  <link rel="stylesheet" href="{% static 'css/reposicion.css' %}">
+</head>
+<body>
+  <a class="skip-link" href="#contenido-reposicion">Saltar al contenido</a>
+  <div class="admin-shell">
+    {% include 'includes/admin_sidebar.html' %}
+    {% comment %}
+    <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
+      <div class="offcanvas-header sidebar-mobile-header"><span id="adminSidebarLabel">Menú administrativo</span><button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar menú"></button></div>
+      <div class="offcanvas-body sidebar-body">
+        <a class="sidebar-brand" href="{% url 'panel_administracion' %}" aria-label="Panel SFI"><img src="{% static 'img/sfi-logo.png' %}" alt="SFI"></a>
+        <div class="sidebar-section">
+          <span class="sidebar-label">Principal</span>
+          <nav class="sidebar-nav" aria-label="Secciones administrativas">
+            <a href="{% url 'panel_administracion' %}"><i class="fa-solid fa-table-cells-large"></i><span>Resumen</span></a>
+            <a href="{% url 'lista_productos_crud' %}"><i class="fa-solid fa-boxes-stacked"></i><span>Productos</span></a>
+            <a href="{% url 'gestion_proveedores' %}"><i class="fa-solid fa-building"></i><span>Proveedores</span></a>
+            <a class="active" href="{% url 'gestion_reposicion' %}"><i class="fa-solid fa-truck-ramp-box"></i><span>Reposición</span>{% if total_alertas %}<b>{{ total_alertas }}</b>{% endif %}</a>
+            <a href="{% url 'vista_lista_usuarios' %}"><i class="fa-solid fa-users"></i><span>Usuarios</span></a>
+            <a href="{% url 'historial_ventas' %}"><i class="fa-solid fa-receipt"></i><span>Ventas</span></a>
+          </nav>
+        </div>
+        <div class="sidebar-section"><span class="sidebar-label">Operaciones</span><nav class="sidebar-nav"><a href="{% url 'vista_retiros' %}"><i class="fa-solid fa-store"></i><span>Retiros</span></a><a href="{% url 'vista_despachos' %}"><i class="fa-solid fa-truck-fast"></i><span>Despachos</span></a></nav></div>
+        <div class="sidebar-footer"><a href="{% url 'index' %}"><i class="fa-solid fa-arrow-up-right-from-square"></i> Ver tienda</a><form method="post" action="{% url 'cerrar_sesion' %}">{% csrf_token %}<button type="submit"><i class="fa-solid fa-right-from-bracket"></i> Cerrar sesión</button></form></div>
+      </div>
+    </aside>
+    {% endcomment %}
+
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <div class="topbar-title"><button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-label="Abrir menú"><i class="fa-solid fa-bars"></i></button><div><span>Administración</span><strong>Reposición de inventario</strong></div></div>
+        <div class="admin-profile"><span class="profile-avatar">{{ user.username|first|upper }}</span><div><strong>{{ user.get_full_name|default:user.username }}</strong><span>Administrador</span></div></div>
+      </header>
+
+      <main class="replenishment-page" id="contenido-reposicion">
+        <section class="replenishment-heading">
+          <div><span class="dashboard-kicker"><i class="fa-solid fa-circle"></i> Control de abastecimiento</span><h1>Reposición de inventario</h1><p>Revisa productos bajo su mínimo, solicita unidades al proveedor y registra su recepción.</p></div>
+          <button class="primary-action" type="button" data-bs-toggle="modal" data-bs-target="#modalProveedor"><i class="fa-solid fa-building-circle-check"></i> Nuevo proveedor</button>
+        </section>
+
+        {% if messages %}<section class="system-messages" aria-live="polite">{% for message in messages %}<div class="system-message {{ message.tags }}"><i class="fa-solid {% if message.tags == 'success' %}fa-circle-check{% else %}fa-circle-exclamation{% endif %}"></i><span>{{ message }}</span></div>{% endfor %}</section>{% endif %}
+
+        <section class="replenishment-metrics" aria-label="Indicadores de reposición">
+          <article><span class="metric-symbol warning"><i class="fa-solid fa-arrow-trend-down"></i></span><div><small>Bajo el mínimo</small><strong>{{ total_alertas }}</strong></div></article>
+          <article><span class="metric-symbol danger"><i class="fa-solid fa-box-open"></i></span><div><small>Sin stock</small><strong>{{ sin_stock }}</strong></div></article>
+          <article><span class="metric-symbol blue"><i class="fa-solid fa-file-signature"></i></span><div><small>Órdenes abiertas</small><strong>{{ solicitudes_abiertas }}</strong></div></article>
+          <article><span class="metric-symbol green"><i class="fa-solid fa-building"></i></span><div><small>Proveedores activos</small><strong>{{ proveedores|length }}</strong></div></article>
+        </section>
+
+        <section class="replenishment-card">
+          <div class="section-title"><div><span>Alertas automáticas</span><h2>Productos que requieren compra</h2></div><small>Se alerta cuando stock ≤ stock mínimo</small></div>
+          {% if productos_alerta %}
+            {% regroup productos_alerta by proveedor as grupos_proveedor %}
+            <div class="supplier-groups">
+              {% for grupo in grupos_proveedor %}
+                <article class="supplier-order-card">
+                  <div class="supplier-order-heading">
+                    <div class="supplier-identity"><span><i class="fa-solid fa-building"></i></span><div><strong>{% if grupo.grouper %}{{ grupo.grouper.nombre }}{% else %}Sin proveedor asignado{% endif %}</strong><small>{% if grupo.grouper %}{{ grupo.grouper.email }}{% else %}Edita los productos antes de solicitar{% endif %}</small></div></div>
+                    <span class="items-counter">{{ grupo.list|length }} producto{{ grupo.list|length|pluralize }}</span>
+                  </div>
+                  {% if grupo.grouper %}
+                    <form method="post" action="{% url 'crear_solicitud_reposicion' %}" class="supplier-order-form" data-order-form>
+                      {% csrf_token %}<input type="hidden" name="proveedor_id" value="{{ grupo.grouper.id }}">
+                      <div class="replenishment-table-wrap"><table class="replenishment-table"><thead><tr><th>Solicitar</th><th>Producto</th><th>Stock actual</th><th>Mínimo</th><th>Cantidad</th></tr></thead><tbody>
+                        {% for producto in grupo.list %}
+                          <tr>
+                            <td><input class="order-check" type="checkbox" name="productos" value="{{ producto.id }}" checked aria-label="Incluir {{ producto.nombre }}"></td>
+                            <td><div class="replenishment-product"><span class="product-mini-image"><img src="{{ producto.imagen.url }}" alt=""></span><div><strong>{{ producto.nombre }}</strong><small>{{ producto.marca }}{% if producto.color %} · {{ producto.color }}{% endif %}</small></div></div></td>
+                            <td><span class="stock-chip {% if producto.stock == 0 %}empty{% endif %}">{{ producto.stock }}</span></td>
+                            <td>{{ producto.stock_minimo }}</td>
+                            <td><input class="quantity-order" type="number" name="cantidad_{{ producto.id }}" min="1" max="1000000" value="{{ producto.cantidad_reposicion_sugerida }}" required aria-label="Cantidad de {{ producto.nombre }}"></td>
+                          </tr>
+                        {% endfor %}
+                      </tbody></table></div>
+                      <div class="order-footer"><label><span>Observaciones para el proveedor</span><textarea name="observaciones" maxlength="2000" rows="2" placeholder="Ej. Confirmar fecha estimada de entrega."></textarea></label><button type="submit" class="send-order-button"><i class="fa-solid fa-paper-plane"></i><span>Crear y enviar solicitud</span></button></div>
+                    </form>
+                  {% else %}
+                    <div class="missing-supplier-note"><i class="fa-solid fa-triangle-exclamation"></i><span>Estos productos no pueden solicitarse hasta asignarles un proveedor.</span><a href="{% url 'lista_productos_crud' %}">Ir a productos</a></div>
+                  {% endif %}
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="replenishment-empty"><span><i class="fa-solid fa-boxes-stacked"></i></span><h3>Inventario saludable</h3><p>Ningún producto se encuentra bajo su stock mínimo.</p></div>
+          {% endif %}
+        </section>
+
+        <section class="replenishment-card">
+          <div class="section-title"><div><span>Trazabilidad</span><h2>Historial de solicitudes</h2></div><small>Últimas 30 órdenes</small></div>
+          {% if solicitudes %}<div class="request-history">
+            {% for solicitud in solicitudes %}<details class="request-record">
+              <summary><div><strong>{{ solicitud.numero }}</strong><span>{{ solicitud.proveedor.nombre }}</span></div><span class="request-date">{{ solicitud.creada_en|date:"d/m/Y H:i" }}</span><span class="request-status {{ solicitud.estado }}">{{ solicitud.get_estado_display }}</span><b>{{ solicitud.total_unidades }} uds.</b><i class="fa-solid fa-chevron-down"></i></summary>
+              <div class="request-detail"><div class="request-products">{% for item in solicitud.items.all %}<p><span>{{ item.producto.nombre }}</span><strong>{{ item.cantidad_solicitada }} {{ item.producto.get_unidad_venta_display|lower }}(s)</strong></p>{% endfor %}</div><div class="request-meta"><p><small>Enviado a</small><strong>{{ solicitud.email_destino }}</strong></p><p><small>Creada por</small><strong>{{ solicitud.creada_por.username }}</strong></p>{% if solicitud.observaciones %}<p><small>Observaciones</small><span>{{ solicitud.observaciones }}</span></p>{% endif %}{% if solicitud.error_envio %}<p class="send-error"><small>Error</small><span>{{ solicitud.error_envio }}</span></p>{% endif %}</div>
+                <div class="request-actions">{% if solicitud.estado == 'error' or solicitud.estado == 'pendiente' %}<form method="post" action="{% url 'reenviar_solicitud_reposicion' solicitud.id %}">{% csrf_token %}<button class="retry-button" type="submit"><i class="fa-solid fa-rotate"></i> Reintentar correo</button></form>{% elif solicitud.estado == 'enviada' %}<form method="post" action="{% url 'recibir_solicitud_reposicion' solicitud.id %}" onsubmit="return confirm('¿Confirmas que recibiste todos los productos? El stock aumentará automáticamente.');">{% csrf_token %}<button class="receive-button" type="submit"><i class="fa-solid fa-boxes-packing"></i> Marcar como recibida</button></form>{% endif %}</div>
+              </div>
+            </details>{% endfor %}
+          </div>{% else %}<div class="history-empty">Aún no se han creado solicitudes de reposición.</div>{% endif %}
+        </section>
+
+        <section class="replenishment-card supplier-management">
+          <div class="section-title"><div><span>Directorio</span><h2>Proveedores</h2></div><small>El correo se enviará a estas direcciones</small></div>
+          <div class="supplier-directory">{% for proveedor in proveedores %}<details><summary><div><strong>{{ proveedor.nombre }}</strong><small>{{ proveedor.email }}</small></div><span>{{ proveedor.productos.count }} productos</span><i class="fa-solid fa-pen"></i></summary><form method="post" action="{% url 'editar_proveedor' proveedor.id %}" class="supplier-edit-form">{% csrf_token %}<label>Empresa<input name="nombre" value="{{ proveedor.nombre }}" required maxlength="160"></label><label>Contacto<input name="nombre_contacto" value="{{ proveedor.nombre_contacto }}" maxlength="160"></label><label>Email<input type="email" name="email" value="{{ proveedor.email }}" required></label><label>Teléfono<input name="telefono" value="{{ proveedor.telefono }}" maxlength="40"></label><button type="submit">Guardar proveedor</button></form></details>{% endfor %}</div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal fade" id="modalProveedor" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content supplier-modal"><div class="modal-header"><div><span>Directorio comercial</span><h2 class="modal-title">Nuevo proveedor</h2></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><form method="post" action="{% url 'crear_proveedor' %}">{% csrf_token %}<div class="modal-body"><label>Nombre de empresa<input name="nombre" maxlength="160" required></label><label>Persona de contacto<input name="nombre_contacto" maxlength="160"></label><label>Correo de pedidos<input type="email" name="email" required></label><label>Teléfono<input name="telefono" maxlength="40"></label></div><div class="modal-footer"><button type="button" class="cancel-provider" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="save-provider">Crear proveedor</button></div></form></div></div></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/reposicion.js' %}"></script>
+</body>
+</html>

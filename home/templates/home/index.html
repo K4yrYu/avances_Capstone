@@ -39,6 +39,7 @@
             <li class="nav-item"><a class="nav-link active" aria-current="page" href="{% url 'index' %}">Inicio</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'lista_productos' %}">Productos</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'asistente_sfi' %}">Asistente IA</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Nosotros</a></li>
             {% if user.is_staff %}
               <li class="nav-item"><a class="nav-link" href="{% url 'panel_administracion' %}">Administración</a></li>
@@ -88,6 +89,7 @@
                 Explorar productos <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
               </a>
               <a href="{% url 'vista_ofertas' %}" class="btn btn-sfi-light btn-lg">Ver ofertas</a>
+              <a href="{% url 'asistente_sfi' %}" class="btn btn-sfi-light btn-lg"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Preguntar a SFI</a>
             </div>
             <div class="hero-trust" aria-label="Ventajas de SFI">
               <span><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Stock actualizado</span>
@@ -144,6 +146,45 @@
       </div>
     </section>
 
+    <section class="calculator-promo-section" aria-labelledby="calculator-promo-title">
+      <div class="container">
+        <div class="calculator-promo-card">
+          <div class="calculator-promo-copy">
+            <span class="calculator-promo-kicker"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Nueva herramienta SFI</span>
+            <h2 id="calculator-promo-title">Compra la pintura justa para tu proyecto.</h2>
+            <p>Indica cu&aacute;ntos metros cuadrados pintar&aacute;s y compara al instante los litros, envases, stock y presupuesto de nuestras pinturas.</p>
+            <div class="calculator-promo-benefits" aria-label="Beneficios de la calculadora">
+              <span><i class="fa-solid fa-check" aria-hidden="true"></i> Evita comprar de m&aacute;s</span>
+              <span><i class="fa-solid fa-check" aria-hidden="true"></i> Usa precios reales</span>
+              <span><i class="fa-solid fa-check" aria-hidden="true"></i> Agrega el c&aacute;lculo al carrito</span>
+            </div>
+            <a href="{% url 'calculadora_pintura' %}" class="btn calculator-promo-button">
+              Calcular mi pintura <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+            </a>
+          </div>
+
+          <div class="calculator-promo-preview" aria-label="Ejemplo de un c&aacute;lculo de pintura">
+            <div class="preview-heading">
+              <span class="preview-icon"><i class="fa-solid fa-calculator" aria-hidden="true"></i></span>
+              <div><small>Ejemplo de c&aacute;lculo</small><strong>Habitaci&oacute;n de 50 m&sup2;</strong></div>
+              <span class="preview-ready"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Listo</span>
+            </div>
+            <div class="preview-flow">
+              <div><small>Superficie</small><strong>50 m&sup2;</strong></div>
+              <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              <div><small>Necesitas</small><strong>11 L</strong></div>
+              <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              <div><small>Comprar</small><strong>3 envases</strong></div>
+            </div>
+            <div class="preview-footer">
+              <span><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i> Revisa stock disponible</span>
+              <span><i class="fa-solid fa-cart-plus" aria-hidden="true"></i> Env&iacute;a el resultado al carrito</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="section-space categories-section">
       <div class="container">
         <div class="section-heading">
@@ -193,6 +234,10 @@
                 <div class="product-card-body">
                   <span class="product-category">{{ producto.categoria }}</span>
                   <h3><a href="{% url 'detalle_producto' producto.id %}">{{ producto.nombre }}</a></h3>
+                  <div class="home-product-meta" aria-label="Datos comerciales del producto">
+                    <span><i class="fa-solid fa-tag" aria-hidden="true"></i> {{ producto.marca|default:"SFI" }}</span>
+                    <span><i class="fa-solid fa-box" aria-hidden="true"></i> {{ producto.presentacion }}</span>
+                  </div>
                   <div class="product-card-footer">
                     <strong class="product-price" data-price="{{ producto.precio }}">${{ producto.precio }}</strong>
                     <a href="{% url 'detalle_producto' producto.id %}" class="product-action" aria-label="Ver detalle de {{ producto.nombre }}">

@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'corsheaders',  # Para evitar el bloqueo de peticiones a la API
     'usuarios',  # Aplicación de usuarios
     'carro_compras', # aplicacion de compras
+    'asistente',  # Asistente inteligente conectado al catalogo
 ]
 
 # Middleware necesario para la seguridad, autenticación y manejo de sesiones.
@@ -187,6 +188,7 @@ REST_FRAMEWORK = {
         'user': '120/minute',
         'login': '5/minute',
         'register': '3/hour',
+        'asistente': '12/minute',
     },
 }
 
@@ -225,3 +227,18 @@ if IS_PRODUCTION and EMAIL_BACKEND.endswith('smtp.EmailBackend'):
 
 
 PASSWORD_RESET_TIMEOUT = 7200
+
+# La IA se ejecuta en la nube; la clave nunca se expone al navegador.
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash-lite').strip()
+try:
+    GEMINI_TIMEOUT_SECONDS = max(5, min(int(os.getenv('GEMINI_TIMEOUT_SECONDS', '25')), 60))
+except ValueError:
+    GEMINI_TIMEOUT_SECONDS = 25
+try:
+    GEMINI_IMAGE_TIMEOUT_SECONDS = max(
+        15,
+        min(int(os.getenv('GEMINI_IMAGE_TIMEOUT_SECONDS', '50')), 90),
+    )
+except ValueError:
+    GEMINI_IMAGE_TIMEOUT_SECONDS = 50

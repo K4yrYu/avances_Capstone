@@ -41,9 +41,36 @@
   font-size: 0.9rem;
 }
 
+.management-heading-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.management-heading .secondary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.72rem 0.9rem;
+  color: var(--admin-navy);
+  background: #fff;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.management-heading .secondary-action:hover {
+  color: #fff;
+  background: var(--admin-navy);
+  border-color: var(--admin-navy);
+}
+
 .inventory-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1rem;
   margin-bottom: 1rem;
 }
@@ -84,6 +111,11 @@
 .inventory-icon.danger {
   color: #93434a;
   background: #fdecee;
+}
+
+.inventory-icon.technical {
+  color: #174f79;
+  background: #e3f0f8;
 }
 
 .inventory-metrics article > div {
@@ -153,7 +185,7 @@
 
 .inventory-filters {
   display: grid;
-  grid-template-columns: minmax(220px, 1.5fr) repeat(4, minmax(135px, 0.7fr)) auto;
+  grid-template-columns: minmax(220px, 1.45fr) repeat(5, minmax(125px, 0.7fr)) auto;
   gap: 0.7rem;
   align-items: end;
   padding: 1.1rem 1.5rem;
@@ -324,6 +356,25 @@
   font-size: 0.58rem;
 }
 
+.product-color-admin {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.32rem;
+  margin-top: 0.25rem;
+  color: #526d80;
+  font-size: 0.59rem;
+  font-weight: 750;
+}
+
+.product-color-admin i {
+  width: 10px;
+  height: 10px;
+  background: var(--product-color);
+  border: 1px solid rgba(9, 40, 64, 0.2);
+  border-radius: 50%;
+}
+
 .category-badge,
 .stock-admin-badge,
 .status-admin-badge {
@@ -356,6 +407,17 @@
   background: #fdecee;
 }
 
+.stock-minimum-admin {
+  display: block;
+  max-width: 145px;
+  margin-top: 0.3rem;
+  overflow: hidden;
+  color: #8797a4;
+  font-size: 0.57rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-admin-badge {
   gap: 0.3rem;
   color: #286047;
@@ -369,6 +431,37 @@
 
 .status-admin-badge i {
   font-size: 0.38rem;
+}
+
+.technical-admin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  padding: 0.36rem 0.58rem;
+  color: #6f5a24;
+  background: #fff3c4;
+  border-radius: 999px;
+  font-size: 0.61rem;
+  font-weight: 780;
+  white-space: nowrap;
+}
+
+.technical-admin-badge.verified {
+  color: #174f79;
+  background: #e3f0f8;
+}
+
+.technical-admin-badge.ready {
+  color: #286047;
+  background: #e6f5ed;
+}
+
+.technical-presentation {
+  display: block;
+  margin-top: 0.3rem;
+  color: #8797a4;
+  font-size: 0.59rem;
 }
 
 .product-price-admin {
@@ -656,6 +749,16 @@
     gap: 1rem;
   }
 
+  .management-heading-actions {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .management-heading-actions a {
+    flex: 1;
+    justify-content: center;
+  }
+
   .inventory-filters {
     grid-template-columns: 1fr 1fr;
   }
@@ -676,6 +779,10 @@
 
   .management-heading .primary-action {
     width: 100%;
+  }
+
+  .management-heading-actions {
+    flex-direction: column;
   }
 
   .inventory-metrics,

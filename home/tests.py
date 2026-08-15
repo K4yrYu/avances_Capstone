@@ -6,6 +6,7 @@ from productos.models import Producto
 
 class HomeSfiTests(TestCase):
     def setUp(self):
+        Producto.objects.all().delete()
         self.producto = Producto.objects.create(
             nombre='Taladro de prueba SFI',
             descripcion='Producto creado para validar el inicio.',
@@ -23,6 +24,8 @@ class HomeSfiTests(TestCase):
         self.assertContains(response, 'Sistema Ferretero Inteligente')
         self.assertContains(response, self.producto.nombre)
         self.assertContains(response, reverse('detalle_producto', args=[self.producto.id]))
+        self.assertContains(response, reverse('calculadora_pintura'))
+        self.assertContains(response, 'Compra la pintura justa para tu proyecto')
         self.assertNotContains(response, 'images.unsplash.com')
         self.assertEqual(response.context['total_productos'], 1)
         self.assertEqual(response.context['total_categorias'], 1)

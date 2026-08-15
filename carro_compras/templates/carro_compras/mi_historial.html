@@ -40,6 +40,7 @@
             <li class="nav-item"><a class="nav-link" href="{% url 'index' %}">Inicio</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'lista_productos' %}">Productos</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'asistente_sfi' %}">Asistente IA</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Nosotros</a></li>
             {% if user.is_staff %}
               <li class="nav-item"><a class="nav-link" href="{% url 'panel_administracion' %}">Administración</a></li>

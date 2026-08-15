@@ -1,0 +1,114 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Calculadora SFI para estimar pintura, envases y presupuesto con productos reales del cat&aacute;logo.">
+  <title>Calculadora de pintura | SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/calculadora_pintura.css' %}">
+  <link rel="stylesheet" href="{% static 'css/footer_sfi.css' %}">
+</head>
+<body>
+  <a class="skip-link" href="#calculadora">Saltar a la calculadora</a>
+  <div class="announcement-bar"><div class="container announcement-content"><span><i class="fa-solid fa-calculator"></i> Estimaci&oacute;n basada en fichas verificadas</span><span class="announcement-secondary"><i class="fa-solid fa-boxes-stacked"></i> Precios y stock del cat&aacute;logo SFI</span></div></div>
+
+  <header class="site-header sticky-top">
+    <nav class="navbar navbar-expand-xl" aria-label="Navegaci&oacute;n principal">
+      <div class="container">
+        <a class="navbar-brand" href="{% url 'index' %}" aria-label="SFI, ir al inicio"><img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente"></a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menuPrincipal" aria-controls="menuPrincipal" aria-expanded="false" aria-label="Abrir men&uacute;"><span class="navbar-toggler-icon"></span></button>
+        <div class="collapse navbar-collapse" id="menuPrincipal">
+          <ul class="navbar-nav mx-auto align-items-xl-center">
+            <li class="nav-item"><a class="nav-link" href="{% url 'index' %}">Inicio</a></li>
+            <li class="nav-item"><a class="nav-link active" aria-current="page" href="{% url 'lista_productos' %}">Productos</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'asistente_sfi' %}">Asistente IA</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Nosotros</a></li>
+            {% if user.is_staff %}<li class="nav-item"><a class="nav-link" href="{% url 'panel_administracion' %}">Administraci&oacute;n</a></li>{% endif %}
+          </ul>
+          <div class="nav-actions">
+            {% if user.is_authenticated %}
+              <div class="user-greeting"><span>Hola,</span><strong>{{ user.first_name|default:user.username }}</strong></div>
+              <a class="icon-action" href="{% url 'vista_carrito' %}" aria-label="Ver carrito"><i class="fa-solid fa-cart-shopping"></i></a>
+              <a class="icon-action" href="{% url 'mi_historial_compras' %}" aria-label="Ver mis compras"><i class="fa-solid fa-clock-rotate-left"></i></a>
+              <form method="post" action="{% url 'cerrar_sesion' %}">{% csrf_token %}<button class="btn btn-outline-sfi btn-sm" type="submit">Salir</button></form>
+            {% else %}<a class="btn btn-outline-sfi" href="{% url 'iniciosesion' %}"><i class="fa-regular fa-user"></i> Ingresar</a>{% endif %}
+          </div>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main
+    id="calculadora"
+    class="paint-calculator"
+    data-api-url="{% url 'api_calcular_pintura' %}"
+    data-add-cart-url="{% url 'agregar_calculo_pintura_carrito' %}"
+    data-cart-url="{% url 'vista_carrito' %}"
+    data-login-url="{% url 'iniciosesion' %}?next={{ request.path|urlencode }}"
+    data-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}"
+    data-placeholder-url="{% static 'img/sfi-logo.png' %}"
+  >
+    <section class="calculator-hero">
+      <div class="calculator-grid" aria-hidden="true"></div>
+      <div class="container position-relative">
+        <span class="calculator-eyebrow"><i class="fa-solid fa-paint-roller"></i> Planifica antes de comprar</span>
+        <h1>Calcula tu pintura y presupuesto.</h1>
+        <p>Ingresa la superficie que pintar&aacute;s y SFI comparar&aacute; las pinturas verificadas del cat&aacute;logo para calcular litros, envases y costo.</p>
+        <div class="calculator-trust"><span><i class="fa-solid fa-shield-halved"></i> Fichas verificadas</span><span><i class="fa-solid fa-warehouse"></i> Stock real</span><span><i class="fa-solid fa-tag"></i> Precios actuales</span></div>
+      </div>
+    </section>
+
+    <section class="calculator-workspace">
+      <div class="container">
+        <div class="calculator-layout">
+          <form id="paint-calculator-form" class="calculator-form-card" novalidate>
+            {% csrf_token %}
+            <div class="calculator-card-heading"><span><i class="fa-solid fa-ruler-combined"></i></span><div><small>Datos del proyecto</small><h2>&iquest;Cu&aacute;nto necesitas pintar?</h2></div></div>
+            <label class="calculator-field" for="superficie"><span>Superficie total <b>*</b></span><div class="unit-input"><input type="number" id="superficie" name="superficie" value="50" min="1" max="100000" step="1" inputmode="numeric" required><em>m&sup2;</em></div><small>Ingresa metros cuadrados completos; el resultado siempre se redondea hacia arriba.</small></label>
+            <div class="calculator-field-grid">
+              <label class="calculator-field" for="ambiente"><span>Ambiente <b>*</b></span><select id="ambiente" name="ambiente" required><option value="">Selecciona el ambiente</option>{% for valor, etiqueta in ambientes_calculadora %}<option value="{{ valor }}">{{ etiqueta }}</option>{% endfor %}</select><small>Define si el proyecto est&aacute; protegido o expuesto.</small></label>
+              <label class="calculator-field" for="tipo_superficie"><span>Tipo de superficie <b>*</b></span><select id="tipo_superficie" name="tipo_superficie" required><option value="">Selecciona la superficie</option>{% for valor, etiqueta in superficies_calculadora %}<option value="{{ valor }}">{{ etiqueta }}</option>{% endfor %}</select><small>Solo recomendaremos pinturas compatibles.</small></label>
+            </div>
+            <div class="calculator-field-grid">
+              <label class="calculator-field" for="estado_superficie"><span>Estado actual <b>*</b></span><select id="estado_superficie" name="estado_superficie" required><option value="">Selecciona el estado</option>{% for valor, etiqueta in estados_superficie %}<option value="{{ valor }}">{{ etiqueta }}</option>{% endfor %}</select><small>Usaremos este dato para indicar la preparaci&oacute;n previa.</small></label>
+              <label class="calculator-field" for="terminacion"><span>Terminaci&oacute;n deseada <b>*</b></span><select id="terminacion" name="terminacion" required>{% for valor, etiqueta in terminaciones_calculadora %}<option value="{{ valor }}">{{ etiqueta }}</option>{% endfor %}</select><small>Filtra el resultado por el acabado que buscas.</small></label>
+            </div>
+            <div class="calculator-field-grid">
+              <label class="calculator-field" for="capas"><span>Capas</span><select id="capas" name="capas"><option value="">Usar ficha del producto</option>{% for numero in "123456" %}<option value="{{ numero }}">{{ numero }} capa{{ numero|pluralize }}</option>{% endfor %}</select></label>
+              <label class="calculator-field" for="desperdicio"><span>Margen adicional</span><select id="desperdicio" name="desperdicio"><option value="">Usar ficha del producto</option><option value="0">Sin margen</option><option value="5">5%</option><option value="10">10%</option><option value="15">15%</option><option value="20">20%</option></select></label>
+            </div>
+            <label class="calculator-field" for="color"><span>Color preferido</span><select id="color" name="color"><option value="">Mostrar todos los colores</option>{% for color in colores %}<option value="{{ color }}">{{ color }}</option>{% endfor %}</select><small>Puedes comparar todos los colores o limitar la recomendaci&oacute;n.</small></label>
+            <div id="calculator-error" class="calculator-error" role="alert" hidden></div>
+            <button id="calculate-paint" class="calculate-button" type="submit"><i class="fa-solid fa-calculator"></i><span>Calcular materiales</span></button>
+            <p class="calculator-available"><i class="fa-solid fa-circle-check"></i> {{ total_pinturas_calculables }} pinturas preparadas para calcular.</p>
+          </form>
+
+          <aside class="calculator-method-card">
+            <span class="method-icon"><i class="fa-solid fa-square-root-variable"></i></span>
+            <small>C&aacute;lculo transparente</small><h2>La IA no inventa estas cantidades.</h2>
+            <p>El resultado se obtiene directamente desde el rendimiento, contenido y capas registrados en la ficha de cada pintura.</p>
+            <div class="formula-box"><span>Litros necesarios</span><strong>(&Aacute;rea &times; capas &divide; rendimiento) + margen</strong></div>
+            <ul><li>Redondeamos a envases completos.</li><li>Mostramos el sobrante estimado.</li><li>Comprobamos si existe stock suficiente.</li></ul>
+          </aside>
+        </div>
+
+        <section id="calculator-results" class="calculator-results" hidden aria-live="polite">
+          <div class="results-heading"><div><span>Presupuesto comparativo</span><h2>Alternativas para tu proyecto</h2><p id="results-summary"></p></div><strong id="results-count"></strong></div>
+          <div id="paint-recommendations" class="paint-recommendations"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  {% include 'includes/footer_sfi.html' %}
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/security.js' %}"></script>
+  <script src="{% static 'js/calculadora_pintura.js' %}"></script>
+</body>
+</html>

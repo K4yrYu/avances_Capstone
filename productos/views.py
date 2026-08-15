@@ -1,16 +1,34 @@
-from django.shortcuts import render, get_object_or_404
+import logging
+
+from django.conf import settings
+from django.contrib import messages
+from django.core.mail import EmailMultiAlternatives
+from django.shortcuts import redirect, render, get_object_or_404
+from django.template.loader import render_to_string
+from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Producto, HistorialPrecio
-from .serializers import ProductoSerializer
+from .forms import ProveedorForm
+from .models import (
+    DetalleSolicitudReposicion,
+    HistorialPrecio,
+    Producto,
+    Proveedor,
+    SolicitudReposicion,
+)
+from .serializers import CalculoPinturaEntradaSerializer, ProductoSerializer
+from .services import calcular_recomendaciones_pintura
 from rest_framework.permissions import AllowAny, BasePermission
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.db import transaction
-from django.db.models import OuterRef, Subquery, F
+from django.db.models import OuterRef, Subquery, F, Prefetch
 from carro_compras.models import Venta, Detalle  # Asegúrate de importar esto arriba
+
+
+logger = logging.getLogger(__name__)
 
 
 #--------------------GET-----------------------
@@ -22,6 +40,96 @@ def vista_ofertas(request):
 
 def lista_productos(request):
     return render(request, 'productos/lista_productos.html')
+
+
+def _pinturas_calculables():
+    return Producto.objects.filter(
+        activo=True,
+        tipo_calculo='pintura',
+        informacion_tecnica_verificada=True,
+        contenido__gt=0,
+        rendimiento__gt=0,
+        capas_recomendadas__isnull=False,
+        unidad_contenido='l',
+        unidad_rendimiento='m2_l',
+    ).exclude(
+        ambiente_uso='no_aplica',
+    ).exclude(
+        superficies_compatibles=[],
+    ).exclude(
+        tipo_pintura='no_aplica',
+    ).exclude(
+        terminacion='no_aplica',
+    ).exclude(
+        propiedades_pintura=[],
+    ).exclude(
+        preparaciones_recomendadas=[],
+    ).exclude(repintado_min_horas__isnull=True)
+
+
+def calculadora_pintura(request):
+    pinturas_validas = _pinturas_calculables()
+    colores = pinturas_validas.exclude(color='').values_list(
+        'color', flat=True
+    ).distinct().order_by('color')
+    return render(request, 'productos/calculadora_pintura.html', {
+        'colores': colores,
+        'ambientes_calculadora': [
+            opcion for opcion in Producto.AMBIENTE_USO_CHOICES if opcion[0] != 'no_aplica'
+        ],
+        'superficies_calculadora': Producto.SUPERFICIE_CHOICES,
+        'estados_superficie': Producto.ESTADO_SUPERFICIE_CHOICES,
+        'terminaciones_calculadora': [
+            ('cualquiera', 'Sin preferencia'),
+            *[
+                opcion for opcion in Producto.TERMINACION_CHOICES
+                if opcion[0] != 'no_aplica'
+            ],
+        ],
+        'total_pinturas_calculables': pinturas_validas.count(),
+    })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def api_calcular_pintura(request):
+    entrada = CalculoPinturaEntradaSerializer(data=request.data)
+    entrada.is_valid(raise_exception=True)
+    datos = entrada.validated_data
+    recomendaciones = calcular_recomendaciones_pintura(
+        superficie=datos['superficie'],
+        capas=datos.get('capas'),
+        desperdicio=datos.get('desperdicio'),
+        color=datos.get('color', ''),
+        ambiente=datos['ambiente'],
+        tipo_superficie=datos['tipo_superficie'],
+        estado_superficie=datos['estado_superficie'],
+        terminacion=datos['terminacion'],
+    )
+    return Response({
+        'consulta': {
+            'superficie_m2': datos['superficie'],
+            'capas_personalizadas': datos.get('capas'),
+            'desperdicio_personalizado': datos.get('desperdicio'),
+            'color': datos.get('color', ''),
+            'ambiente': datos['ambiente'],
+            'ambiente_display': dict(Producto.AMBIENTE_USO_CHOICES)[datos['ambiente']],
+            'tipo_superficie': datos['tipo_superficie'],
+            'tipo_superficie_display': dict(Producto.SUPERFICIE_CHOICES)[datos['tipo_superficie']],
+            'estado_superficie': datos['estado_superficie'],
+            'estado_superficie_display': dict(Producto.ESTADO_SUPERFICIE_CHOICES)[datos['estado_superficie']],
+            'terminacion': datos['terminacion'],
+            'terminacion_display': dict([
+                ('cualquiera', 'Sin preferencia'),
+                *[
+                    opcion for opcion in Producto.TERMINACION_CHOICES
+                    if opcion[0] != 'no_aplica'
+                ],
+            ])[datos['terminacion']],
+        },
+        'total_resultados': len(recomendaciones),
+        'recomendaciones': recomendaciones,
+    })
 
 # Vista API (muestra los productos en formato JSON)
 @api_view(['GET'])
@@ -41,7 +149,29 @@ def es_admin(user):
 
 @user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def formulario_producto(request):
-    return render(request, 'productos/formulario_producto.html')
+    try:
+        proveedor_id = int(request.GET.get('proveedor', ''))
+    except (TypeError, ValueError):
+        proveedor_id = None
+    proveedor_preseleccionado = Proveedor.objects.filter(
+        pk=proveedor_id, activo=True
+    ).first() if proveedor_id else None
+    return render(request, 'productos/formulario_producto.html', {
+        'categorias': Producto.CATEGORIA_CHOICES,
+        'unidades_venta': Producto.UNIDAD_VENTA_CHOICES,
+        'unidades_contenido': Producto.UNIDAD_CONTENIDO_CHOICES,
+        'tipos_calculo': Producto.TIPO_CALCULO_CHOICES,
+        'unidades_rendimiento': Producto.UNIDAD_RENDIMIENTO_CHOICES,
+        'ambientes_uso': Producto.AMBIENTE_USO_CHOICES,
+        'superficies_compatibles': Producto.SUPERFICIE_CHOICES,
+        'tipos_pintura': Producto.TIPO_PINTURA_CHOICES,
+        'terminaciones_pintura': Producto.TERMINACION_CHOICES,
+        'propiedades_pintura': Producto.PROPIEDAD_PINTURA_CHOICES,
+        'preparaciones_pintura': Producto.PREPARACION_CHOICES,
+        'proveedores': Proveedor.objects.filter(activo=True),
+        'proveedor_preseleccionado': proveedor_preseleccionado,
+        'modo_edicion': False,
+    })
 
 @api_view(['POST'])
 @permission_classes([EsAdmin])
@@ -119,8 +249,25 @@ def api_editar_producto(request, id):
 @user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def editar_producto(request, id):
     producto = get_object_or_404(Producto, id=id)
-    return render(request, 'productos/editar_producto.html', {
-        'producto': producto
+    especificaciones_texto = '\n'.join(
+        f'{clave}: {valor}' for clave, valor in producto.especificaciones.items()
+    )
+    return render(request, 'productos/formulario_producto.html', {
+        'producto': producto,
+        'categorias': Producto.CATEGORIA_CHOICES,
+        'unidades_venta': Producto.UNIDAD_VENTA_CHOICES,
+        'unidades_contenido': Producto.UNIDAD_CONTENIDO_CHOICES,
+        'tipos_calculo': Producto.TIPO_CALCULO_CHOICES,
+        'unidades_rendimiento': Producto.UNIDAD_RENDIMIENTO_CHOICES,
+        'ambientes_uso': Producto.AMBIENTE_USO_CHOICES,
+        'superficies_compatibles': Producto.SUPERFICIE_CHOICES,
+        'tipos_pintura': Producto.TIPO_PINTURA_CHOICES,
+        'terminaciones_pintura': Producto.TERMINACION_CHOICES,
+        'propiedades_pintura': Producto.PROPIEDAD_PINTURA_CHOICES,
+        'preparaciones_pintura': Producto.PREPARACION_CHOICES,
+        'proveedores': Proveedor.objects.filter(activo=True),
+        'especificaciones_texto': especificaciones_texto,
+        'modo_edicion': True,
     })
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -140,22 +287,211 @@ def api_ofertas(request):
 
     resultado = []
     for p in productos_con_descuento:
-        resultado.append({
-            'id': p.id,
-            'nombre': p.nombre,
-            'descripcion': p.descripcion,
-            'precio': p.precio,
-            'imagen': request.build_absolute_uri(p.imagen.url) if p.imagen else '',
+        datos_producto = ProductoSerializer(p, context={'request': request}).data
+        datos_producto.update({
             'precio_anterior': getattr(p, 'precio_anterior', None),
-            'stock': p.stock,
-            'categoria': p.categoria,
         })
+        resultado.append(datos_producto)
 
     return Response(resultado)
 
 @api_view(['GET'])
 @permission_classes([EsAdmin])
 def api_lista_productos_admin(request):
-    productos = Producto.objects.all()
+    productos = Producto.objects.select_related('proveedor').all()
     serializer = ProductoSerializer(productos, many=True)
     return Response(serializer.data)
+
+
+def _enviar_correo_reposicion(solicitud):
+    items = list(solicitud.items.select_related('producto').all())
+    contexto = {'solicitud': solicitud, 'items': items}
+    texto = render_to_string('productos/emails/solicitud_reposicion.txt', contexto)
+    html = render_to_string('productos/emails/solicitud_reposicion.html', contexto)
+    correo = EmailMultiAlternatives(
+        subject=solicitud.asunto,
+        body=texto,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[solicitud.email_destino],
+    )
+    correo.attach_alternative(html, 'text/html')
+    try:
+        enviados = correo.send(fail_silently=False)
+        if enviados != 1:
+            raise RuntimeError('El servidor de correo no confirmó el envío.')
+    except Exception as exc:
+        logger.exception('No fue posible enviar la solicitud de reposición %s', solicitud.pk)
+        solicitud.estado = 'error'
+        solicitud.error_envio = str(exc)[:1500]
+        solicitud.save(update_fields=['estado', 'error_envio'])
+        return False
+
+    solicitud.estado = 'enviada'
+    solicitud.error_envio = ''
+    solicitud.enviada_en = timezone.now()
+    solicitud.save(update_fields=['estado', 'error_envio', 'enviada_en'])
+    return True
+
+
+@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
+def gestion_reposicion(request):
+    productos_alerta = Producto.objects.filter(
+        activo=True,
+        stock__lte=F('stock_minimo'),
+    ).select_related('proveedor').order_by('proveedor__nombre', 'nombre')
+    solicitudes = SolicitudReposicion.objects.select_related(
+        'proveedor', 'creada_por'
+    ).prefetch_related('items__producto')[:30]
+    proveedores = Proveedor.objects.filter(activo=True).prefetch_related('productos')
+    return render(request, 'productos/reposicion.html', {
+        'productos_alerta': productos_alerta,
+        'solicitudes': solicitudes,
+        'proveedores': proveedores,
+        'proveedor_form': ProveedorForm(),
+        'total_alertas': productos_alerta.count(),
+        'sin_stock': productos_alerta.filter(stock=0).count(),
+        'sin_proveedor': productos_alerta.filter(proveedor__isnull=True).count(),
+        'solicitudes_abiertas': SolicitudReposicion.objects.filter(
+            estado__in=['pendiente', 'enviada', 'error']
+        ).count(),
+    })
+
+
+@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
+def gestion_proveedores(request):
+    proveedores = Proveedor.objects.prefetch_related(
+        Prefetch('productos', queryset=Producto.objects.order_by('categoria', 'nombre'))
+    ).order_by('-activo', 'nombre')
+    return render(request, 'productos/proveedores.html', {
+        'proveedores': proveedores,
+        'total_proveedores': proveedores.count(),
+        'proveedores_activos': proveedores.filter(activo=True).count(),
+        'productos_asignados': Producto.objects.filter(proveedor__isnull=False).count(),
+        'productos_sin_proveedor': Producto.objects.filter(proveedor__isnull=True).count(),
+    })
+
+
+@require_http_methods(['POST'])
+@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
+def guardar_proveedor(request, id=None):
+    proveedor = get_object_or_404(Proveedor, pk=id) if id else None
+    formulario = ProveedorForm(request.POST, instance=proveedor)
+    if formulario.is_valid():
+        proveedor = formulario.save()
+        accion = 'actualizado' if id else 'creado'
+        if 'application/json' in request.headers.get('Accept', ''):
+            return JsonResponse({
+                'id': proveedor.id,
+                'nombre': proveedor.nombre,
+                'email': proveedor.email,
+                'mensaje': f'Proveedor {accion} correctamente.',
+            }, status=200 if id else 201)
+        messages.success(request, f'Proveedor {accion}: {proveedor.nombre}.')
+    else:
+        error = next(iter(formulario.errors.values()))[0]
+        if 'application/json' in request.headers.get('Accept', ''):
+            return JsonResponse({
+                'error': str(error),
+                'errores': formulario.errors.get_json_data(),
+            }, status=400)
+        messages.error(request, f'No fue posible guardar el proveedor: {error}')
+    destino = 'gestion_proveedores' if request.POST.get('origen') == 'proveedores' else 'gestion_reposicion'
+    return redirect(destino)
+
+
+@require_http_methods(['POST'])
+@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
+def crear_solicitud_reposicion(request):
+    try:
+        proveedor_id = int(request.POST.get('proveedor_id', ''))
+    except (TypeError, ValueError):
+        messages.error(request, 'Selecciona un proveedor valido.')
+        return redirect('gestion_reposicion')
+    proveedor = get_object_or_404(Proveedor, pk=proveedor_id, activo=True)
+    ids = request.POST.getlist('productos')
+    if not ids:
+        messages.error(request, 'Selecciona al menos un producto para solicitar.')
+        return redirect('gestion_reposicion')
+
+    productos = list(Producto.objects.filter(
+        pk__in=ids,
+        activo=True,
+        proveedor=proveedor,
+        stock__lte=F('stock_minimo'),
+    ).order_by('nombre'))
+    if len(productos) != len(set(ids)):
+        messages.error(request, 'La selección contiene productos que ya no requieren reposición.')
+        return redirect('gestion_reposicion')
+
+    cantidades = {}
+    for producto in productos:
+        try:
+            cantidad = int(request.POST.get(f'cantidad_{producto.pk}', '0'))
+        except (TypeError, ValueError):
+            cantidad = 0
+        if cantidad < 1 or cantidad > 1_000_000:
+            messages.error(request, f'La cantidad para {producto.nombre} no es válida.')
+            return redirect('gestion_reposicion')
+        cantidades[producto.pk] = cantidad
+
+    observaciones = request.POST.get('observaciones', '').strip()[:2000]
+    with transaction.atomic():
+        solicitud = SolicitudReposicion.objects.create(
+            proveedor=proveedor,
+            creada_por=request.user,
+            email_destino=proveedor.email,
+            asunto='Solicitud de reposición SFI',
+            observaciones=observaciones,
+        )
+        solicitud.asunto = f'Solicitud de reposición SFI {solicitud.numero}'
+        solicitud.save(update_fields=['asunto'])
+        DetalleSolicitudReposicion.objects.bulk_create([
+            DetalleSolicitudReposicion(
+                solicitud=solicitud,
+                producto=producto,
+                cantidad_solicitada=cantidades[producto.pk],
+                stock_al_solicitar=producto.stock,
+            )
+            for producto in productos
+        ])
+
+    if _enviar_correo_reposicion(solicitud):
+        messages.success(request, f'{solicitud.numero} enviada correctamente a {proveedor.email}.')
+    else:
+        messages.error(request, f'{solicitud.numero} fue guardada, pero el correo no pudo enviarse. Puedes reintentarlo.')
+    return redirect('gestion_reposicion')
+
+
+@require_http_methods(['POST'])
+@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
+def reenviar_solicitud_reposicion(request, id):
+    solicitud = get_object_or_404(SolicitudReposicion, pk=id)
+    if solicitud.estado not in {'pendiente', 'error'}:
+        messages.error(request, 'Esta solicitud no se encuentra disponible para reenvío.')
+    elif _enviar_correo_reposicion(solicitud):
+        messages.success(request, f'{solicitud.numero} reenviada correctamente.')
+    else:
+        messages.error(request, 'El correo volvió a fallar. Revisa la configuración SMTP o el email del proveedor.')
+    return redirect('gestion_reposicion')
+
+
+@require_http_methods(['POST'])
+@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
+def recibir_solicitud_reposicion(request, id):
+    with transaction.atomic():
+        solicitud = get_object_or_404(
+            SolicitudReposicion.objects.select_for_update(),
+            pk=id,
+        )
+        if solicitud.estado != 'enviada':
+            messages.error(request, 'Solo las solicitudes enviadas pueden marcarse como recibidas.')
+            return redirect('gestion_reposicion')
+        for item in solicitud.items.select_related('producto'):
+            Producto.objects.filter(pk=item.producto_id).update(
+                stock=F('stock') + item.cantidad_solicitada
+            )
+        solicitud.estado = 'recibida'
+        solicitud.recibida_en = timezone.now()
+        solicitud.save(update_fields=['estado', 'recibida_en'])
+    messages.success(request, f'{solicitud.numero} recibida. El stock fue actualizado automáticamente.')
+    return redirect('gestion_reposicion')

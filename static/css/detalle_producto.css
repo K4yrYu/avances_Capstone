@@ -451,6 +451,173 @@
   border-radius: 18px;
 }
 
+.technical-detail-card {
+  margin-top: 1.4rem;
+  padding: 1.5rem;
+  background: var(--sfi-white);
+  border: 1px solid var(--sfi-border);
+  border-radius: 20px;
+  box-shadow: 0 12px 32px rgba(8, 38, 62, 0.055);
+}
+
+.technical-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--sfi-border);
+}
+
+.technical-detail-heading > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.technical-detail-heading > div > span {
+  color: var(--sfi-green);
+  font-size: 0.64rem;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.technical-detail-heading h2 {
+  margin: 0.18rem 0 0;
+  color: var(--sfi-navy-dark);
+  font-size: 1.3rem;
+  font-weight: 850;
+}
+
+.verified-technical-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.48rem 0.68rem;
+  color: #246d4a;
+  background: #e5f5ec;
+  border-radius: 999px;
+  font-size: 0.67rem;
+  font-weight: 800;
+}
+
+.technical-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.technical-summary-grid article {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  background: #f7fafb;
+  border: 1px solid var(--sfi-border);
+  border-radius: 13px;
+}
+
+.technical-summary-grid article > span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  color: var(--sfi-navy);
+  background: #e5eef4;
+  border-radius: 11px;
+  place-items: center;
+}
+
+.technical-summary-grid article > .technical-color-swatch {
+  color: var(--sfi-navy);
+  background: linear-gradient(135deg, var(--product-color) 0 50%, #fff 50% 100%);
+  border: 1px solid rgba(9, 40, 64, 0.18);
+}
+
+.technical-summary-grid article > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.technical-summary-grid small {
+  color: var(--sfi-muted);
+  font-size: 0.59rem;
+}
+
+.technical-summary-grid strong {
+  overflow: hidden;
+  color: var(--sfi-ink);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.technical-information-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin-top: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--sfi-border);
+  border-radius: 13px;
+}
+
+.technical-information-grid > div {
+  padding: 0.85rem 1rem;
+  border-right: 1px solid var(--sfi-border);
+  border-bottom: 1px solid var(--sfi-border);
+}
+
+.technical-information-grid > div:nth-child(even) {
+  border-right: 0;
+}
+
+.technical-information-grid .technical-wide {
+  grid-column: 1 / -1;
+  border-right: 0;
+}
+
+.technical-information-grid dt {
+  color: var(--sfi-muted);
+  font-size: 0.61rem;
+  font-weight: 720;
+}
+
+.technical-information-grid dd {
+  margin: 0.22rem 0 0;
+  color: var(--sfi-ink);
+  font-size: 0.75rem;
+  font-weight: 720;
+}
+
+.technical-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--sfi-blue);
+  text-decoration: none;
+}
+
+.technical-source-link:hover {
+  color: var(--sfi-navy);
+  text-decoration: underline;
+}
+
+.technical-empty-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+  padding: 0.85rem 1rem;
+  color: #687c8b;
+  background: #f7fafb;
+  border-radius: 12px;
+  font-size: 0.7rem;
+}
+
 .product-support-strip > div {
   display: flex;
   align-items: center;
@@ -525,6 +692,10 @@
     grid-template-columns: 1fr 1fr;
   }
 
+  .technical-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .product-support-strip > a {
     grid-column: 1 / -1;
   }
@@ -579,6 +750,21 @@
   .product-assurances,
   .product-support-strip {
     grid-template-columns: 1fr;
+  }
+
+  .technical-detail-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .technical-summary-grid,
+  .technical-information-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .technical-information-grid > div,
+  .technical-information-grid > div:nth-child(even) {
+    border-right: 0;
   }
 
   .product-support-strip > a {

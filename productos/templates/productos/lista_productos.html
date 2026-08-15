@@ -39,6 +39,7 @@
             <li class="nav-item"><a class="nav-link" href="{% url 'index' %}">Inicio</a></li>
             <li class="nav-item"><a class="nav-link active" aria-current="page" href="{% url 'lista_productos' %}">Productos</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'asistente_sfi' %}">Asistente IA</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Nosotros</a></li>
             {% if user.is_staff %}
               <li class="nav-item"><a class="nav-link" href="{% url 'panel_administracion' %}">Administración</a></li>
@@ -84,6 +85,7 @@
           <div class="col-lg-8">
             <span class="eyebrow"><i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> Catálogo SFI</span>
             <h1>Todo para tu proyecto, ordenado a tu manera.</h1>
+            <a class="catalog-calculator-link" href="{% url 'calculadora_pintura' %}"><i class="fa-solid fa-calculator" aria-hidden="true"></i> Calculadora de pintura</a>
             <p>Busca, compara y encuentra rápidamente herramientas, materiales y soluciones con stock actualizado.</p>
           </div>
           <div class="col-lg-4">

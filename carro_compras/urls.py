@@ -10,6 +10,11 @@ urlpatterns = [
 
     # Path para agregar productos al carrito
     path('api/carrito/agregar/', views.agregar_producto_carrito, name='agregar_producto_carrito'),
+    path(
+        'api/carrito/agregar-calculo-pintura/',
+        views.agregar_calculo_pintura_carrito,
+        name='agregar_calculo_pintura_carrito',
+    ),
     
     # Path para actualizar la cantidad de productos en el carrito
     path('api/carrito/detalle/<int:detalle_id>/', views.actualizar_cantidad_producto, name='actualizar_cantidad_producto'),

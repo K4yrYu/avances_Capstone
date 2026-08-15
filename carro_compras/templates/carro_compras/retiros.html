@@ -17,6 +17,8 @@
   <a class="skip-link" href="#contenido-operaciones">Saltar al contenido</a>
 
   <div class="admin-shell">
+    {% include 'includes/admin_sidebar.html' %}
+    {% comment %}
     <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
       <div class="offcanvas-header sidebar-mobile-header">
         <span id="adminSidebarLabel">Menú administrativo</span>
@@ -51,6 +53,7 @@
         </div>
       </div>
     </aside>
+    {% endcomment %}
 
     <div class="admin-main">
       <header class="admin-topbar">

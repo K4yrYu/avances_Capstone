@@ -60,6 +60,11 @@
             return Number.isFinite(numero) ? numero : 0;
         }
 
+        function colorHexSeguro(valor) {
+            const color = String(valor || "").trim();
+            return /^#[0-9a-f]{6}$/i.test(color) ? color : "";
+        }
+
         function formatoPrecio(precio) {
             return new Intl.NumberFormat("es-CL", {
                 style: "currency",
@@ -138,7 +143,7 @@
 
             const filtrados = productos.filter(producto => {
                 const coincideTexto = !texto || normalizar(
-                    `${producto.nombre || ""} ${producto.descripcion || ""} ${producto.categoria || ""}`
+                    `${producto.nombre || ""} ${producto.descripcion || ""} ${producto.categoria || ""} ${producto.marca || ""} ${producto.modelo || ""} ${producto.color || ""} ${producto.ambiente_uso_display || ""} ${producto.presentacion || ""}`
                 ).includes(texto);
                 const coincideCategoria = !categoria || producto.categoria === categoria;
                 return coincideTexto && coincideCategoria;
@@ -147,11 +152,11 @@
             return ordenarProductos(filtrados);
         }
 
-        function datosStock(stock) {
+        function datosStock(stock, minimo) {
             if (stock <= 0) {
                 return {clase: "stock-out", texto: "Agotado"};
             }
-            if (stock <= 5) {
+            if (stock <= minimo) {
                 return {clase: "stock-low", texto: `Últimas ${stock} unidades`};
             }
             return {clase: "stock-available", texto: `${stock} disponibles`};
@@ -160,11 +165,22 @@
         function tarjetaProducto(producto) {
             const id = Math.max(0, Math.trunc(numeroSeguro(producto.id)));
             const stock = Math.max(0, Math.trunc(numeroSeguro(producto.stock)));
+            const stockMinimo = Math.max(0, Math.trunc(numeroSeguro(producto.stock_minimo)));
             const nombre = escapeHtml(producto.nombre || "Producto sin nombre");
             const categoria = escapeHtml(producto.categoria || "Sin categoría");
             const descripcion = escapeHtml(producto.descripcion || "Conoce los detalles de este producto.");
             const imagen = safeUrl(producto.imagen) || escapeHtml(imagenAlternativa);
-            const stockInfo = datosStock(stock);
+            const stockInfo = datosStock(stock, stockMinimo);
+            const marca = escapeHtml(producto.marca || "SFI");
+            const presentacion = escapeHtml(producto.presentacion || "Unidad");
+            const color = escapeHtml(producto.color || "");
+            const colorHex = colorHexSeguro(producto.color_hex);
+            const colorMeta = color
+                ? `<span class="product-color-meta">${colorHex ? `<i style="--product-color:${colorHex}" aria-hidden="true"></i>` : ""}${color}</span>`
+                : "";
+            const environment = producto.ambiente_uso && producto.ambiente_uso !== "no_aplica"
+                ? `<span><i class="fa-solid fa-house-circle-check" aria-hidden="true"></i>${escapeHtml(producto.ambiente_uso_display || producto.ambiente_uso)}</span>`
+                : "";
             const detalleUrl = `/productos/${id}/`;
             const boton = stock > 0
                 ? `<a class="product-detail-button" href="${detalleUrl}">Ver producto <i class="fas fa-arrow-right" aria-hidden="true"></i></a>`
@@ -181,6 +197,7 @@
                     <div class="catalog-card-body">
                         <p class="product-category">${categoria}</p>
                         <h2><a href="${detalleUrl}">${nombre}</a></h2>
+                        <div class="product-technical-meta"><span><i class="fa-solid fa-copyright" aria-hidden="true"></i>${marca}</span><span><i class="fa-solid fa-box-open" aria-hidden="true"></i>${presentacion}</span>${colorMeta}${environment}</div>
                         <p class="product-description">${descripcion}</p>
                         <div class="card-purchase-row">
                             <div class="price-wrap">

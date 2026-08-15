@@ -10,6 +10,7 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.db import transaction
 from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -22,9 +23,15 @@ from transbank.common.options import WebpayOptions
 from transbank.webpay.webpay_plus.transaction import Transaction
 
 from productos.models import Producto
+from productos.services import calcular_producto_pintura
 from usuarios.models import Usuario
 from .models import Detalle, Venta
-from .serializers import CantidadProductoSerializer, DetalleCarritoEntradaSerializer, VentaSerializer
+from .serializers import (
+    CantidadProductoSerializer,
+    DetalleCarritoEntradaSerializer,
+    RecomendacionPinturaCarritoSerializer,
+    VentaSerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +239,80 @@ def agregar_producto_carrito(request):
         _recalcular_total(venta)
 
     return Response({"message": "Producto agregado al carrito exitosamente."})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def agregar_calculo_pintura_carrito(request):
+    """Recalcula la recomendacion en el servidor antes de modificar el carrito."""
+    entrada = RecomendacionPinturaCarritoSerializer(data=request.data)
+    entrada.is_valid(raise_exception=True)
+    datos = entrada.validated_data
+
+    with transaction.atomic():
+        Usuario.objects.select_for_update().get(pk=request.user.pk)
+        producto = get_object_or_404(
+            Producto.objects.select_for_update(),
+            pk=datos['producto'],
+            activo=True,
+        )
+        calculo = calcular_producto_pintura(
+            producto=producto,
+            superficie=datos['superficie'],
+            capas=datos.get('capas'),
+            desperdicio=datos.get('desperdicio'),
+            ambiente=datos['ambiente'],
+            tipo_superficie=datos['tipo_superficie'],
+            estado_superficie=datos['estado_superficie'],
+            terminacion=datos['terminacion'],
+        )
+        if calculo is None:
+            return Response(
+                {'detail': 'Este producto no tiene una ficha de pintura valida.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cantidad = calculo['cantidad_envases']
+        if cantidad > producto.stock:
+            return Response({
+                'detail': (
+                    f'Stock insuficiente para la recomendacion. '
+                    f'Necesitas {cantidad} envases y hay {producto.stock} disponibles.'
+                ),
+                'cantidad_necesaria': cantidad,
+                'stock_disponible': producto.stock,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        venta, _ = Venta.objects.select_for_update().get_or_create(
+            id_usuario=request.user,
+            estado_venta='carrito',
+            defaults={'fecha_compra': timezone.now(), 'total_venta': 0},
+        )
+        detalle = venta.detalles.select_for_update().filter(producto=producto).first()
+        if detalle:
+            detalle.cantidad_producto = cantidad
+            detalle.nombre_producto = producto.nombre
+            detalle.precio_unitario = producto.precio
+            detalle.imagen_producto = producto.imagen.url if producto.imagen else None
+            detalle.save(update_fields=[
+                'cantidad_producto', 'nombre_producto', 'precio_unitario',
+                'imagen_producto', 'subtotal_venta',
+            ])
+        else:
+            Detalle.objects.create(
+                id_venta=venta,
+                producto=producto,
+                cantidad_producto=cantidad,
+            )
+
+        total = _recalcular_total(venta)
+
+    return Response({
+        'message': f'Se agregaron {cantidad} envases de {producto.nombre} al carrito.',
+        'cantidad_producto': cantidad,
+        'total_carrito': total,
+        'redirect_url': reverse('vista_carrito'),
+    })
 
 
 @api_view(['PUT'])

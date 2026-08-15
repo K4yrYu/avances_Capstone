@@ -1,11 +1,11 @@
-{% load static %}
+{% load static l10n %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>Agregar producto | Administración SFI</title>
+  <title>{% if modo_edicion %}Editar {{ producto.nombre }}{% else %}Agregar producto{% endif %} | Administración SFI</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -17,6 +17,8 @@
   <a class="skip-link" href="#contenido-formulario">Saltar al formulario</a>
 
   <div class="admin-shell">
+    {% include 'includes/admin_sidebar.html' %}
+    {% comment %}
     <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
       <div class="offcanvas-header sidebar-mobile-header">
         <span id="adminSidebarLabel">Menú administrativo</span>
@@ -33,6 +35,8 @@
           <nav class="sidebar-nav" aria-label="Secciones administrativas">
             <a href="{% url 'panel_administracion' %}"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i><span>Resumen</span></a>
             <a class="active" href="{% url 'lista_productos_crud' %}"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><span>Productos</span></a>
+            <a href="{% url 'gestion_proveedores' %}"><i class="fa-solid fa-building" aria-hidden="true"></i><span>Proveedores</span></a>
+            <a href="{% url 'gestion_reposicion' %}"><i class="fa-solid fa-truck-ramp-box" aria-hidden="true"></i><span>Reposici&oacute;n</span></a>
             <a href="{% url 'vista_lista_usuarios' %}"><i class="fa-solid fa-users" aria-hidden="true"></i><span>Usuarios</span></a>
             <a href="{% url 'historial_ventas' %}"><i class="fa-solid fa-receipt" aria-hidden="true"></i><span>Ventas</span></a>
           </nav>
@@ -55,6 +59,7 @@
         </div>
       </div>
     </aside>
+    {% endcomment %}
 
     <div class="admin-main">
       <header class="admin-topbar">
@@ -74,15 +79,18 @@
       <main
         class="product-form-page"
         id="contenido-formulario"
-        data-submit-url="{% url 'api_agregar_producto' %}"
+        data-submit-url="{% if modo_edicion %}{% url 'api_editar_producto' producto.id %}{% else %}{% url 'api_agregar_producto' %}{% endif %}"
         data-products-url="{% url 'lista_productos_crud' %}"
+        data-provider-url="{% url 'crear_proveedor' %}"
         data-placeholder-url="{% static 'img/sfi-logo.png' %}"
+        data-mode="{% if modo_edicion %}edit{% else %}create{% endif %}"
+        data-existing-image="{% if producto.imagen %}{{ producto.imagen.url }}{% endif %}"
       >
         <section class="form-page-heading">
           <div>
             <span class="form-kicker"><i class="fa-solid fa-circle" aria-hidden="true"></i> Inventario SFI</span>
-            <h1>Agregar producto</h1>
-            <p>Registra la información comercial, disponibilidad e imagen que aparecerán en el catálogo.</p>
+            <h1>{% if modo_edicion %}Editar producto{% else %}Agregar producto{% endif %}</h1>
+            <p>{% if modo_edicion %}Actualiza la información comercial, técnica y de inventario de {{ producto.nombre }}.{% else %}Registra una ficha comercial y técnica preparada para el catálogo y el asistente SFI.{% endif %}</p>
           </div>
           <a class="back-products-link" href="{% url 'lista_productos_crud' %}"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver a productos</a>
         </section>
@@ -99,14 +107,14 @@
               <div class="form-fields-grid">
                 <div class="admin-field field-full">
                   <label for="nombre">Nombre del producto <span>*</span></label>
-                  <div class="input-with-icon"><i class="fa-solid fa-box" aria-hidden="true"></i><input type="text" class="form-control" id="nombre" name="nombre" maxlength="200" placeholder="Ej. Taladro percutor 750 W" autocomplete="off" required></div>
+                  <div class="input-with-icon"><i class="fa-solid fa-box" aria-hidden="true"></i><input type="text" class="form-control" id="nombre" name="nombre" maxlength="200" value="{{ producto.nombre|default:'' }}" placeholder="Ej. Taladro percutor 750 W" autocomplete="off" required></div>
                   <small class="field-help">Usa un nombre claro y fácil de encontrar en el catálogo.</small>
                   <span class="field-error" data-error-for="nombre"></span>
                 </div>
 
                 <div class="admin-field field-full">
                   <label for="descripcion">Descripción <span>*</span></label>
-                  <textarea class="form-control" id="descripcion" name="descripcion" rows="5" placeholder="Describe sus características, usos y contenido…" required></textarea>
+                  <textarea class="form-control" id="descripcion" name="descripcion" rows="5" placeholder="Describe sus características, usos y contenido…" required>{{ producto.descripcion|default:'' }}</textarea>
                   <div class="field-meta"><small class="field-help">Incluye la información necesaria para tomar una decisión de compra.</small><small id="description-count">0 caracteres</small></div>
                   <span class="field-error" data-error-for="descripcion"></span>
                 </div>
@@ -115,25 +123,206 @@
                   <label for="categoria">Categoría <span>*</span></label>
                   <select class="form-select" id="categoria" name="categoria" required>
                     <option value="">Selecciona una categoría</option>
-                    <option value="Herramientas">Herramientas</option>
-                    <option value="Construcción">Construcción</option>
-                    <option value="Electricidad">Electricidad</option>
-                    <option value="Pinturas">Pinturas</option>
-                    <option value="Gasfitería">Gasfitería</option>
-                    <option value="Adhesivos">Adhesivos</option>
-                    <option value="Iluminación">Iluminación</option>
-                    <option value="Ferretería">Ferretería</option>
-                    <option value="Seguridad">Seguridad</option>
-                    <option value="Otra">Otra</option>
+                    {% for valor, etiqueta in categorias %}<option value="{{ valor }}" {% if producto.categoria == valor %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
                   </select>
                   <span class="field-error" data-error-for="categoria"></span>
                 </div>
 
                 <div class="admin-field">
                   <label for="precio">Precio de venta <span>*</span></label>
-                  <div class="money-input"><span>$</span><input type="number" class="form-control" id="precio" name="precio" min="1" step="1" placeholder="0" inputmode="numeric" required><em>CLP</em></div>
+                  <div class="money-input"><span>$</span><input type="number" class="form-control" id="precio" name="precio" min="1" step="1" value="{{ producto.precio|default:'' }}" placeholder="0" inputmode="numeric" required><em>CLP</em></div>
                   <span class="field-error" data-error-for="precio"></span>
                 </div>
+
+                <div class="admin-field">
+                  <label for="marca">Marca <span>*</span></label>
+                  <div class="input-with-icon"><i class="fa-solid fa-copyright" aria-hidden="true"></i><input type="text" class="form-control" id="marca" name="marca" maxlength="100" value="{{ producto.marca|default:'' }}" placeholder="Ej. Bosch" required></div>
+                  <span class="field-error" data-error-for="marca"></span>
+                </div>
+
+                <div class="admin-field">
+                  <label for="modelo">Modelo</label>
+                  <div class="input-with-icon"><i class="fa-solid fa-barcode" aria-hidden="true"></i><input type="text" class="form-control" id="modelo" name="modelo" maxlength="120" value="{{ producto.modelo|default:'' }}" placeholder="Ej. GSB 450 RE"></div>
+                  <span class="field-error" data-error-for="modelo"></span>
+                </div>
+
+                <div class="admin-field">
+                  <label for="color">Color o terminación</label>
+                  <div class="input-with-icon"><i class="fa-solid fa-palette" aria-hidden="true"></i><input type="text" class="form-control" id="color" name="color" maxlength="80" value="{{ producto.color|default:'' }}" placeholder="Ej. Blanco Invierno"></div>
+                  <span class="field-error" data-error-for="color"></span>
+                </div>
+
+                <div class="admin-field">
+                  <label for="color_hex">Muestra del color</label>
+                  <div class="color-form-control"><input type="color" id="color-picker" value="{{ producto.color_hex|default:'#FFFFFF' }}" aria-label="Seleccionar muestra del color"><input type="text" class="form-control" id="color_hex" name="color_hex" maxlength="7" value="{{ producto.color_hex|default:'' }}" placeholder="#FFFFFF" pattern="#[0-9A-Fa-f]{6}"></div>
+                  <span class="field-error" data-error-for="color_hex"></span>
+                </div>
+
+                <div class="admin-field">
+                  <label for="ambiente_uso">Ambiente de uso <span>*</span></label>
+                  <select class="form-select" id="ambiente_uso" name="ambiente_uso">
+                    {% for valor, etiqueta in ambientes_uso %}<option value="{{ valor }}" {% if producto.ambiente_uso == valor or not modo_edicion and valor == 'no_aplica' %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
+                  </select>
+                  <small class="field-help">Obligatorio para pinturas; permite recomendar el producto correcto.</small>
+                  <span class="field-error" data-error-for="ambiente_uso"></span>
+                </div>
+
+                <div class="admin-field field-full" id="superficies-compatibles-field">
+                  <label>Superficies compatibles <span>*</span></label>
+                  <div class="surface-options" id="superficies-compatibles-group">
+                    {% for valor, etiqueta in superficies_compatibles %}
+                      <label class="surface-option">
+                        <input type="checkbox" value="{{ valor }}" {% if valor in producto.superficies_compatibles %}checked{% endif %}>
+                        <span><i class="fa-solid fa-check" aria-hidden="true"></i>{{ etiqueta }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                  <small class="field-help">Selecciona solo materiales autorizados por la ficha del fabricante.</small>
+                  <span class="field-error" data-error-for="superficies_compatibles"></span>
+                </div>
+              </div>
+            </section>
+
+            <section class="admin-form-card technical-form-card">
+              <div class="form-card-heading">
+                <span class="form-section-icon technical"><i class="fa-solid fa-ruler-combined" aria-hidden="true"></i></span>
+                <div><small>Datos estructurados</small><h2>Ficha técnica y cálculo</h2></div>
+              </div>
+
+              <div class="technical-note">
+                <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                <p><strong>Preparado para el asistente SFI</strong><span>Registra solo valores publicados por el fabricante. La IA no usará fichas sin verificar para calcular cantidades.</span></p>
+              </div>
+
+              <div class="form-fields-grid technical-fields-grid">
+                <div class="admin-field">
+                  <label for="unidad_venta">Forma de venta <span>*</span></label>
+                  <select class="form-select" id="unidad_venta" name="unidad_venta" required>
+                    {% for valor, etiqueta in unidades_venta %}<option value="{{ valor }}" {% if producto.unidad_venta == valor or not modo_edicion and valor == 'unidad' %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
+                  </select>
+                  <small class="field-help">Cómo compra el cliente este producto.</small>
+                  <span class="field-error" data-error-for="unidad_venta"></span>
+                </div>
+
+                <div class="admin-field">
+                  <label for="tipo_calculo">Tipo de cálculo</label>
+                  <select class="form-select" id="tipo_calculo" name="tipo_calculo">
+                    {% for valor, etiqueta in tipos_calculo %}<option value="{{ valor }}" {% if producto.tipo_calculo == valor or not modo_edicion and valor == 'ninguno' %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
+                  </select>
+                  <span class="field-error" data-error-for="tipo_calculo"></span>
+                </div>
+
+                <div class="admin-field paint-advanced-field">
+                  <label for="tipo_pintura">Tipo de pintura <span>*</span></label>
+                  <select class="form-select" id="tipo_pintura" name="tipo_pintura">
+                    {% for valor, etiqueta in tipos_pintura %}<option value="{{ valor }}" {% if producto.tipo_pintura == valor or not modo_edicion and valor == 'no_aplica' %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
+                  </select>
+                  <span class="field-error" data-error-for="tipo_pintura"></span>
+                </div>
+
+                <div class="admin-field paint-advanced-field">
+                  <label for="terminacion">Terminaci&oacute;n <span>*</span></label>
+                  <select class="form-select" id="terminacion" name="terminacion">
+                    {% for valor, etiqueta in terminaciones_pintura %}<option value="{{ valor }}" {% if producto.terminacion == valor or not modo_edicion and valor == 'no_aplica' %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
+                  </select>
+                  <span class="field-error" data-error-for="terminacion"></span>
+                </div>
+
+                <div class="admin-field">
+                  <label for="contenido">Contenido por presentación</label>
+                  <input type="number" class="form-control" id="contenido" name="contenido" min="0.001" step="0.001" value="{% if producto.contenido %}{{ producto.contenido|unlocalize }}{% endif %}" placeholder="Ej. 3.785" inputmode="decimal">
+                  <span class="field-error" data-error-for="contenido"></span>
+                </div>
+
+                <div class="admin-field">
+                  <label for="unidad_contenido">Unidad del contenido</label>
+                  <select class="form-select" id="unidad_contenido" name="unidad_contenido">
+                    <option value="">Selecciona una unidad</option>
+                    {% for valor, etiqueta in unidades_contenido %}<option value="{{ valor }}" {% if producto.unidad_contenido == valor %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
+                  </select>
+                  <span class="field-error" data-error-for="unidad_contenido"></span>
+                </div>
+
+                <div class="admin-field calculation-field">
+                  <label for="rendimiento">Rendimiento comprobado</label>
+                  <input type="number" class="form-control" id="rendimiento" name="rendimiento" min="0.001" step="0.001" value="{% if producto.rendimiento %}{{ producto.rendimiento|unlocalize }}{% endif %}" placeholder="Ej. 10" inputmode="decimal">
+                  <span class="field-error" data-error-for="rendimiento"></span>
+                </div>
+
+                <div class="admin-field calculation-field">
+                  <label for="unidad_rendimiento">Unidad del rendimiento</label>
+                  <select class="form-select" id="unidad_rendimiento" name="unidad_rendimiento">
+                    {% for valor, etiqueta in unidades_rendimiento %}<option value="{{ valor }}" {% if producto.unidad_rendimiento == valor %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
+                  </select>
+                  <span class="field-error" data-error-for="unidad_rendimiento"></span>
+                </div>
+
+                <div class="admin-field paint-field">
+                  <label for="capas_recomendadas">Capas recomendadas</label>
+                  <input type="number" class="form-control" id="capas_recomendadas" name="capas_recomendadas" min="1" max="10" step="1" value="{{ producto.capas_recomendadas|default_if_none:'' }}" placeholder="Ej. 2" inputmode="numeric">
+                  <span class="field-error" data-error-for="capas_recomendadas"></span>
+                </div>
+
+                <div class="admin-field calculation-field">
+                  <label for="porcentaje_desperdicio">Margen sugerido</label>
+                  <div class="percentage-input"><input type="number" class="form-control" id="porcentaje_desperdicio" name="porcentaje_desperdicio" min="0" max="50" step="0.01" value="{% if modo_edicion %}{{ producto.porcentaje_desperdicio|unlocalize }}{% else %}10{% endif %}" inputmode="decimal"><span>%</span></div>
+                  <span class="field-error" data-error-for="porcentaje_desperdicio"></span>
+                </div>
+
+                <div class="admin-field paint-advanced-field">
+                  <label for="secado_tacto_horas">Secado al tacto</label>
+                  <input type="number" class="form-control" id="secado_tacto_horas" name="secado_tacto_horas" min="0.01" max="168" step="0.01" value="{% if producto.secado_tacto_horas %}{{ producto.secado_tacto_horas|unlocalize }}{% endif %}" placeholder="Horas informadas por el fabricante" inputmode="decimal">
+                  <small class="field-help">D&eacute;jalo vac&iacute;o si la ficha no lo informa.</small>
+                  <span class="field-error" data-error-for="secado_tacto_horas"></span>
+                </div>
+
+                <div class="admin-field paint-advanced-field">
+                  <label for="repintado_min_horas">Repintado m&iacute;nimo <span>*</span></label>
+                  <input type="number" class="form-control" id="repintado_min_horas" name="repintado_min_horas" min="0.01" max="720" step="0.01" value="{% if producto.repintado_min_horas %}{{ producto.repintado_min_horas|unlocalize }}{% endif %}" placeholder="Ej. 3 horas" inputmode="decimal">
+                  <span class="field-error" data-error-for="repintado_min_horas"></span>
+                </div>
+
+                <div class="admin-field paint-advanced-field">
+                  <label for="repintado_max_horas">Repintado m&aacute;ximo</label>
+                  <input type="number" class="form-control" id="repintado_max_horas" name="repintado_max_horas" min="0.01" max="720" step="0.01" value="{% if producto.repintado_max_horas %}{{ producto.repintado_max_horas|unlocalize }}{% endif %}" placeholder="Ej. 6 horas" inputmode="decimal">
+                  <span class="field-error" data-error-for="repintado_max_horas"></span>
+                </div>
+
+                <div class="admin-field field-full paint-advanced-field" id="propiedades-pintura-field">
+                  <label>Propiedades verificadas <span>*</span></label>
+                  <div class="surface-options" id="propiedades-pintura-group">
+                    {% for valor, etiqueta in propiedades_pintura %}<label class="surface-option"><input type="checkbox" value="{{ valor }}" {% if valor in producto.propiedades_pintura %}checked{% endif %}><span><i class="fa-solid fa-check" aria-hidden="true"></i>{{ etiqueta }}</span></label>{% endfor %}
+                  </div>
+                  <span class="field-error" data-error-for="propiedades_pintura"></span>
+                </div>
+
+                <div class="admin-field field-full paint-advanced-field" id="preparaciones-pintura-field">
+                  <label>Preparaci&oacute;n recomendada <span>*</span></label>
+                  <div class="surface-options" id="preparaciones-pintura-group">
+                    {% for valor, etiqueta in preparaciones_pintura %}<label class="surface-option"><input type="checkbox" value="{{ valor }}" {% if valor in producto.preparaciones_recomendadas %}checked{% endif %}><span><i class="fa-solid fa-check" aria-hidden="true"></i>{{ etiqueta }}</span></label>{% endfor %}
+                  </div>
+                  <small class="field-help">El asistente decidir&aacute; cu&aacute;les aplicar seg&uacute;n el estado del muro.</small>
+                  <span class="field-error" data-error-for="preparaciones_recomendadas"></span>
+                </div>
+
+                <div class="admin-field field-full">
+                  <label for="uso_recomendado">Uso recomendado</label>
+                  <textarea class="form-control compact-textarea" id="uso_recomendado" name="uso_recomendado" rows="3" placeholder="Ej. Muros interiores de yeso, estuco y hormigón.">{{ producto.uso_recomendado|default:'' }}</textarea>
+                  <span class="field-error" data-error-for="uso_recomendado"></span>
+                </div>
+
+                <div class="admin-field field-full">
+                  <label for="especificaciones">Especificaciones adicionales</label>
+                  <textarea class="form-control compact-textarea" id="especificaciones" name="especificaciones" rows="4" placeholder="Terminación: Mate&#10;Secado al tacto: 2 horas&#10;Color: Blanco">{{ especificaciones_texto|default:'' }}</textarea>
+                  <small class="field-help">Escribe una especificación por línea usando el formato Nombre: Valor.</small>
+                  <span class="field-error" data-error-for="especificaciones"></span>
+                </div>
+
+                <label class="verification-toggle field-full" for="informacion_tecnica_verificada">
+                  <input type="checkbox" id="informacion_tecnica_verificada" name="informacion_tecnica_verificada" {% if producto.informacion_tecnica_verificada %}checked{% endif %}>
+                  <span class="verification-icon"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i></span>
+                  <span><strong>Información técnica verificada</strong><small>Confirmo que estos valores provienen del envase o ficha oficial del fabricante.</small></span>
+                </label>
               </div>
             </section>
 
@@ -146,13 +335,33 @@
               <div class="form-fields-grid inventory-form-grid">
                 <div class="admin-field">
                   <label for="stock">Stock inicial <span>*</span></label>
-                  <div class="input-with-icon"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><input type="number" class="form-control" id="stock" name="stock" min="0" step="1" value="0" inputmode="numeric" required></div>
+                  <div class="input-with-icon"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><input type="number" class="form-control" id="stock" name="stock" min="0" step="1" value="{{ producto.stock|default:0 }}" inputmode="numeric" required></div>
                   <small class="field-help">Puede comenzar en cero si aún no hay unidades.</small>
                   <span class="field-error" data-error-for="stock"></span>
                 </div>
 
+                <div class="admin-field">
+                  <label for="stock_minimo">Stock mínimo <span>*</span></label>
+                  <div class="input-with-icon"><i class="fa-solid fa-arrow-trend-down" aria-hidden="true"></i><input type="number" class="form-control" id="stock_minimo" name="stock_minimo" min="0" max="1000000" step="1" value="{{ producto.stock_minimo|default:5 }}" inputmode="numeric" required></div>
+                  <small class="field-help">Al llegar a esta cantidad aparecerá una alerta de reposición.</small>
+                  <span class="field-error" data-error-for="stock_minimo"></span>
+                </div>
+
+                <div class="admin-field field-full">
+                  <label for="proveedor">Proveedor habitual</label>
+                  <div class="supplier-select-control">
+                    <select class="form-select" id="proveedor" name="proveedor">
+                      <option value="">Sin proveedor asignado</option>
+                      {% for proveedor in proveedores %}<option value="{{ proveedor.id }}" {% if producto.proveedor_id == proveedor.id or not modo_edicion and proveedor_preseleccionado.id == proveedor.id %}selected{% endif %}>{{ proveedor.nombre }} · {{ proveedor.email }}</option>{% endfor %}
+                    </select>
+                    <button type="button" data-bs-toggle="modal" data-bs-target="#modalProveedorProducto"><i class="fa-solid fa-plus" aria-hidden="true"></i> Nuevo proveedor</button>
+                  </div>
+                  <small class="field-help">Las solicitudes de compra se enviarán al correo de este proveedor.</small>
+                  <span class="field-error" data-error-for="proveedor"></span>
+                </div>
+
                 <label class="publication-toggle" for="activo">
-                  <input type="checkbox" id="activo" name="activo" checked>
+                  <input type="checkbox" id="activo" name="activo" {% if not modo_edicion or producto.activo %}checked{% endif %}>
                   <span class="toggle-control" aria-hidden="true"></span>
                   <span><strong>Publicar inmediatamente</strong><small>El producto quedará visible en el catálogo.</small></span>
                 </label>
@@ -168,23 +377,23 @@
               </div>
 
               <label class="image-upload-zone" id="image-upload-zone" for="imagen">
-                <input type="file" id="imagen" name="imagen" accept="image/jpeg,image/png,image/webp" required>
-                <span class="upload-placeholder" id="upload-placeholder">
+                <input type="file" id="imagen" name="imagen" accept="image/jpeg,image/png,image/webp" {% if not modo_edicion %}required{% endif %}>
+                <span class="upload-placeholder" id="upload-placeholder" {% if modo_edicion and producto.imagen %}hidden{% endif %}>
                   <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
                   <strong>Selecciona una imagen</strong>
                   <small>o arrástrala hasta aquí</small>
                 </span>
-                <img id="image-preview" alt="Vista previa del producto" hidden>
-                <span class="change-image" id="change-image" hidden><i class="fa-solid fa-pen" aria-hidden="true"></i> Cambiar imagen</span>
+                <img id="image-preview" alt="Vista previa del producto" {% if modo_edicion and producto.imagen %}src="{{ producto.imagen.url }}"{% else %}hidden{% endif %}>
+                <span class="change-image" id="change-image" {% if not modo_edicion or not producto.imagen %}hidden{% endif %}><i class="fa-solid fa-pen" aria-hidden="true"></i> Cambiar imagen</span>
               </label>
-              <p class="image-requirements"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> JPG, PNG o WebP · máximo 5 MB · hasta 5000 × 5000 px.</p>
+              <p class="image-requirements"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> JPG, PNG o WebP · máximo 5 MB · hasta 5000 × 5000 px.{% if modo_edicion %} Si no eliges otra, se conserva la actual.{% endif %}</p>
               <span class="field-error image-error" data-error-for="imagen"></span>
             </section>
 
             <section class="catalog-preview-card">
               <span>Vista previa de precio</span>
               <strong id="price-preview">$0</strong>
-              <small>Este valor se mostrará en pesos chilenos.</small>
+              <small id="technical-preview">Ficha técnica pendiente de verificación.</small>
             </section>
 
             <section class="form-guidance-card">
@@ -193,6 +402,7 @@
                 <li>Comprueba que el nombre no esté duplicado.</li>
                 <li>Usa una fotografía clara y centrada.</li>
                 <li>Verifica cuidadosamente precio y stock.</li>
+                <li>Solo marca la ficha técnica como verificada si revisaste la fuente.</li>
               </ul>
             </section>
           </aside>
@@ -201,7 +411,7 @@
             <div><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><span><strong>Registro protegido</strong><small>Solo administradores pueden crear productos.</small></span></div>
             <div class="submit-actions">
               <a href="{% url 'lista_productos_crud' %}">Cancelar</a>
-              <button type="submit" id="submit-product"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>Crear producto</span></button>
+              <button type="submit" id="submit-product"><i class="fa-solid {% if modo_edicion %}fa-floppy-disk{% else %}fa-plus{% endif %}" aria-hidden="true"></i><span>{% if modo_edicion %}Guardar cambios{% else %}Crear producto{% endif %}</span></button>
             </div>
           </div>
 
@@ -213,7 +423,31 @@
 
   <div class="toast-container position-fixed bottom-0 end-0 p-3">
     <div id="product-form-toast" class="toast product-form-toast" role="status" aria-live="polite" aria-atomic="true">
-      <div class="toast-body"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>Producto creado correctamente.</span></div>
+      <div class="toast-body"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>{% if modo_edicion %}Producto actualizado correctamente.{% else %}Producto creado correctamente.{% endif %}</span></div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="modalProveedorProducto" tabindex="-1" aria-labelledby="tituloProveedorProducto" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content inline-supplier-modal">
+        <div class="modal-header">
+          <div><small>Directorio comercial</small><h2 class="modal-title" id="tituloProveedorProducto">Agregar proveedor</h2></div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <form id="form-proveedor-producto" novalidate>
+          <div class="modal-body">
+            <label>Empresa <span>*</span><input class="form-control" name="nombre" maxlength="160" required></label>
+            <label>Persona de contacto<input class="form-control" name="nombre_contacto" maxlength="160"></label>
+            <label>Correo para pedidos <span>*</span><input class="form-control" type="email" name="email" required></label>
+            <label>Tel&eacute;fono<input class="form-control" name="telefono" maxlength="40"></label>
+            <p id="provider-form-feedback" role="alert" hidden></p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="provider-modal-cancel" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="provider-modal-save"><i class="fa-solid fa-building-circle-check" aria-hidden="true"></i><span>Guardar proveedor</span></button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 

@@ -17,6 +17,8 @@
   <a class="skip-link" href="#contenido-productos">Saltar al contenido</a>
 
   <div class="admin-shell">
+    {% include 'includes/admin_sidebar.html' %}
+    {% comment %}
     <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
       <div class="offcanvas-header sidebar-mobile-header">
         <span id="adminSidebarLabel">Menú administrativo</span>
@@ -38,6 +40,14 @@
             <a class="active" href="{% url 'lista_productos_crud' %}">
               <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i>
               <span>Productos</span>
+            </a>
+            <a href="{% url 'gestion_proveedores' %}">
+              <i class="fa-solid fa-building" aria-hidden="true"></i>
+              <span>Proveedores</span>
+            </a>
+            <a href="{% url 'gestion_reposicion' %}">
+              <i class="fa-solid fa-truck-ramp-box" aria-hidden="true"></i>
+              <span>Reposici&oacute;n</span>
             </a>
             <a href="{% url 'vista_lista_usuarios' %}">
               <i class="fa-solid fa-users" aria-hidden="true"></i>
@@ -79,6 +89,7 @@
         </div>
       </div>
     </aside>
+    {% endcomment %}
 
     <div class="admin-main">
       <header class="admin-topbar">
@@ -115,9 +126,14 @@
             <h1>Gestión de productos</h1>
             <p>Administra el catálogo, disponibilidad, precios y stock desde un solo lugar.</p>
           </div>
-          <a class="primary-action" href="{% url 'formulario_producto' %}">
-            <i class="fa-solid fa-plus" aria-hidden="true"></i> Agregar producto
-          </a>
+          <div class="management-heading-actions">
+            <a class="secondary-action" href="{% url 'gestion_reposicion' %}">
+              <i class="fa-solid fa-truck-ramp-box" aria-hidden="true"></i> Reponer stock
+            </a>
+            <a class="primary-action" href="{% url 'formulario_producto' %}">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i> Agregar producto
+            </a>
+          </div>
         </section>
 
         <section class="inventory-metrics" aria-label="Resumen de inventario">
@@ -136,6 +152,10 @@
           <article>
             <span class="inventory-icon danger"><i class="fa-solid fa-box-open" aria-hidden="true"></i></span>
             <div><small>Sin stock</small><strong id="metrica-agotados">—</strong></div>
+          </article>
+          <article>
+            <span class="inventory-icon technical"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i></span>
+            <div><small>Listos para cálculo</small><strong id="metrica-calculo">—</strong></div>
           </article>
         </section>
 
@@ -183,6 +203,16 @@
               </select>
             </label>
 
+            <label class="filter-field" for="filtro-ficha">
+              <span>Ficha técnica</span>
+              <select class="form-select" id="filtro-ficha">
+                <option value="">Todas</option>
+                <option value="lista">Lista para cálculo</option>
+                <option value="verificada">Verificada</option>
+                <option value="pendiente">Pendiente</option>
+              </select>
+            </label>
+
             <label class="filter-field" for="orden-productos-admin">
               <span>Ordenar</span>
               <select class="form-select" id="orden-productos-admin">
@@ -207,6 +237,7 @@
                   <th>Categoría</th>
                   <th>Precio</th>
                   <th>Stock</th>
+                  <th>Ficha técnica</th>
                   <th>Estado</th>
                   <th class="text-end">Acciones</th>
                 </tr>
@@ -216,6 +247,7 @@
                   <tr class="loading-row" aria-hidden="true">
                     <td><span class="loading-product"></span></td>
                     <td><span class="loading-line short"></span></td>
+                    <td><span class="loading-line"></span></td>
                     <td><span class="loading-line"></span></td>
                     <td><span class="loading-line short"></span></td>
                     <td><span class="loading-line"></span></td>

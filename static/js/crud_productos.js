@@ -8,6 +8,7 @@
         const filtroCategoria = document.getElementById("filtro-categoria");
         const filtroEstado = document.getElementById("filtro-estado");
         const filtroStock = document.getElementById("filtro-stock");
+        const filtroFicha = document.getElementById("filtro-ficha");
         const selectorOrden = document.getElementById("orden-productos-admin");
         const botonLimpiar = document.getElementById("limpiar-filtros-admin");
         const contador = document.getElementById("contador-resultados");
@@ -41,6 +42,11 @@
         function numeroSeguro(valor) {
             const numero = Number(valor);
             return Number.isFinite(numero) ? numero : 0;
+        }
+
+        function colorHexSeguro(valor) {
+            const color = String(valor || "").trim();
+            return /^#[0-9a-f]{6}$/i.test(color) ? color : "";
         }
 
         function normalizar(valor) {
@@ -83,9 +89,11 @@
             document.getElementById("metrica-activos").textContent = activos.length;
             document.getElementById("metrica-bajo").textContent = activos.filter(producto => {
                 const stock = numeroSeguro(producto.stock);
-                return stock > 0 && stock <= 5;
+                const minimo = Math.max(0, numeroSeguro(producto.stock_minimo));
+                return stock > 0 && stock <= minimo;
             }).length;
             document.getElementById("metrica-agotados").textContent = activos.filter(producto => numeroSeguro(producto.stock) === 0).length;
+            document.getElementById("metrica-calculo").textContent = activos.filter(producto => producto.apto_para_calculo).length;
         }
 
         function productosVisibles() {
@@ -93,21 +101,27 @@
             const categoria = filtroCategoria.value;
             const estado = filtroEstado.value;
             const stockFiltro = filtroStock.value;
+            const fichaFiltro = filtroFicha.value;
 
             const filtrados = productos.filter(producto => {
                 const stock = numeroSeguro(producto.stock);
+                const minimo = Math.max(0, numeroSeguro(producto.stock_minimo));
                 const coincideTexto = !texto || normalizar(
-                    `${producto.id} ${producto.nombre || ""} ${producto.descripcion || ""}`
+                    `${producto.id} ${producto.nombre || ""} ${producto.descripcion || ""} ${producto.marca || ""} ${producto.modelo || ""} ${producto.color || ""} ${producto.proveedor_nombre || ""} ${producto.presentacion || ""}`
                 ).includes(texto);
                 const coincideCategoria = !categoria || producto.categoria === categoria;
                 const coincideEstado = !estado
                     || (estado === "activo" && producto.activo)
                     || (estado === "inactivo" && !producto.activo);
                 const coincideStock = !stockFiltro
-                    || (stockFiltro === "disponible" && stock > 5)
-                    || (stockFiltro === "bajo" && stock > 0 && stock <= 5)
+                    || (stockFiltro === "disponible" && stock > minimo)
+                    || (stockFiltro === "bajo" && stock > 0 && stock <= minimo)
                     || (stockFiltro === "agotado" && stock === 0);
-                return coincideTexto && coincideCategoria && coincideEstado && coincideStock;
+                const coincideFicha = !fichaFiltro
+                    || (fichaFiltro === "lista" && producto.apto_para_calculo)
+                    || (fichaFiltro === "verificada" && producto.informacion_tecnica_verificada)
+                    || (fichaFiltro === "pendiente" && !producto.informacion_tecnica_verificada);
+                return coincideTexto && coincideCategoria && coincideEstado && coincideStock && coincideFicha;
             });
 
             return filtrados.sort((a, b) => {
@@ -120,21 +134,33 @@
             });
         }
 
-        function datosStock(stock) {
+        function datosStock(stock, minimo) {
             if (stock <= 0) return {clase: "out", texto: "Sin stock"};
-            if (stock <= 5) return {clase: "low", texto: `${stock} · Bajo`};
+            if (stock <= minimo) return {clase: "low", texto: `${stock} · Bajo`};
             return {clase: "", texto: `${stock} unidades`};
         }
 
         function filaProducto(producto) {
             const id = Math.max(0, Math.trunc(numeroSeguro(producto.id)));
             const stock = Math.max(0, Math.trunc(numeroSeguro(producto.stock)));
+            const stockMinimo = Math.max(0, Math.trunc(numeroSeguro(producto.stock_minimo)));
             const nombre = escapeHtml(producto.nombre || "Producto sin nombre");
             const descripcion = escapeHtml(producto.descripcion || "Sin descripción");
             const categoria = escapeHtml(producto.categoria || "Otra");
             const imagen = safeUrl(producto.imagen) || escapeHtml(imagenAlternativa);
-            const stockInfo = datosStock(stock);
+            const stockInfo = datosStock(stock, stockMinimo);
             const activo = Boolean(producto.activo);
+            const fichaVerificada = Boolean(producto.informacion_tecnica_verificada);
+            const aptoCalculo = Boolean(producto.apto_para_calculo);
+            const marcaModelo = [producto.marca, producto.modelo].filter(Boolean).join(" · ");
+            const color = escapeHtml(producto.color || "");
+            const colorHex = colorHexSeguro(producto.color_hex);
+            const proveedor = escapeHtml(producto.proveedor_nombre || "Sin proveedor");
+            const colorBadge = color
+                ? `<span class="product-color-admin">${colorHex ? `<i style="--product-color:${colorHex}"></i>` : ""}${color}</span>`
+                : "";
+            const fichaTexto = aptoCalculo ? "Lista para cálculo" : (fichaVerificada ? "Verificada" : "Pendiente");
+            const fichaClase = aptoCalculo ? "ready" : (fichaVerificada ? "verified" : "pending");
             const editar = activo
                 ? `<a class="action-button edit" href="${crearUrl(editUrlBase, id)}"><i class="fa-solid fa-pen" aria-hidden="true"></i> Editar</a>`
                 : "";
@@ -146,14 +172,16 @@
                             <span class="product-thumb"><img src="${imagen}" alt="${nombre}" loading="lazy"></span>
                             <div>
                                 <strong title="${nombre}">${nombre}</strong>
-                                <small title="${descripcion}">${descripcion}</small>
+                                <small title="${descripcion}">${escapeHtml(marcaModelo || descripcion)}</small>
+                                ${colorBadge}
                                 <span class="product-id">ID #${id}</span>
                             </div>
                         </div>
                     </td>
                     <td><span class="category-badge">${categoria}</span></td>
                     <td><strong class="product-price-admin">${escapeHtml(precioClp(producto.precio))}</strong></td>
-                    <td><span class="stock-admin-badge ${stockInfo.clase}">${escapeHtml(stockInfo.texto)}</span></td>
+                    <td><span class="stock-admin-badge ${stockInfo.clase}">${escapeHtml(stockInfo.texto)}</span><small class="stock-minimum-admin">Mínimo ${stockMinimo} · ${proveedor}</small></td>
+                    <td><span class="technical-admin-badge ${fichaClase}"><i class="fa-solid ${aptoCalculo ? "fa-calculator" : "fa-clipboard"}" aria-hidden="true"></i>${escapeHtml(fichaTexto)}</span><small class="technical-presentation">${escapeHtml(producto.presentacion || "Unidad")}</small></td>
                     <td>
                         <span class="status-admin-badge ${activo ? "" : "inactive"}">
                             <i class="fa-solid fa-circle" aria-hidden="true"></i> ${activo ? "Activo" : "Deshabilitado"}
@@ -188,7 +216,7 @@
             if (!visibles.length) {
                 tabla.innerHTML = `
                     <tr class="empty-inventory-row">
-                        <td colspan="6">
+                        <td colspan="7">
                             <div class="empty-inventory">
                                 <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
                                 <strong>No encontramos productos</strong>
@@ -209,6 +237,7 @@
             filtroCategoria.value = "";
             filtroEstado.value = "";
             filtroStock.value = "";
+            filtroFicha.value = "";
             selectorOrden.value = "nombre-asc";
             renderizar();
             buscador.focus();
@@ -293,7 +322,7 @@
                 contador.textContent = "No disponible";
                 tabla.innerHTML = `
                     <tr class="empty-inventory-row">
-                        <td colspan="6">
+                        <td colspan="7">
                             <div class="empty-inventory">
                                 <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
                                 <strong>No pudimos cargar los productos</strong>
@@ -306,7 +335,7 @@
             }
         }
 
-        [buscador, filtroCategoria, filtroEstado, filtroStock, selectorOrden].forEach(control => {
+        [buscador, filtroCategoria, filtroEstado, filtroStock, filtroFicha, selectorOrden].forEach(control => {
             control.addEventListener(control === buscador ? "input" : "change", renderizar);
         });
         botonLimpiar.addEventListener("click", limpiarFiltros);

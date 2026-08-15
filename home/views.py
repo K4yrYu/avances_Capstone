@@ -1,9 +1,9 @@
 from django.shortcuts import render
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Sum
+from django.db.models import Count, F, Sum
 
-from productos.models import Producto
+from productos.models import Producto, SolicitudReposicion
 from carro_compras.models import Venta
 
 
@@ -48,12 +48,17 @@ def panel_administracion(request):
     productos_activos = productos.filter(activo=True)
     ventas_pagadas = Venta.objects.filter(estado_venta='pagado', eliminado=False)
     ingresos = ventas_pagadas.aggregate(total=Sum('total_venta'))['total'] or 0
+    fichas_calculo = sum(producto.apto_para_calculo for producto in productos_activos)
 
     resumen = {
         'productos_activos': productos_activos.count(),
+        'fichas_calculo': fichas_calculo,
         'productos_inactivos': productos.filter(activo=False).count(),
-        'stock_bajo': productos_activos.filter(stock__gt=0, stock__lte=5).count(),
+        'stock_bajo': productos_activos.filter(stock__gt=0, stock__lte=F('stock_minimo')).count(),
         'sin_stock': productos_activos.filter(stock=0).count(),
+        'solicitudes_reposicion': SolicitudReposicion.objects.filter(
+            estado__in=['pendiente', 'enviada', 'error']
+        ).count(),
         'clientes_activos': Usuario.objects.filter(is_active=True, is_staff=False).count(),
         'ventas_pagadas': ventas_pagadas.count(),
         'ingresos': ingresos,

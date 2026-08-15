@@ -1,0 +1,18 @@
+SOLICITUD DE REPOSICIÓN SFI {{ solicitud.numero }}
+
+Estimado equipo de {{ solicitud.proveedor.nombre }}:
+
+Solicitamos confirmar disponibilidad y plazo de entrega para los siguientes productos:
+
+{% for item in items %}- {{ item.producto.nombre }} | Marca: {{ item.producto.marca }} | Cantidad: {{ item.cantidad_solicitada }} {{ item.producto.get_unidad_venta_display|lower }}(s)
+{% endfor %}
+{% if solicitud.observaciones %}
+Observaciones:
+{{ solicitud.observaciones }}
+{% endif %}
+
+Solicitud emitida por {{ solicitud.creada_por.get_full_name|default:solicitud.creada_por.username }} el {{ solicitud.creada_en|date:"d/m/Y H:i" }}.
+
+Atentamente,
+Equipo de Administración SFI
+Sistema Ferretero Inteligente
