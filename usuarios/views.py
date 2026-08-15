@@ -90,7 +90,7 @@ class RegistroAPIView(APIView):
                         reverse('activar_cuenta', args=[token])
                     )
                     send_mail(
-                        subject='Activa tu cuenta en FERREMAS',
+                        subject='Activa tu cuenta en SFI',
                         message=f'Hola {user.first_name}, activa tu cuenta usando este enlace:\n{activation_url}',
                         from_email=settings.DEFAULT_FROM_EMAIL,
                         recipient_list=[user.email],

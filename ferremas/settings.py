@@ -215,7 +215,7 @@ EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = os.getenv(
     'DEFAULT_FROM_EMAIL',
-    f"FERREMAS <{EMAIL_HOST_USER}>" if EMAIL_HOST_USER else 'webmaster@localhost',
+    f"SFI <{EMAIL_HOST_USER}>" if EMAIL_HOST_USER else 'SFI <webmaster@localhost>',
 )
 if IS_PRODUCTION and EMAIL_BACKEND.endswith('smtp.EmailBackend'):
     if not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:

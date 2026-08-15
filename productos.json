@@ -128,5 +128,18 @@
       "categoria": "Construcción",
       "activo": true
     }
+  },
+  {
+    "model": "productos.producto",
+    "pk": 11,
+    "fields": {
+      "nombre": "Pintura al agua",
+      "descripcion": "Tarro de pintura al agua",
+      "precio": 16000,
+      "imagen": "productos/shopping.webp",
+      "stock": 25,
+      "categoria": "Pinturas",
+      "activo": true
+    }
   }
 ]

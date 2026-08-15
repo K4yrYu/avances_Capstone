@@ -2,154 +2,300 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>FERREMAS - Tu ferretería de confianza</title>
-
-    <!-- Bootstrap 5 CDN -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-    <style>
-        .hero {
-            background: url('https://images.unsplash.com/photo-1570129477492-45c003edd2be?crop=entropy&cs=tinysrgb&fit=crop&h=700&w=1600') center center/cover no-repeat;
-            height: 90vh;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-            text-shadow: 2px 2px 5px black;
-        }
-        .hero h1 {
-            font-size: 3.5rem;
-            font-weight: bold;
-        }
-        .hero p {
-            font-size: 1.5rem;
-        }
-        .section-title {
-            margin: 50px 0 30px;
-            text-align: center;
-            font-weight: bold;
-        }
-        .btn-ferremas {
-            background-color: #FFB300;
-            color: white;
-            font-weight: bold;
-            border: none;
-            padding: 12px 30px;
-            font-size: 1.2rem;
-            border-radius: 10px;
-        }
-        .btn-ferremas:hover {
-            background-color: #FFA000;
-        }
-        footer {
-            background-color: #2E7D32;
-            color: white;
-            text-align: center;
-            padding: 20px 0;
-            margin-top: 50px;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="SFI, Sistema Ferretero Inteligente: herramientas, materiales y soluciones para tus proyectos.">
+  <title>SFI | Sistema Ferretero Inteligente</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/index.css' %}">
 </head>
-
 <body>
+  <a class="skip-link" href="#contenido-principal">Saltar al contenido</a>
 
-<!-- Navbar -->
-<nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #2E7D32;">
-  <div class="container">
-    <a class="navbar-brand" href="/">
-      <img src="{% static 'img/logo.png' %}" alt="logo" style="height: 70px; border-radius: 15px 0 15px 0;">
-    </a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-
-    <div class="collapse navbar-collapse" id="menu">
-      <ul class="navbar-nav ms-auto align-items-center">
-        <li class="nav-item"><a class="nav-link" href="/">Inicio</a></li>
-        <li class="nav-item"><a class="nav-link" href="/productos/">Productos</a></li>
-        <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
-        <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Contacto</a></li>
-
-        {% if user.is_authenticated %}
-          <li class="nav-item ms-3">
-            <span class="text-white me-3">Hola, {{ user.username }}</span>
-          </li>
-          <li class="nav-item ms-2">
-            <form method="post" action="/usuarios/cerrar-sesion/" class="d-inline">
-              {% csrf_token %}
-              <button class="btn btn-outline-light px-3 py-2" type="submit">
-              <i class="fas fa-sign-out-alt me-2"></i> Cerrar Sesión
-              </button>
-            </form>
-          </li>
-        {% else %}
-          <li class="nav-item ms-3">
-            <a class="btn btn-outline-light d-flex align-items-center px-3 py-2" href="/usuarios/iniciosesion/">
-              <i class="fas fa-user me-2"></i> Iniciar Sesión
-            </a>
-          </li>
-        {% endif %}
-
-        {% if user.is_staff %}
-          <li class="nav-item ms-2">
-            <a class="nav-link" href="{% url 'panel_administracion' %}">Panel de Administración</a>
-          </li>
-        {% endif %}
-
-        {% if user.is_authenticated %}
-          <li class="nav-item ms-2">
-            <a class="nav-link" href="{% url 'vista_carrito' %}">
-              <i class="fas fa-shopping-cart"></i> Carrito
-            </a>
-          </li>
-          <li class="nav-item ms-2">
-            <a class="nav-link" href="{% url 'mi_historial_compras' %}">
-              <i class="fas fa-history"></i> Mis Compras
-            </a>
-          </li>
-        {% endif %}
-      </ul>
+  <div class="announcement-bar">
+    <div class="container announcement-content">
+      <span><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Compra protegida con Webpay</span>
+      <span class="announcement-secondary"><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Retiro en tienda y despacho</span>
     </div>
   </div>
-</nav>
 
-<!-- Hero Section -->
-<section class="hero">
-    <h1>Bienvenido a FERREMAS</h1>
-    <p>Todo lo que necesitas para construir tus sueños</p>
-    <a href="/productos/" class="btn btn-ferremas mt-4">Ver Productos</a>
-</section>
+  <header class="site-header sticky-top">
+    <nav class="navbar navbar-expand-xl" aria-label="Navegación principal">
+      <div class="container">
+        <a class="navbar-brand" href="{% url 'index' %}" aria-label="SFI, ir al inicio">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente" class="nav-logo">
+        </a>
 
-<!-- Productos Destacados -->
-<div class="container my-5">
-    <h2 class="section-title">Productos Destacados</h2>
-    <div class="row g-4">
-        {% for producto in productos_destacados %}
-        <div class="col-md-4">
-            <div class="card h-100">
-                <img src="{{ producto.imagen.url }}" class="card-img-top" alt="{{ producto.nombre }}">
-                <div class="card-body">
-                    <h5 class="card-title">{{ producto.nombre }}</h5>
-                    <p class="card-text">${{ producto.precio }}</p>
-                    <a href="/productos/" class="btn btn-ferremas">Comprar</a>
-                </div>
-            </div>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menuPrincipal" aria-controls="menuPrincipal" aria-expanded="false" aria-label="Abrir menú">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="menuPrincipal">
+          <ul class="navbar-nav mx-auto align-items-xl-center">
+            <li class="nav-item"><a class="nav-link active" aria-current="page" href="{% url 'index' %}">Inicio</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'lista_productos' %}">Productos</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Nosotros</a></li>
+            {% if user.is_staff %}
+              <li class="nav-item"><a class="nav-link" href="{% url 'panel_administracion' %}">Administración</a></li>
+            {% endif %}
+          </ul>
+
+          <div class="nav-actions">
+            {% if user.is_authenticated %}
+              <div class="user-greeting">
+                <span>Hola,</span>
+                <strong>{{ user.first_name|default:user.username }}</strong>
+              </div>
+              <a class="icon-action" href="{% url 'vista_carrito' %}" aria-label="Ver carrito" title="Carrito">
+                <i class="fa-solid fa-cart-shopping" aria-hidden="true"></i>
+              </a>
+              <a class="icon-action" href="{% url 'mi_historial_compras' %}" aria-label="Ver mis compras" title="Mis compras">
+                <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+              </a>
+              <form method="post" action="{% url 'cerrar_sesion' %}">
+                {% csrf_token %}
+                <button class="btn btn-outline-sfi btn-sm" type="submit">Salir</button>
+              </form>
+            {% else %}
+              <a class="btn btn-outline-sfi" href="{% url 'iniciosesion' %}">
+                <i class="fa-regular fa-user" aria-hidden="true"></i> Ingresar
+              </a>
+            {% endif %}
+          </div>
         </div>
-        {% endfor %}
-    </div>
-</div>
+      </div>
+    </nav>
+  </header>
 
-<!-- Footer -->
-<footer>
+  <main id="contenido-principal">
+    <section class="hero-section">
+      <div class="hero-grid" aria-hidden="true"></div>
+      <div class="hero-glow hero-glow-one" aria-hidden="true"></div>
+      <div class="hero-glow hero-glow-two" aria-hidden="true"></div>
+      <div class="container position-relative">
+        <div class="row align-items-center g-5">
+          <div class="col-lg-6">
+            <span class="eyebrow"><i class="fa-solid fa-bolt" aria-hidden="true"></i> Soluciones para cada proyecto</span>
+            <h1>Construye mejor con herramientas que están a tu altura.</h1>
+            <p class="hero-copy">En SFI encuentras productos seleccionados, compra segura y alternativas de entrega pensadas para avanzar sin detener tu proyecto.</p>
+            <div class="hero-actions">
+              <a href="{% url 'lista_productos' %}" class="btn btn-sfi-primary btn-lg">
+                Explorar productos <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+              </a>
+              <a href="{% url 'vista_ofertas' %}" class="btn btn-sfi-light btn-lg">Ver ofertas</a>
+            </div>
+            <div class="hero-trust" aria-label="Ventajas de SFI">
+              <span><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Stock actualizado</span>
+              <span><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Pago confiable</span>
+            </div>
+          </div>
+
+          <div class="col-lg-6">
+            <div class="hero-showcase">
+              <div class="hero-brand-card">
+                <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
+              </div>
+              <div class="catalog-summary">
+                <div>
+                  <strong>{{ total_productos }}</strong>
+                  <span>productos activos</span>
+                </div>
+                <div class="summary-divider"></div>
+                <div>
+                  <strong>{{ total_categorias }}</strong>
+                  <span>categorías disponibles</span>
+                </div>
+              </div>
+              <div class="floating-badge badge-stock">
+                <i class="fa-solid fa-box-open" aria-hidden="true"></i>
+                <span><strong>Catálogo real</strong> listo para comprar</span>
+              </div>
+              <div class="floating-badge badge-secure">
+                <i class="fa-solid fa-lock" aria-hidden="true"></i>
+                <span><strong>Compra segura</strong> con Webpay</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="benefits-strip" aria-label="Servicios destacados">
+      <div class="container">
+        <div class="row g-0">
+          <div class="col-md-4 benefit-item">
+            <span class="benefit-icon"><i class="fa-solid fa-store" aria-hidden="true"></i></span>
+            <div><strong>Retiro en tienda</strong><span>Compra en línea y retira de forma simple.</span></div>
+          </div>
+          <div class="col-md-4 benefit-item">
+            <span class="benefit-icon"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i></span>
+            <div><strong>Despacho coordinado</strong><span>Recibe tus productos donde los necesitas.</span></div>
+          </div>
+          <div class="col-md-4 benefit-item">
+            <span class="benefit-icon"><i class="fa-solid fa-credit-card" aria-hidden="true"></i></span>
+            <div><strong>Pago protegido</strong><span>Transacciones seguras mediante Webpay.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-space categories-section">
+      <div class="container">
+        <div class="section-heading">
+          <div>
+            <span class="section-kicker">Encuentra lo que necesitas</span>
+            <h2>Compra por categoría</h2>
+          </div>
+          <a href="{% url 'lista_productos' %}" class="text-link">Ver catálogo completo <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+        </div>
+
+        <div class="row g-4">
+          {% for categoria in categorias_destacadas %}
+            <div class="col-md-4">
+              <a href="{% url 'lista_productos' %}" class="category-card">
+                <span class="category-icon"><i class="fa-solid {{ categoria.icono }}" aria-hidden="true"></i></span>
+                <span class="category-content">
+                  <span class="category-count">{{ categoria.total }} producto{{ categoria.total|pluralize }}</span>
+                  <strong>{{ categoria.nombre }}</strong>
+                  <span>{{ categoria.descripcion }}</span>
+                </span>
+                <i class="fa-solid fa-arrow-up-right-from-square category-arrow" aria-hidden="true"></i>
+              </a>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section class="section-space products-section">
+      <div class="container">
+        <div class="section-heading">
+          <div>
+            <span class="section-kicker">Selección SFI</span>
+            <h2>Productos destacados</h2>
+          </div>
+          <p>Alternativas para comenzar o continuar tu próximo proyecto.</p>
+        </div>
+
+        <div class="row g-4">
+          {% for producto in productos_destacados %}
+            <div class="col-sm-6 col-xl-3">
+              <article class="product-card">
+                <a href="{% url 'detalle_producto' producto.id %}" class="product-image-wrap" aria-label="Ver {{ producto.nombre }}">
+                  <span class="stock-pill"><i class="fa-solid fa-circle" aria-hidden="true"></i> {{ producto.stock }} disponibles</span>
+                  <img src="{{ producto.imagen.url }}" alt="{{ producto.nombre }}" class="product-image" loading="lazy">
+                </a>
+                <div class="product-card-body">
+                  <span class="product-category">{{ producto.categoria }}</span>
+                  <h3><a href="{% url 'detalle_producto' producto.id %}">{{ producto.nombre }}</a></h3>
+                  <div class="product-card-footer">
+                    <strong class="product-price" data-price="{{ producto.precio }}">${{ producto.precio }}</strong>
+                    <a href="{% url 'detalle_producto' producto.id %}" class="product-action" aria-label="Ver detalle de {{ producto.nombre }}">
+                      <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+                    </a>
+                  </div>
+                </div>
+              </article>
+            </div>
+          {% empty %}
+            <div class="col-12">
+              <div class="empty-products">
+                <i class="fa-solid fa-box-open" aria-hidden="true"></i>
+                <h3>Estamos preparando el catálogo</h3>
+                <p>Muy pronto encontrarás aquí nuestra selección destacada.</p>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section class="section-space process-section">
+      <div class="container">
+        <div class="process-shell">
+          <div class="row align-items-center g-5">
+            <div class="col-lg-5">
+              <span class="section-kicker section-kicker-light">Comprar es simple</span>
+              <h2>Tu proyecto en marcha en tres pasos.</h2>
+              <p>Explora el catálogo, elige tu forma de entrega y paga de manera segura. Nosotros te acompañamos durante todo el proceso.</p>
+              <a href="{% url 'lista_productos' %}" class="btn btn-sfi-primary">Comenzar ahora</a>
+            </div>
+            <div class="col-lg-7">
+              <ol class="process-list">
+                <li><span>01</span><div><strong>Elige tus productos</strong><p>Compara alternativas, precios y stock disponible.</p></div></li>
+                <li><span>02</span><div><strong>Define la entrega</strong><p>Selecciona retiro en tienda o despacho a domicilio.</p></div></li>
+                <li><span>03</span><div><strong>Paga con confianza</strong><p>Finaliza la compra de forma protegida mediante Webpay.</p></div></li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-section">
+      <div class="container">
+        <div class="cta-card">
+          <div>
+            <span class="section-kicker">Sistema Ferretero Inteligente</span>
+            <h2>¿Listo para comenzar tu próximo proyecto?</h2>
+            <p>Encuentra soluciones confiables para construir, reparar y mejorar.</p>
+          </div>
+          <div class="cta-actions">
+            <a href="{% url 'lista_productos' %}" class="btn btn-sfi-primary btn-lg">Ir al catálogo</a>
+            <a href="{% url 'contacto' %}" class="btn btn-outline-sfi btn-lg">Conoce SFI</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
     <div class="container">
-        <p>© 2025 FERREMAS - Todos los derechos reservados</p>
+      <div class="footer-main">
+        <div class="footer-brand">
+          <img src="{% static 'img/sfi-logo.png' %}" alt="SFI - Sistema Ferretero Inteligente">
+          <p>Herramientas, materiales y soluciones para llevar tus ideas a la realidad.</p>
+        </div>
+        <div class="footer-links">
+          <strong>Explora</strong>
+          <a href="{% url 'lista_productos' %}">Productos</a>
+          <a href="{% url 'vista_ofertas' %}">Ofertas</a>
+          <a href="{% url 'contacto' %}">Nosotros</a>
+        </div>
+        <div class="footer-links">
+          <strong>Tu cuenta</strong>
+          {% if user.is_authenticated %}
+            <a href="{% url 'vista_carrito' %}">Carrito</a>
+            <a href="{% url 'mi_historial_compras' %}">Mis compras</a>
+          {% else %}
+            <a href="{% url 'iniciosesion' %}">Iniciar sesión</a>
+            <a href="{% url 'registro' %}">Crear cuenta</a>
+          {% endif %}
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2026 SFI. Todos los derechos reservados.</span>
+        <span>Compra inteligente para construir mejor.</span>
+      </div>
     </div>
-</footer>
+  </footer>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    document.querySelectorAll('[data-price]').forEach((element) => {
+      const value = Number(element.dataset.price);
+      if (Number.isFinite(value)) {
+        element.textContent = new Intl.NumberFormat('es-CL', {
+          style: 'currency',
+          currency: 'CLP',
+          maximumFractionDigits: 0
+        }).format(value);
+      }
+    });
+  </script>
 </body>
 </html>
