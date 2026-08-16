@@ -97,9 +97,11 @@
 .order-footer { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 1rem; padding: 1rem; background: #fff; border-top: 1px solid var(--admin-border); }
 .order-footer label span { display: block; margin-bottom: .35rem; color: var(--admin-text); font-size: .68rem; font-weight: 800; }
 .order-footer textarea { width: 100%; min-height: 58px; padding: .6rem .7rem; resize: vertical; border: 1px solid #cfdae3; border-radius: 9px; font: inherit; font-size: .74rem; }
+.optional-label { margin-left: .25rem; color: #8a6500; font-size: .62rem; font-style: normal; font-weight: 850; }
 .send-order-button, .receive-button, .retry-button, .save-provider, .supplier-edit-form button { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; padding: .7rem .9rem; border: 0; border-radius: 9px; font-size: .72rem; font-weight: 850; cursor: pointer; }
 .send-order-button, .save-provider { color: #092a44; background: var(--admin-yellow); }
 .send-order-button:hover, .save-provider:hover { background: #ffc929; }
+.send-order-button:disabled { color: #71808c; background: #dce4e9; cursor: not-allowed; }
 .missing-supplier-note { display: flex; align-items: center; gap: .6rem; padding: 1rem; color: #8c5e00; background: #fff8dc; font-size: .75rem; }
 .missing-supplier-note a { margin-left: auto; color: var(--admin-navy); font-weight: 800; }
 .replenishment-empty { padding: 3rem 1rem; text-align: center; }

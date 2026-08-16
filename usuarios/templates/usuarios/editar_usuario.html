@@ -3,146 +3,151 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Editar Usuario - FERREMAS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Editar usuario | Administraci&oacute;n SFI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body {
-      background: url('https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1920,fit=crop/Yle55W6QKWSoQbE4/herramientas-manuales-basicas-02-2022-07-AE0vvPgGKDiqlZEX.jpg') no-repeat center center fixed;
-      background-size: cover;
-      font-family: 'Arial', sans-serif;
-      margin: 0;
-      color: black;
-    }
-
-    .container {
-      background-color: rgba(56, 142, 60, 0.9); /* verde con transparencia */
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-      padding: 40px;
-      margin-top: 50px;
-      color: black;
-      max-width: 800px;
-    }
-
-    .form-card {
-      background-color: rgba(240, 240, 240, 0.85);
-      padding: 30px;
-      border-radius: 10px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }
-
-    h2 {
-      text-align: center;
-      margin-bottom: 30px;
-      color: black;
-    }
-
-    .btn-guardar {
-      background: linear-gradient(to bottom, #2E7D32, #81C784);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      padding: 10px 30px;
-      font-size: 1rem;
-      font-weight: bold;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-      transition: background-color 0.3s, transform 0.3s;
-    }
-
-    .btn-guardar:hover {
-      background: linear-gradient(to bottom, #45a049, #66bb6a);
-      transform: scale(1.05);
-    }
-
-    .btn-secondary {
-      border-radius: 50px;
-      padding: 10px 30px;
-      font-weight: bold;
-    }
-  </style>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}">
+  <link rel="stylesheet" href="{% static 'css/editar_usuario_admin.css' %}">
 </head>
 <body>
-<div class="container">
-  <div class="form-card">
-    <h2>Editar Usuario</h2>
-
-    <div id="mensaje" class="alert d-none"></div>
-
-    <form id="form-editar">
-      {% csrf_token %}
-      <div class="row mb-3">
-        <div class="col">
-          <input type="text" name="rut" class="form-control" value="{{ usuario.rut }}" placeholder="RUT" required>
+  <a class="skip-link" href="#contenido-editar-usuario">Saltar al formulario</a>
+  <div class="admin-shell">
+    {% include 'includes/admin_sidebar.html' %}
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <div class="topbar-title">
+          <button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-controls="adminSidebar" aria-label="Abrir men&uacute;"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
+          <div><span>Administraci&oacute;n</span><strong>Editar usuario</strong></div>
         </div>
-        <div class="col">
-          <input type="text" name="username" class="form-control" value="{{ usuario.username }}" placeholder="Nombre de usuario" required>
-        </div>
-      </div>
+        <div class="admin-profile"><span class="profile-avatar">{{ user.username|first|upper }}</span><div><strong>{{ user.get_full_name|default:user.username }}</strong><span>Administrador</span></div></div>
+      </header>
 
-      <div class="row mb-3">
-        <div class="col">
-          <input type="text" name="first_name" class="form-control" value="{{ usuario.first_name }}" placeholder="Nombres" required>
-        </div>
-        <div class="col">
-          <input type="text" name="last_name" class="form-control" value="{{ usuario.last_name }}" placeholder="Apellidos" required>
-        </div>
-      </div>
+      <main class="user-edit-page" id="contenido-editar-usuario" data-submit-url="{% url 'api_editar_usuario' usuario.id %}" data-users-url="{% url 'vista_lista_usuarios' %}">
+        <section class="user-edit-heading">
+          <div><span class="user-edit-kicker"><i class="fa-solid fa-circle" aria-hidden="true"></i> Control de accesos</span><h1>Editar usuario</h1><p>Actualiza la identificaci&oacute;n, contacto y rol de esta cuenta.</p></div>
+          <a class="back-users-link" href="{% url 'vista_lista_usuarios' %}"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver a usuarios</a>
+        </section>
 
-      <div class="mb-3">
-        <input type="email" name="email" class="form-control" value="{{ usuario.email }}" placeholder="Correo electrónico" required>
-      </div>
+        <form id="form-editar-usuario" class="compact-user-form">
+          {% csrf_token %}
+          <header class="user-record-header">
+            <span class="record-avatar" id="resumen-iniciales">{{ usuario.first_name|first|default:usuario.username|first|upper }}{{ usuario.last_name|first|upper }}</span>
+            <div class="record-identity"><span>Ficha de usuario <b>#{{ usuario.id }}</b></span><h2 id="resumen-nombre">{{ usuario.get_full_name|default:usuario.username }}</h2><small id="resumen-usuario">@{{ usuario.username }}</small></div>
+            <div class="record-badges" aria-label="Estado actual de la cuenta">
+              <span class="record-role {% if usuario.is_staff %}admin{% endif %}" id="resumen-rol"><i class="fa-solid {% if usuario.is_staff %}fa-shield-halved{% else %}fa-user{% endif %}" aria-hidden="true"></i> {% if usuario.is_staff %}Administrador{% else %}Cliente{% endif %}</span>
+              <span class="record-status {% if not usuario.is_active %}inactive{% endif %}"><i class="fa-solid fa-circle" aria-hidden="true"></i> {% if usuario.is_active %}Cuenta activa{% else %}Cuenta suspendida{% endif %}</span>
+            </div>
+          </header>
 
-      <div class="mb-3">
-        <input type="text" name="telefono" class="form-control" value="{{ usuario.telefono }}" placeholder="Teléfono" required>
-      </div>
+          <div class="user-record-body">
+            <section class="record-section identity-section" aria-labelledby="titulo-identificacion">
+              <div class="record-section-heading"><span><i class="fa-solid fa-address-card" aria-hidden="true"></i></span><div><small>Identificaci&oacute;n</small><h3 id="titulo-identificacion">Datos personales</h3></div></div>
+              <div class="compact-fields-grid">
+                <div class="edit-field"><label for="edit-rut">RUT <span>*</span></label><input class="form-control" id="edit-rut" name="rut" value="{{ usuario.rut }}" autocomplete="off" required><small>Formato 12345678-9, sin puntos.</small><span class="field-error" data-error-for="rut"></span></div>
+                <div class="edit-field"><label for="edit-username">Nombre de usuario <span>*</span></label><input class="form-control" id="edit-username" name="username" value="{{ usuario.username }}" autocomplete="off" required><small>Identificador utilizado para iniciar sesi&oacute;n.</small><span class="field-error" data-error-for="username"></span></div>
+                <div class="edit-field"><label for="edit-first-name">Nombres <span>*</span></label><input class="form-control" id="edit-first-name" name="first_name" value="{{ usuario.first_name }}" autocomplete="given-name" required><span class="field-error" data-error-for="first_name"></span></div>
+                <div class="edit-field"><label for="edit-last-name">Apellidos <span>*</span></label><input class="form-control" id="edit-last-name" name="last_name" value="{{ usuario.last_name }}" autocomplete="family-name" required><span class="field-error" data-error-for="last_name"></span></div>
+              </div>
+            </section>
 
-      <div class="mb-4">
-        <label class="form-label">Rol:</label>
-        <select name="is_staff" class="form-select">
-          <option value="false" {% if not usuario.is_staff %}selected{% endif %}>Usuario</option>
-          <option value="true" {% if usuario.is_staff %}selected{% endif %}>Administrador</option>
-        </select>
-      </div>
+            <section class="record-section contact-section" aria-labelledby="titulo-contacto">
+              <div class="record-section-heading"><span class="blue"><i class="fa-solid fa-address-book" aria-hidden="true"></i></span><div><small>Contacto</small><h3 id="titulo-contacto">Canales de comunicaci&oacute;n</h3></div></div>
+              <div class="compact-fields-grid one-column">
+                <div class="edit-field"><label for="edit-email">Correo electr&oacute;nico <span>*</span></label><input class="form-control" type="email" id="edit-email" name="email" value="{{ usuario.email }}" autocomplete="email" required><span class="field-error" data-error-for="email"></span></div>
+                <div class="edit-field"><label for="edit-telefono">Tel&eacute;fono <span>*</span></label><input class="form-control" type="tel" id="edit-telefono" name="telefono" value="{{ usuario.telefono }}" autocomplete="tel" required><small>Entre 9 y 15 d&iacute;gitos; puede comenzar con +.</small><span class="field-error" data-error-for="telefono"></span></div>
+              </div>
+            </section>
 
-      <div class="text-center">
-        <button type="submit" class="btn btn-guardar me-2">Guardar Cambios</button>
-        <a href="{% url 'vista_lista_usuarios' %}" class="btn btn-secondary">Cancelar</a>
-      </div>
-    </form>
+            <section class="record-section access-section" aria-labelledby="titulo-acceso">
+              <div class="record-section-heading"><span class="yellow"><i class="fa-solid fa-key" aria-hidden="true"></i></span><div><small>Acceso</small><h3 id="titulo-acceso">Rol y estado</h3></div></div>
+              <div class="edit-field"><label for="edit-role">Rol asignado <span>*</span></label><select class="form-select" id="edit-role" name="is_staff"><option value="false" {% if not usuario.is_staff %}selected{% endif %}>Cliente</option><option value="true" {% if usuario.is_staff %}selected{% endif %}>Administrador</option></select><small>Los administradores pueden acceder a la gesti&oacute;n interna de SFI.</small><span class="field-error" data-error-for="is_staff"></span></div>
+              <div class="account-facts">
+                <div><i class="fa-solid {% if usuario.email_confirmado %}fa-circle-check{% else %}fa-clock{% endif %}" aria-hidden="true"></i><span><small>Correo</small><strong>{% if usuario.email_confirmado %}Verificado{% else %}Sin verificar{% endif %}</strong></span></div>
+                <div><i class="fa-solid fa-calendar-day" aria-hidden="true"></i><span><small>Cuenta creada</small><strong>{{ usuario.date_joined|date:'d/m/Y' }}</strong></span></div>
+              </div>
+              <div class="admin-role-note" id="admin-role-note" {% if not usuario.is_staff %}hidden{% endif %}><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><span>Este rol permite gestionar productos, usuarios, ventas y operaciones.</span></div>
+              <div class="account-state-control">
+                <div><small>Estado de acceso</small><strong>{% if usuario.is_active %}Cuenta activa{% else %}Cuenta suspendida{% endif %}</strong><span>{% if usuario.is_active %}El usuario puede iniciar sesi&oacute;n y comprar.{% else %}El usuario no puede iniciar sesi&oacute;n hasta ser reactivado.{% endif %}</span></div>
+                {% if user.id != usuario.id %}
+                  <button class="state-action {% if not usuario.is_active %}activate{% endif %}" type="button" id="cambiar-estado-usuario" data-toggle-url="{% url 'api_toggle_activo_usuario' usuario.id %}" data-active="{% if usuario.is_active %}true{% else %}false{% endif %}"><i class="fa-solid {% if usuario.is_active %}fa-user-lock{% else %}fa-user-check{% endif %}" aria-hidden="true"></i><span>{% if usuario.is_active %}Suspender cuenta{% else %}Reactivar cuenta{% endif %}</span></button>
+                {% else %}
+                  <span class="own-account-note"><i class="fa-solid fa-shield" aria-hidden="true"></i> Sesi&oacute;n actual protegida</span>
+                {% endif %}
+              </div>
+            </section>
+          </div>
+
+          <footer class="user-record-footer">
+            <div><i class="fa-solid fa-shield" aria-hidden="true"></i><span><strong>Cambio administrativo</strong><small>Los nuevos datos se aplicar&aacute;n inmediatamente.</small></span></div>
+            <div class="record-actions"><a href="{% url 'vista_lista_usuarios' %}">Cancelar</a><button type="submit" id="guardar-usuario"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>Guardar cambios</span></button></div>
+          </footer>
+          <div class="edit-general-error" id="edit-general-error" role="alert" aria-live="assertive" hidden></div>
+        </form>
+      </main>
+    </div>
   </div>
-</div>
 
-<script>
-  document.getElementById("form-editar").addEventListener("submit", function (e) {
-    e.preventDefault();
+  <div class="toast-container position-fixed bottom-0 end-0 p-3"><div id="edit-user-toast" class="toast edit-user-toast" role="status" aria-live="polite" aria-atomic="true"><div class="toast-body"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>Usuario actualizado correctamente.</span></div></div></div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    document.getElementById("form-editar-usuario").addEventListener("submit", function (event) {
+      event.preventDefault();
+      const form = event.target;
+      const datos = Object.fromEntries(new FormData(form).entries());
+      datos.is_staff = datos.is_staff === "true";
 
-    const form = e.target;
-    const datos = Object.fromEntries(new FormData(form).entries());
-    datos.is_staff = datos.is_staff === "true";
-
-    fetch("/api/usuarios/editar/{{ usuario.id }}/", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
-      },
-      body: JSON.stringify(datos)
-    })
-    .then(res => res.json().then(data => ({ status: res.status, data })))
-    .then(result => {
-      const mensaje = document.getElementById("mensaje");
-
-      if (result.status === 200) {
-        window.location.href = "{% url 'vista_lista_usuarios' %}";
-      } else {
-        mensaje.className = "alert alert-danger";
-        mensaje.textContent = "Error: " + JSON.stringify(result.data);
-        mensaje.classList.remove("d-none");
-      }
+      fetch("{% url 'api_editar_usuario' usuario.id %}", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": form.elements.csrfmiddlewaretoken.value
+        },
+        body: JSON.stringify(datos)
+      })
+      .then(response => response.json().then(data => ({status: response.status, data})))
+      .then(result => {
+        const mensaje = document.getElementById("edit-general-error");
+        if (result.status === 200) {
+          window.location.href = "{% url 'vista_lista_usuarios' %}";
+        } else {
+          mensaje.textContent = "Error: " + JSON.stringify(result.data);
+          mensaje.hidden = false;
+        }
+      });
     });
-  });
-</script>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    const botonEstado = document.getElementById("cambiar-estado-usuario");
+    if (botonEstado) {
+      botonEstado.addEventListener("click", function () {
+        const activo = botonEstado.dataset.active === "true";
+        const accion = activo ? "suspender" : "reactivar";
+        if (!window.confirm(`¿Deseas ${accion} esta cuenta?`)) return;
+        botonEstado.disabled = true;
+
+        fetch(botonEstado.dataset.toggleUrl, {
+          method: "PATCH",
+          headers: {
+            "Accept": "application/json",
+            "X-CSRFToken": document.querySelector('[name="csrfmiddlewaretoken"]').value
+          }
+        })
+        .then(response => response.json().then(data => ({status: response.status, data})))
+        .then(result => {
+          if (result.status !== 200) throw new Error(result.data.error || "No fue posible cambiar el estado.");
+          window.location.reload();
+        })
+        .catch(error => {
+          const mensaje = document.getElementById("edit-general-error");
+          mensaje.textContent = error.message;
+          mensaje.hidden = false;
+          botonEstado.disabled = false;
+        });
+      });
+    }
+  </script>
 </body>
 </html>

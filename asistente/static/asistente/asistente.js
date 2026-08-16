@@ -267,6 +267,7 @@
       scrollToLatest();
     }
 
-    restoreConversation();
+    // Cada carga de la página inicia una consulta nueva.
+    sessionStorage.removeItem(conversationStorageKey);
   });
 })();

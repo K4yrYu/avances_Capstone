@@ -421,6 +421,8 @@
     }
 
     document.getElementById("clear-chat").addEventListener("click", () => { clearState(); workbench.hidden = true; });
-    restoreState();
+    // La fotografía y su análisis pertenecen solo a la carga actual.
+    clearState();
+    workbench.hidden = true;
   });
 })();

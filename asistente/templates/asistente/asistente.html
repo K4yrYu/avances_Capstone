@@ -11,7 +11,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="{% static 'asistente/asistente.css' %}">
-  <link rel="stylesheet" href="{% static 'asistente/asistente_integrado.css' %}">
+  <link rel="stylesheet" href="{% static 'asistente/asistente_integrado.css' %}?v=20260815-photo-first">
   <link rel="stylesheet" href="{% static 'css/footer_sfi.css' %}">
 </head>
 <body>
@@ -88,9 +88,6 @@
 
           <section class="chat-card" aria-label="Conversaci&oacute;n con el asistente SFI">
             <header class="chat-header"><div><span class="online-dot"></span><div><strong>Asistente SFI</strong><small>Conversación, fotografías, catálogo y cálculos en un solo lugar</small></div></div><button id="clear-chat" type="button"><i class="fa-solid fa-arrow-rotate-left"></i> Nueva consulta</button></header>
-            <div id="chat-messages" class="chat-messages" aria-live="polite">
-              <article class="chat-message assistant-message"><span class="message-avatar"><i class="fa-solid fa-robot"></i></span><div class="message-content"><p>Hola, soy el asistente SFI. Cu&eacute;ntame qu&eacute; necesitas para tu proyecto y te ayudar&eacute; a calcular o encontrar productos.</p></div></article>
-            </div>
             <section id="paint-workbench" class="chat-paint-workbench" aria-labelledby="paint-workbench-title" hidden>
               <header class="chat-paint-header">
                 <div><span><i class="fa-solid fa-camera"></i></span><div><small>Herramienta del asistente</small><h2 id="paint-workbench-title">Visualizar pintura en una fotografía</h2></div></div>
@@ -117,6 +114,7 @@
                       <h3 id="paint-analysis-title">Revisión lista</h3>
                       <p id="paint-analysis-summary"></p>
                       <div class="paint-analysis-columns"><div><strong>Observaciones</strong><ul id="paint-analysis-observations"></ul></div><div><strong>Preparación</strong><ul id="paint-analysis-preparation"></ul></div></div>
+                      <p class="paint-selection-instruction"><i class="fa-solid fa-paintbrush"></i> Selecciona una pintura y pinta en la foto las partes para ver c&oacute;mo queda.</p>
                       <div id="paint-recommended-colors" class="paint-recommended-colors" hidden><strong>Colores recomendados</strong><div id="paint-recommended-color-list"></div></div>
                       <a id="paint-analysis-product" href="#" hidden>Ver pintura seleccionada <i class="fa-solid fa-arrow-right"></i></a>
                     </div>
@@ -135,6 +133,9 @@
                 </div>
               </div>
             </section>
+            <div id="chat-messages" class="chat-messages" aria-live="polite">
+              <article class="chat-message assistant-message"><span class="message-avatar"><i class="fa-solid fa-robot"></i></span><div class="message-content"><p>Hola, soy el asistente SFI. Cu&eacute;ntame qu&eacute; necesitas para tu proyecto y te ayudar&eacute; a calcular o encontrar productos.</p></div></article>
+            </div>
             <div id="chat-suggestions" class="chat-suggestions" aria-label="Consultas de ejemplo">
               <button type="button" data-open-visualizer><i class="fa-solid fa-camera"></i> Probar color en mi foto</button>
               <button type="button" data-suggestion="Quiero pintar una habitación interior de 50 metros cuadrados"><i class="fa-solid fa-paint-roller"></i> Pintar 50 m&sup2;</button>

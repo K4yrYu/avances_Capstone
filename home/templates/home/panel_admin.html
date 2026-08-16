@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}?v=20260815-metric-cards">
 </head>
 <body>
   <a class="skip-link" href="#contenido-panel">Saltar al contenido</a>
@@ -131,25 +131,23 @@
         </section>
 
         <section class="metrics-grid" aria-label="Indicadores principales">
-          <article class="metric-card">
+          <a class="metric-card metric-card-link" href="{% url 'lista_productos_crud' %}" aria-label="Administrar productos">
             <div class="metric-card-top">
               <span class="metric-icon blue"><i class="fa-solid fa-box" aria-hidden="true"></i></span>
-              <a href="{% url 'lista_productos_crud' %}" aria-label="Administrar productos"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
             </div>
             <span class="metric-label">Productos activos</span>
             <strong>{{ resumen.productos_activos }}</strong>
             <small>{{ resumen.productos_inactivos }} deshabilitados</small>
-          </article>
+          </a>
 
-          <article class="metric-card">
+          <a class="metric-card metric-card-link" href="{% url 'historial_ventas' %}" aria-label="Ver ventas pagadas">
             <div class="metric-card-top">
               <span class="metric-icon yellow"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i></span>
-              <a href="{% url 'historial_ventas' %}" aria-label="Ver ventas"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
             </div>
             <span class="metric-label">Ventas pagadas</span>
             <strong>{{ resumen.ventas_pagadas }}</strong>
             <small>Compras confirmadas</small>
-          </article>
+          </a>
 
           <article class="metric-card emphasis">
             <div class="metric-card-top">
@@ -161,15 +159,14 @@
             <small>Total de ventas pagadas</small>
           </article>
 
-          <article class="metric-card">
+          <a class="metric-card metric-card-link" href="{% url 'vista_lista_usuarios' %}" aria-label="Administrar clientes activos">
             <div class="metric-card-top">
-              <span class="metric-icon slate"><i class="fa-solid fa-user-group" aria-hidden="true"></i></span>
-              <a href="{% url 'vista_lista_usuarios' %}" aria-label="Administrar usuarios"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+              <span class="metric-icon yellow"><i class="fa-solid fa-users" aria-hidden="true"></i></span>
             </div>
             <span class="metric-label">Clientes activos</span>
             <strong>{{ resumen.clientes_activos }}</strong>
             <small>Sin incluir administradores</small>
-          </article>
+          </a>
         </section>
 
         <div class="dashboard-layout">

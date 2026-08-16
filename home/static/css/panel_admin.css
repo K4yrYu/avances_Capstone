@@ -3,9 +3,11 @@
   --admin-navy-dark: #08263e;
   --admin-blue: #476985;
   --admin-yellow: #ffbc00;
-  --admin-bg: #f3f6f9;
-  --admin-surface: #ffffff;
-  --admin-border: #dce5ed;
+  --admin-bg: #e8f0f6;
+  --admin-surface: #fdfefe;
+  --admin-surface-blue: #edf5fa;
+  --admin-surface-yellow: #fff8df;
+  --admin-border: #cadbe7;
   --admin-text: #15283b;
   --admin-muted: #718193;
   --admin-shadow: 0 14px 38px rgba(9, 40, 64, 0.08);
@@ -23,7 +25,9 @@ body {
   min-height: 100vh;
   margin: 0;
   color: var(--admin-text);
-  background: var(--admin-bg);
+  background:
+    radial-gradient(circle at 88% 4%, rgba(255, 188, 0, 0.13), transparent 24rem),
+    linear-gradient(145deg, #e5eff6 0%, #f3f7fa 52%, #e8f1f7 100%);
   font-family: "Segoe UI", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
@@ -53,7 +57,7 @@ body {
   --bs-offcanvas-width: 286px;
   width: 286px;
   color: var(--admin-text);
-  background: #ffffff !important;
+  background: linear-gradient(180deg, #30749b 0%, #4f98c9 100%) !important;
   border: 0 !important;
   border-right: 1px solid var(--admin-border) !important;
 }
@@ -76,6 +80,7 @@ body {
   min-height: 100%;
   flex-direction: column;
   padding: 1.2rem;
+  background: linear-gradient(180deg, #30749b 0%, #4f98c9 100%);
 }
 
 .sidebar-brand {
@@ -85,7 +90,9 @@ body {
   justify-content: center;
   padding: 0.9rem;
   background: #fff;
-  border-radius: 16px;
+  border: 1px solid #d7e5ee;
+  border-radius: 0;
+  box-shadow: 0 10px 28px rgba(8, 38, 62, 0.08);
 }
 
 .sidebar-brand img {
@@ -132,11 +139,16 @@ body {
 .sidebar-nav a:hover,
 .sidebar-nav a.active {
   color: var(--admin-navy-dark);
-  background: #edf3f7;
+  background: #dceaf3;
 }
 
 .sidebar-nav a.active {
-  box-shadow: inset 3px 0 var(--admin-yellow);
+  color: #082f50;
+  background: #c7dce9;
+  box-shadow:
+    inset 4px 0 var(--admin-yellow),
+    0 5px 14px rgba(8, 38, 62, 0.08);
+  font-weight: 800;
 }
 
 .sidebar-nav a i {
@@ -147,6 +159,10 @@ body {
 .sidebar-nav a:hover i,
 .sidebar-nav a.active i {
   color: var(--admin-navy);
+}
+
+.sidebar-nav a.active i {
+  color: #0b4e7d;
 }
 
 .sidebar-nav a b {
@@ -206,7 +222,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0.8rem 2rem;
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(240, 247, 251, 0.94);
   border-bottom: 1px solid var(--admin-border);
   backdrop-filter: blur(15px);
 }
@@ -291,6 +307,11 @@ body {
   align-items: end;
   justify-content: space-between;
   margin-bottom: 2rem;
+  padding: 1.5rem 1.65rem;
+  background: linear-gradient(120deg, #dcecf6 0%, #edf5fa 70%, #fff3c4 100%);
+  border: 1px solid #c9dce8;
+  border-radius: 20px;
+  box-shadow: 0 12px 30px rgba(8, 38, 62, 0.07);
 }
 
 .dashboard-kicker {
@@ -368,6 +389,31 @@ body {
   border: 1px solid var(--admin-border);
   border-radius: 17px;
   box-shadow: 0 7px 22px rgba(9, 40, 64, 0.045);
+}
+
+.metric-card-link {
+  background: linear-gradient(145deg, #fdfefe, var(--admin-surface-blue));
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.metric-card-link .metric-icon {
+  color: #725600;
+  background: #ffedaa;
+}
+
+.metric-card-link:hover {
+  color: inherit;
+  border-color: #e3b72e;
+  box-shadow: 0 15px 30px rgba(9, 40, 64, 0.13);
+  transform: translateY(-3px);
+}
+
+.metric-card-link:focus-visible {
+  outline: 3px solid rgba(255, 188, 0, 0.48);
+  outline-offset: 3px;
 }
 
 .metric-card.emphasis {
@@ -482,7 +528,7 @@ body {
 }
 
 .dashboard-card {
-  background: var(--admin-surface);
+  background: rgba(253, 254, 254, 0.9);
   border: 1px solid var(--admin-border);
   border-radius: 17px;
   box-shadow: 0 7px 22px rgba(9, 40, 64, 0.045);
@@ -494,7 +540,9 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 1.3rem 1.4rem;
-  border-bottom: 1px solid #e7edf2;
+  background: linear-gradient(90deg, #edf5fa, #f8fbfd);
+  border-bottom: 1px solid #d8e5ed;
+  border-radius: 17px 17px 0 0;
 }
 
 .card-heading > div {
@@ -544,7 +592,7 @@ body {
 }
 
 .operation-list > a:hover {
-  background: #f8fafb;
+  background: #eaf3f8;
 }
 
 .operation-icon {
@@ -606,6 +654,15 @@ body {
   display: grid;
   align-content: start;
   gap: 1rem;
+}
+
+.attention-card {
+  background: linear-gradient(160deg, #fffdf8, #fff8df);
+  border-color: #eadba3;
+}
+
+.attention-card .card-heading {
+  background: linear-gradient(90deg, #fff2c4, #fff9e8);
 }
 
 .card-heading.compact {
@@ -688,6 +745,7 @@ body {
 
 .quick-card {
   padding: 1.2rem;
+  background: linear-gradient(160deg, #f8fbfd, #e8f2f8);
 }
 
 .quick-card > div {
@@ -750,7 +808,7 @@ body {
 .sales-table th {
   padding: 0.8rem 1.3rem;
   color: #82909e;
-  background: #f8fafb;
+  background: #e7f1f7;
   border-bottom: 1px solid var(--admin-border);
   font-size: 0.62rem;
   font-weight: 800;
@@ -763,6 +821,14 @@ body {
   color: #596b7a;
   border-bottom: 1px solid #edf1f4;
   font-size: 0.73rem;
+}
+
+.sales-table tbody tr:nth-child(even) td {
+  background: #f5f9fb;
+}
+
+.sales-table tbody tr:hover td {
+  background: #fff8df;
 }
 
 .sales-table tbody tr:last-child td {
@@ -962,4 +1028,49 @@ body {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Barra lateral azul: la especificidad evita que Bootstrap restablezca el fondo. */
+aside#adminSidebar.admin-sidebar,
+aside#adminSidebar.admin-sidebar .offcanvas-body.sidebar-body {
+  background-color: #123f60 !important;
+  background-image: linear-gradient(180deg, #1b5277 0%, #123f60 52%, #0b304c 100%) !important;
+}
+
+aside#adminSidebar .sidebar-label {
+  color: #b9d0df;
+}
+
+aside#adminSidebar .sidebar-nav a,
+aside#adminSidebar .sidebar-footer a,
+aside#adminSidebar .sidebar-footer button {
+  color: #eaf3f8;
+}
+
+aside#adminSidebar .sidebar-nav a i,
+aside#adminSidebar .sidebar-footer i {
+  color: #bcd2df;
+}
+
+aside#adminSidebar .sidebar-nav a:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.11);
+}
+
+aside#adminSidebar .sidebar-nav a.active {
+  color: #082f50;
+  background: #e6f0f6;
+  box-shadow:
+    inset 4px 0 var(--admin-yellow),
+    0 7px 18px rgba(3, 24, 39, 0.2);
+}
+
+aside#adminSidebar .sidebar-nav a.active i {
+  color: #0b4e7d;
+}
+
+aside#adminSidebar .sidebar-footer a:hover,
+aside#adminSidebar .sidebar-footer button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.11);
 }

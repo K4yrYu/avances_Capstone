@@ -450,11 +450,25 @@ class ReposicionInventarioTests(TestCase):
         self.assertFalse(SolicitudReposicion.objects.filter(proveedor=self.proveedor).exists())
         self.assertEqual(len(mail.outbox), 0)
 
+    def test_solicitud_permite_observacion_vacia(self):
+        response = self.client.post(reverse('crear_solicitud_reposicion'), {
+            'proveedor_id': self.proveedor.id,
+            'productos': [self.producto.id],
+            f'cantidad_{self.producto.id}': 16,
+            'observaciones': '',
+        })
+
+        solicitud = SolicitudReposicion.objects.get(proveedor=self.proveedor)
+        self.assertRedirects(response, reverse('gestion_reposicion'))
+        self.assertEqual(solicitud.observaciones, '')
+        self.assertEqual(len(mail.outbox), 1)
+
     def test_recibir_solicitud_actualiza_stock_una_sola_vez(self):
         self.client.post(reverse('crear_solicitud_reposicion'), {
             'proveedor_id': self.proveedor.id,
             'productos': [self.producto.id],
             f'cantidad_{self.producto.id}': 16,
+            'observaciones': 'Confirmar recepción completa.',
         })
         solicitud = SolicitudReposicion.objects.get(proveedor=self.proveedor)
 

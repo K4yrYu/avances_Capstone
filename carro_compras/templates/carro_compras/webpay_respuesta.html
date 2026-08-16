@@ -7,55 +7,82 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body {
-      background-color: #f2f2f2;
+      position: relative;
+      margin: 0;
+      padding: 1.5rem;
+      background: #08263e url('https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1920,fit=crop/Yle55W6QKWSoQbE4/herramientas-manuales-basicas-02-2022-07-AE0vvPgGKDiqlZEX.jpg') no-repeat center center fixed;
+      background-size: cover;
       font-family: 'Segoe UI', sans-serif;
       display: flex;
       justify-content: center;
       align-items: center;
       min-height: 100vh;
     }
+    body::before {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(115deg, rgba(8, 38, 62, 0.92), rgba(18, 61, 99, 0.78));
+      content: "";
+    }
     .card {
+      position: relative;
       background-color: #ffffff;
-      padding: 2rem 2.5rem;
-      border-radius: 1rem;
-      box-shadow: 0 0 20px rgba(0, 0, 0, 0.05);
-      max-width: 480px;
+      padding: 2rem 2.4rem 2.2rem;
+      border-radius: 1.2rem;
+      box-shadow: 0 22px 55px rgba(3, 24, 40, 0.3);
+      max-width: 560px;
       width: 100%;
       text-align: center;
-      border: 2px solid #ffa500;
+      border: 1px solid #dce5ed;
+      border-top: 6px solid #ffbc00;
     }
     .card h2 {
-      color: #e67e00;
-      margin-bottom: 1rem;
+      color: #08263e;
+      margin: 0 0 0.55rem;
+      font-size: 1.55rem;
+      font-weight: 850;
     }
     .icon {
-      font-size: 4rem;
-      margin-bottom: 1rem;
+      display: grid;
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 1rem;
+      border-radius: 20px;
+      font-size: 2.2rem;
+      place-items: center;
     }
     .success {
       color: #28a745;
+      background: #e8f6ef;
     }
     .fail {
       color: #dc3545;
+      background: #fff0f1;
     }
     .btn-ferremas {
-      background-color: #ffa500;
-      border: none;
-      color: #000;
+      background-color: #ffbc00;
+      border: 1px solid #ffbc00;
+      color: #08263e;
       font-weight: bold;
+      border-radius: 11px;
     }
     .btn-ferremas:hover {
-      background-color: #e69500;
+      color: #fff;
+      background-color: #123d63;
+      border-color: #123d63;
     }
     .logo {
-      width: 120px;
-      margin-bottom: 1rem;
+      width: 190px;
+      max-height: 82px;
+      margin-bottom: 1.15rem;
+      object-fit: contain;
     }
+    .payment-subtitle{margin:0 auto 1.3rem;color:#718193;font-size:.78rem}.payment-details{display:grid;margin-top:1.2rem;overflow:hidden;text-align:left;border:1px solid #dce5ed;border-radius:13px}.payment-details p{display:flex;justify-content:space-between;gap:1rem;margin:0;padding:.75rem .9rem;color:#536d80;font-size:.76rem}.payment-details p+p{border-top:1px solid #e8eef3}.payment-details strong{color:#08263e}.payment-details span{color:#123d63;font-weight:800;text-align:right}.payment-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:.6rem;margin-top:1.35rem}.payment-actions .btn{display:inline-flex;min-height:45px;align-items:center;justify-content:center;padding:.65rem .9rem;font-size:.75rem}.btn-receipt{color:#123d63;background:#fff;border:1px solid #bcd1df;border-radius:11px;font-weight:750}.btn-receipt:hover{color:#fff;background:#123d63;border-color:#123d63}@media(max-width:520px){.card{padding:1.5rem 1.1rem 1.6rem}.payment-actions{flex-direction:column}.payment-actions .btn{width:100%}}
   </style>
 </head>
 <body>
   <div class="card">
-    <img src="/static/img/logo.png" alt="FERREMAS" class="logo">
+    <img src="/static/img/sfi-logo.png" alt="SFI - Sistema Ferretero Inteligente" class="logo">
 
     {% if "éxito" in mensaje %}
       <div class="icon success">✔️</div>
@@ -64,14 +91,23 @@
     {% endif %}
 
     <h2>{{ mensaje }}</h2>
+    <p class="payment-subtitle">Resumen de la transacción realizada en SFI.</p>
 
-    <p><strong>ID de Venta:</strong> {{ venta.id }}</p>
-    <p><strong>Total pagado:</strong> ${{ venta.total_venta }}</p>
+    <div class="payment-details">
+      <p><strong>ID de Venta:</strong> <span>#{{ venta.id }}</span></p>
+      <p><strong>Total pagado:</strong> <span>${{ venta.total_venta }}</span></p>
+      {% if venta.ultimos_digitos %}<p><strong>Tarjeta:</strong> <span>******{{ venta.ultimos_digitos }}</span></p>{% endif %}
+      {% if venta.fecha_compra %}<p><strong>Fecha:</strong> <span>{{ venta.fecha_compra|date:'d/m/Y H:i' }}</span></p>{% endif %}
+      {% if venta.tipo_entrega %}<p><strong>Entrega:</strong> <span>{{ venta.get_tipo_entrega_display }}</span></p>{% endif %}
+    </div>
 
     {% if "éxito" in mensaje %}
-      <a href="/" class="btn btn-ferremas btn-lg mt-4">Volver al inicio</a>
+      <div class="payment-actions">
+        <a href="{% url 'ver_boleta' venta.id %}?origen=mis-compras" class="btn btn-receipt">Descargar boleta PDF</a>
+        <a href="/" class="btn btn-ferremas">Volver al inicio</a>
+      </div>
     {% else %}
-      <a href="/carrito/" class="btn btn-ferremas btn-lg mt-4">Volver al carrito</a>
+      <div class="payment-actions"><a href="/carrito/" class="btn btn-ferremas">Volver al carrito</a></div>
     {% endif %}
   </div>
   <script>
