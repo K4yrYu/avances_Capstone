@@ -17,6 +17,16 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ---
 
+## [Sin publicar]
+
+### Documentación
+
+- Se creó `IDEAS.md` para mantener propuestas futuras separadas de las reglas de trabajo.
+- Se registró **SFI Lista Express** como idea posible, sin autorizar todavía su implementación.
+- `AGENTS.md` ahora indica cuándo consultar las ideas futuras y evita que se implementen automáticamente.
+
+---
+
 ## [0.2.1-beta] - 2026-08-15
 
 ### Arreglo carrito TBK y asistente
