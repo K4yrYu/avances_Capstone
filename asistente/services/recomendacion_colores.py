@@ -63,13 +63,24 @@ def pinturas_compatibles(contexto, color='', limite=6):
 
     color_buscado = _normalizar(color)
     if color_buscado:
+        familias_color = {
+            'blanco', 'negro', 'gris', 'azul', 'rojo', 'verde', 'amarillo',
+            'beige', 'cafe', 'marron', 'naranjo', 'naranja', 'violeta',
+            'morado', 'lila',
+        }
+        familia = next(
+            (palabra for palabra in color_buscado.split() if palabra in familias_color),
+            color_buscado,
+        )
         coincidencias = [
             producto for producto in compatibles
-            if color_buscado in _normalizar(producto.color)
-            or color_buscado in _normalizar(producto.nombre)
+            if familia in _normalizar(producto.color)
+            or familia in _normalizar(producto.nombre)
+            or familia in _normalizar(
+                (producto.especificaciones or {}).get('familia_cromatica')
+            )
         ]
-        if coincidencias:
-            compatibles = coincidencias
+        compatibles = coincidencias
 
     prioridad_ambiente = {
         'interior': {'interior': 0, 'interior_exterior': 1},

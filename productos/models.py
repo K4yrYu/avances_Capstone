@@ -148,6 +148,7 @@ class Producto(models.Model):
     # Ficha comercial y técnica. Estos datos alimentarán al asistente SFI.
     marca = models.CharField(max_length=100, blank=True)
     modelo = models.CharField(max_length=120, blank=True)
+    sku = models.CharField(max_length=50, unique=True, null=True, blank=True)
     color = models.CharField(max_length=80, blank=True)
     color_hex = models.CharField(
         max_length=7,

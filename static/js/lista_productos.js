@@ -143,7 +143,7 @@
 
             const filtrados = productos.filter(producto => {
                 const coincideTexto = !texto || normalizar(
-                    `${producto.nombre || ""} ${producto.descripcion || ""} ${producto.categoria || ""} ${producto.marca || ""} ${producto.modelo || ""} ${producto.color || ""} ${producto.ambiente_uso_display || ""} ${producto.presentacion || ""}`
+                    `${producto.sku || ""} ${producto.nombre || ""} ${producto.descripcion || ""} ${producto.categoria || ""} ${producto.marca || ""} ${producto.modelo || ""} ${producto.color || ""} ${producto.ambiente_uso_display || ""} ${producto.presentacion || ""}`
                 ).includes(texto);
                 const coincideCategoria = !categoria || producto.categoria === categoria;
                 return coincideTexto && coincideCategoria;

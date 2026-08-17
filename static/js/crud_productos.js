@@ -107,7 +107,7 @@
                 const stock = numeroSeguro(producto.stock);
                 const minimo = Math.max(0, numeroSeguro(producto.stock_minimo));
                 const coincideTexto = !texto || normalizar(
-                    `${producto.id} ${producto.nombre || ""} ${producto.descripcion || ""} ${producto.marca || ""} ${producto.modelo || ""} ${producto.color || ""} ${producto.proveedor_nombre || ""} ${producto.presentacion || ""}`
+                    `${producto.id} ${producto.sku || ""} ${producto.nombre || ""} ${producto.descripcion || ""} ${producto.marca || ""} ${producto.modelo || ""} ${producto.color || ""} ${producto.proveedor_nombre || ""} ${producto.presentacion || ""}`
                 ).includes(texto);
                 const coincideCategoria = !categoria || producto.categoria === categoria;
                 const coincideEstado = !estado

@@ -147,6 +147,13 @@
                 </div>
 
                 <div class="admin-field">
+                  <label for="sku">SKU</label>
+                  <div class="input-with-icon"><i class="fa-solid fa-barcode" aria-hidden="true"></i><input type="text" class="form-control" id="sku" name="sku" maxlength="50" value="{{ producto.sku|default:'' }}" placeholder="Ej. SFI-SIP-LTX-CW004W-1GL"></div>
+                  <small class="field-help">C&oacute;digo comercial &uacute;nico del producto.</small>
+                  <span class="field-error" data-error-for="sku"></span>
+                </div>
+
+                <div class="admin-field">
                   <label for="color">Color o terminación</label>
                   <div class="input-with-icon"><i class="fa-solid fa-palette" aria-hidden="true"></i><input type="text" class="form-control" id="color" name="color" maxlength="80" value="{{ producto.color|default:'' }}" placeholder="Ej. Blanco Invierno"></div>
                   <span class="field-error" data-error-for="color"></span>

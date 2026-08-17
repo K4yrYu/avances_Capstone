@@ -19,7 +19,7 @@ class ProveedorAdmin(admin.ModelAdmin):
 @admin.register(Producto)
 class ProductoAdmin(admin.ModelAdmin):
     list_display = (
-        'nombre', 'marca', 'categoria', 'ambiente_uso', 'tipo_pintura', 'terminacion',
+        'nombre', 'sku', 'marca', 'categoria', 'ambiente_uso', 'tipo_pintura', 'terminacion',
         'precio', 'stock', 'stock_minimo',
         'proveedor', 'activo',
         'informacion_tecnica_verificada', 'estado_calculo',
@@ -28,13 +28,13 @@ class ProductoAdmin(admin.ModelAdmin):
         'activo', 'categoria', 'ambiente_uso', 'tipo_pintura', 'terminacion',
         'proveedor', 'tipo_calculo', 'informacion_tecnica_verificada',
     )
-    search_fields = ('nombre', 'marca', 'modelo', 'descripcion', 'uso_recomendado')
+    search_fields = ('nombre', 'sku', 'marca', 'modelo', 'descripcion', 'uso_recomendado')
     ordering = ('nombre',)
     readonly_fields = ('presentacion', 'rendimiento_legible', 'estado_calculo')
     fieldsets = (
         ('Información comercial', {
             'fields': (
-                'nombre', 'marca', 'modelo', ('color', 'color_hex'), 'ambiente_uso',
+                'nombre', 'sku', 'marca', 'modelo', ('color', 'color_hex'), 'ambiente_uso',
                 'descripcion', 'categoria', 'precio', 'imagen',
             ),
         }),

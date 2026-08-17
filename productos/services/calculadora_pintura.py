@@ -1,5 +1,7 @@
 from decimal import Decimal, ROUND_CEILING
 
+from django.db.models import Q
+
 from productos.models import Producto
 
 
@@ -110,6 +112,7 @@ def calcular_producto_pintura(
         'nombre': producto.nombre,
         'marca': producto.marca,
         'modelo': producto.modelo,
+        'sku': producto.sku or '',
         'color': producto.color,
         'color_hex': producto.color_hex,
         'ambiente_uso': producto.ambiente_uso,
@@ -187,7 +190,11 @@ def calcular_recomendaciones_pintura(
         preparaciones_recomendadas=[],
     ).exclude(repintado_min_horas__isnull=True)
     if color:
-        productos = productos.filter(color__iexact=color.strip())
+        color = color.strip()
+        productos = productos.filter(
+            Q(color__iexact=color)
+            | Q(especificaciones__familia_cromatica__icontains=color)
+        )
 
     recomendaciones = []
     for producto in productos.order_by('precio', 'nombre'):

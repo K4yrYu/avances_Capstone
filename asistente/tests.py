@@ -7,7 +7,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from productos.models import Producto
-from .services import procesar_consulta, resolver_interpretacion
+from .services import procesar_configuracion_foto, procesar_consulta, resolver_interpretacion
 from .services.cliente_gemini import cliente_gemini
 from .services.gemini import GeminiNoDisponible, interpretar_con_gemini
 
@@ -53,6 +53,16 @@ class AsistenteSfiTests(TestCase):
         self.assertNotContains(pagina, 'id="catalog-paint-colors"')
         self.assertContains(pagina, reverse('api_consultar_asistente'))
         self.assertContains(pagina, reverse('api_analizar_foto_pintura'))
+        self.assertContains(pagina, reverse('api_configurar_foto_pintura'))
+        self.assertContains(pagina, 'id="paint-mini-chat"')
+        self.assertContains(pagina, 'data-mask-tool="smart"')
+        self.assertContains(pagina, 'data-mask-tool="brush"')
+        self.assertContains(pagina, 'data-mask-tool="erase"')
+        self.assertContains(pagina, 'id="toggle-paint-mask"')
+        self.assertContains(pagina, 'id="auto-paint-surface"')
+        self.assertContains(pagina, 'id="apply-paint-mask"')
+        self.assertNotContains(pagina, reverse('mi_historial_compras'))
+        self.assertContains(pagina, 'Compra protegida con Webpay')
         self.assertContains(inicio, reverse('asistente_sfi'))
 
     @patch('asistente.views.analizar_foto_pintura')
@@ -108,6 +118,81 @@ class AsistenteSfiTests(TestCase):
         self.assertEqual(respuesta.status_code, 503)
         self.assertEqual(respuesta.json()['detail'], 'Gemini no disponible temporalmente.')
 
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_minichat_foto_ofrece_tonos_y_solo_pregunta_datos_al_calcular(self, interpretar):
+        for nombre, color, color_hex in [
+            ('Fachada rojo colonial', 'Rojo colonial', '#A33A32'),
+            ('Fachada rojo ladrillo', 'Rojo ladrillo', '#8F3B2F'),
+        ]:
+            Producto.objects.create(
+                nombre=nombre, descripcion='Pintura roja para fachada exterior',
+                precio=24990, stock=4, categoria='Pinturas', marca='SFI',
+                color=color, color_hex=color_hex, ambiente_uso='exterior',
+                superficies_compatibles=['hormigon'], tipo_pintura='latex',
+                terminacion='mate', unidad_venta='envase', contenido=Decimal('4.000'),
+                unidad_contenido='l', tipo_calculo='pintura',
+                rendimiento=Decimal('10.000'), unidad_rendimiento='m2_l',
+                capas_recomendadas=2, porcentaje_desperdicio=Decimal('10.00'),
+                informacion_tecnica_verificada=True, activo=True,
+            )
+        interpretar.return_value = {
+            'intencion': 'recomendar_color', 'respuesta': '', 'consulta_producto': '',
+            'superficie': 0, 'ambiente': '', 'tipo_superficie': '',
+            'estado_superficie': '', 'terminacion': 'cualquiera', 'color': 'Rojo',
+            'capas': 0, 'desperdicio': -1, 'presupuesto': 0, 'proyecto': '',
+            'ancho_cm': 0, 'fondo_cm': 0, 'alto_cm': 0, 'cantidad': 0,
+            'tipo_muro': '', 'incluir_herramientas': False,
+        }
+
+        resultado = procesar_configuracion_foto(
+            'Quiero diferentes tonos rojos para mi casa', 'exterior', [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'recomendacion_color')
+        self.assertGreaterEqual(len(resultado['productos']), 2)
+        self.assertTrue(all('rojo' in item['color'].lower() or 'rojo' in (
+            Producto.objects.get(pk=item['id']).especificaciones or {}
+        ).get('familia_cromatica', '') for item in resultado['productos']))
+        self.assertIn('Aparecieron arriba', resultado['mensaje'])
+
+        interpretar.return_value.update({
+            'intencion': 'calcular_pintura',
+            'superficie': 45,
+            'tipo_superficie': 'hormigon',
+            'estado_superficie': 'pintada_buen_estado',
+        })
+        resultado = procesar_configuracion_foto(
+            'Son 45 m² de hormigón pintado y está en buen estado',
+            'exterior',
+            [{'role': 'user', 'content': 'Quiero diferentes tonos rojos para mi casa'}],
+        )
+
+        self.assertEqual(resultado['tipo'], 'calculo_pintura')
+        self.assertGreaterEqual(len(resultado['productos']), 2)
+        self.assertTrue(all('rojo' in item['color'].lower() or 'rojo' in (
+            Producto.objects.get(pk=item['id']).especificaciones or {}
+        ).get('familia_cromatica', '') for item in resultado['productos']))
+        self.assertTrue(all(item['cantidad_envases'] > 0 for item in resultado['productos']))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_minichat_menciona_la_pintura_seleccionada_al_pedir_datos(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'calcular_pintura', 'respuesta': '', 'consulta_producto': '',
+            'superficie': 0, 'ambiente': '', 'tipo_superficie': '',
+            'estado_superficie': '', 'terminacion': 'cualquiera', 'color': '',
+            'capas': 0, 'desperdicio': -1, 'presupuesto': 0, 'proyecto': '',
+            'ancho_cm': 0, 'fondo_cm': 0, 'alto_cm': 0, 'cantidad': 0,
+            'tipo_muro': '', 'incluir_herramientas': False,
+        }
+
+        resultado = procesar_configuracion_foto(
+            '¿Cuánto necesito de esta pintura?', 'exterior', [], producto=self.pintura,
+        )
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_foto')
+        self.assertIn('Basado en tu elección de arriba', resultado['mensaje'])
+        self.assertIn(self.pintura.nombre, resultado['mensaje'])
+
     def test_calculo_pide_los_datos_que_faltan(self):
         resultado = resolver_interpretacion({
             'intencion': 'calcular_pintura', 'superficie': 50,
@@ -134,6 +219,46 @@ class AsistenteSfiTests(TestCase):
         self.assertTrue(all(
             Producto.objects.get(pk=item['id']).ambiente_uso in {'interior', 'interior_exterior'}
             for item in resultado['productos']
+        ))
+
+    def test_reconoce_familia_cromatica_de_nombre_comercial(self):
+        azul = Producto.objects.create(
+            nombre='Sipa Fachada Pompeii 1 galon', descripcion='Pintura exterior azul',
+            precio=42990, stock=80, categoria='Pinturas', marca='Sipa',
+            color='Pompeii', color_hex='#446C86', ambiente_uso='exterior',
+            superficies_compatibles=['hormigon'], tipo_pintura='latex',
+            terminacion='mate', unidad_venta='envase', contenido=Decimal('3.785'),
+            unidad_contenido='l', tipo_calculo='pintura', rendimiento=Decimal('9.200'),
+            unidad_rendimiento='m2_l', capas_recomendadas=2,
+            porcentaje_desperdicio=Decimal('10.00'),
+            informacion_tecnica_verificada=True, activo=True,
+            especificaciones={'familia_cromatica': 'azul'},
+        )
+        Producto.objects.create(
+            nombre='Sipa Fachada Raintree 1 galon', descripcion='Pintura exterior verde',
+            precio=42990, stock=80, categoria='Pinturas', marca='Sipa',
+            color='Raintree', color_hex='#596B50', ambiente_uso='exterior',
+            superficies_compatibles=['hormigon'], tipo_pintura='latex',
+            terminacion='mate', unidad_venta='envase', contenido=Decimal('3.785'),
+            unidad_contenido='l', tipo_calculo='pintura', rendimiento=Decimal('9.200'),
+            unidad_rendimiento='m2_l', capas_recomendadas=2,
+            porcentaje_desperdicio=Decimal('10.00'),
+            informacion_tecnica_verificada=True, activo=True,
+            especificaciones={'familia_cromatica': 'verde'},
+        )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'recomendar_color', 'ambiente': 'exterior',
+            'tipo_superficie': 'hormigon', 'color': 'azul',
+        })
+
+        ids = [item['id'] for item in resultado['productos']]
+        self.assertIn(azul.id, ids)
+        self.assertTrue(all(
+            'azul' in (Producto.objects.get(pk=producto_id).especificaciones or {}).get(
+                'familia_cromatica', ''
+            )
+            for producto_id in ids
         ))
 
     def test_recomienda_pintura_tecnica_para_piscina(self):
@@ -190,6 +315,21 @@ class AsistenteSfiTests(TestCase):
 
         self.assertEqual(resultado['tipo'], 'productos')
         self.assertEqual(resultado['productos'][0]['id'], self.taladro.id)
+
+    def test_busqueda_prioriza_quincalleria_segun_uso(self):
+        casos = {
+            'tornillo para metal': 'SFI-QUI-TOR-',
+            'tarugo para hormigon': 'SFI-QUI-ANC-',
+            'candado para porton': 'SFI-QUI-SEG-',
+            'bisagra cierre suave': 'SFI-QUI-HER-',
+        }
+        for consulta, prefijo in casos.items():
+            with self.subTest(consulta=consulta):
+                resultado = resolver_interpretacion({
+                    'intencion': 'buscar_producto', 'consulta_producto': consulta,
+                })
+                self.assertEqual(resultado['tipo'], 'productos')
+                self.assertTrue(resultado['productos'][0]['sku'].startswith(prefijo))
 
     def test_busqueda_respeta_presupuesto_e_indica_lo_que_falta(self):
         resultado = resolver_interpretacion({

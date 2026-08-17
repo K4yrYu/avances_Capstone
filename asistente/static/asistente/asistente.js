@@ -16,7 +16,18 @@
     const {escapeHtml, safeUrl} = security;
     const fallbackImage = safeUrl(root.dataset.placeholderUrl);
     const authenticated = root.dataset.authenticated === "true";
-    const conversationStorageKey = "sfi_assistant_conversation_v1";
+    const userKey = root.dataset.userKey || "guest";
+    const sessionOwnerKey = "sfi_assistant_session_owner_v1";
+    const conversationStorageKey = `sfi_assistant_conversation_v2:${userKey}`;
+    const previousOwner = sessionStorage.getItem(sessionOwnerKey);
+    if (previousOwner && previousOwner !== userKey) {
+      Object.keys(sessionStorage).forEach(key => {
+        if (key.startsWith("sfi_assistant_conversation_") || key.startsWith("sfi_paint_assistant_")) {
+          sessionStorage.removeItem(key);
+        }
+      });
+    }
+    sessionStorage.setItem(sessionOwnerKey, userKey);
     let history = [];
     let conversationEntries = [];
     let calculations = new Map();
@@ -267,7 +278,6 @@
       scrollToLatest();
     }
 
-    // Cada carga de la página inicia una consulta nueva.
-    sessionStorage.removeItem(conversationStorageKey);
+    restoreConversation();
   });
 })();

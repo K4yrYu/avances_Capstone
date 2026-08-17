@@ -20,6 +20,7 @@ def _catalogo_compacto():
     return [
         {
             'id': producto.id,
+            'sku': producto.sku or '',
             'nombre': producto.nombre,
             'categoria': producto.categoria,
             'marca': producto.marca,

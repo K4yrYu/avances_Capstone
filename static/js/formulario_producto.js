@@ -46,7 +46,7 @@
     const mode = root.dataset.mode === "edit" ? "edit" : "create";
     const existingImage = root.dataset.existingImage || "";
     const fieldNames = [
-      "nombre", "descripcion", "categoria", "precio", "marca", "modelo", "color", "color_hex", "ambiente_uso",
+      "nombre", "descripcion", "categoria", "precio", "marca", "modelo", "sku", "color", "color_hex", "ambiente_uso",
       "proveedor", "stock", "stock_minimo", "activo",
       "unidad_venta", "contenido", "unidad_contenido", "tipo_calculo", "rendimiento",
       "unidad_rendimiento", "capas_recomendadas", "porcentaje_desperdicio", "uso_recomendado",
@@ -278,7 +278,7 @@
       }
 
       const payload = new FormData();
-      ["nombre", "descripcion", "categoria", "precio", "marca", "modelo",
+      ["nombre", "descripcion", "categoria", "precio", "marca", "modelo", "sku",
         "proveedor", "stock", "stock_minimo", "unidad_venta",
         "contenido", "unidad_contenido", "tipo_calculo", "rendimiento", "unidad_rendimiento",
         "capas_recomendadas", "porcentaje_desperdicio", "ambiente_uso", "tipo_pintura", "terminacion",

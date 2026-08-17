@@ -2,8 +2,6 @@ import re
 import unicodedata
 from decimal import Decimal, ROUND_CEILING
 
-from django.db.models import Q
-
 from productos.models import Producto
 from productos.services import calcular_recomendaciones_pintura
 from .gemini import GeminiNoDisponible, interpretar_con_gemini
@@ -47,6 +45,8 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
     colores_reconocibles = {
         'blanco', 'negro', 'gris', 'azul', 'rojo', 'verde', 'amarillo',
         'beige', 'cafe', 'marron', 'naranjo', 'naranja', 'transparente',
+        'blancos', 'negros', 'grises', 'azules', 'rojos', 'verdes', 'amarillos',
+        'beiges', 'cafes', 'marrones', 'naranjos', 'naranjas', 'transparentes',
     }
     palabras_usuario = set(re.findall(r'[a-z]+', texto_usuario))
     if datos.get('color') and not (palabras_usuario & colores_reconocibles):
@@ -67,6 +67,7 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
 def _producto_publico(producto):
     return {
         'id': producto.id,
+        'sku': producto.sku or '',
         'nombre': producto.nombre,
         'marca': producto.marca,
         'categoria': producto.categoria,
@@ -309,25 +310,50 @@ def _resolver_proyecto(datos):
 
 
 def _buscar_productos(consulta):
+    palabras_omitidas = {
+        'para', 'con', 'una', 'uno', 'unos', 'unas', 'por', 'del', 'las', 'los',
+        'que', 'quiero', 'necesito', 'busco', 'producto', 'productos',
+    }
     palabras = [
-        palabra for palabra in re.findall(r'[\wáéíóúñü-]+', consulta.lower())
-        if len(palabra) >= 3
+        palabra for palabra in re.findall(r'[\wáéíóúñü-]+', _texto_normalizado(consulta))
+        if len(palabra) >= 3 and palabra not in palabras_omitidas
     ][:8]
     if not palabras:
         return []
-    filtro = Q()
-    for palabra in palabras:
-        filtro |= (
-            Q(nombre__icontains=palabra)
-            | Q(descripcion__icontains=palabra)
-            | Q(categoria__icontains=palabra)
-            | Q(marca__icontains=palabra)
-            | Q(color__icontains=palabra)
+    consulta_normalizada = _texto_normalizado(consulta)
+    def contiene(texto, palabra):
+        return bool(re.search(rf'\b{re.escape(palabra)}\w*', texto))
+
+    resultados = []
+    for producto in Producto.objects.filter(activo=True):
+        nombre = _texto_normalizado(producto.nombre)
+        identificacion = _texto_normalizado(
+            ' '.join([producto.sku or '', producto.marca, producto.categoria, producto.color])
         )
-    return list(
-        Producto.objects.filter(filtro, activo=True)
-        .order_by('-stock', 'precio', 'nombre')[:6]
-    )
+        detalle = _texto_normalizado(
+            ' '.join([
+                producto.descripcion,
+                producto.uso_recomendado,
+                str(producto.especificaciones or {}),
+            ])
+        )
+        puntaje = 8 if consulta_normalizada in nombre else 0
+        for palabra in palabras:
+            if contiene(nombre, palabra):
+                puntaje += 5
+            elif contiene(identificacion, palabra):
+                puntaje += 3
+            elif contiene(detalle, palabra):
+                puntaje += 1
+        coincidencias = sum(
+            contiene(f'{nombre} {identificacion} {detalle}', palabra) for palabra in palabras
+        )
+        if puntaje and coincidencias:
+            resultados.append((coincidencias, puntaje, producto))
+    resultados.sort(key=lambda item: (
+        -item[0], -item[1], item[2].precio, item[2].nombre.casefold(),
+    ))
+    return [item[2] for item in resultados[:6]]
 
 
 def _resolver_recomendacion_color(datos):
@@ -485,6 +511,8 @@ def _resolver_calculo(datos):
             'imagen': calculo['imagen'],
             'url': f"/productos/{calculo['producto_id']}/",
             'presentacion': calculo['presentacion'],
+            'color': calculo['color'],
+            'color_hex': calculo['color_hex'],
             'cantidad_envases': calculo['cantidad_envases'],
             'litros_necesarios': calculo['litros_necesarios'],
             'presupuesto_total': calculo['presupuesto_total'],
@@ -544,7 +572,6 @@ def resolver_interpretacion(datos):
                 'sugerencias': ['Ver pinturas', 'Buscar herramientas', 'Buscar materiales'],
             }
         presupuesto = int(datos.get('presupuesto') or 0)
-        productos = sorted(productos, key=lambda producto: (producto.precio, producto.nombre))
         if presupuesto:
             alcanzables = [producto for producto in productos if producto.precio <= presupuesto]
             if alcanzables:
@@ -594,4 +621,118 @@ def procesar_consulta(mensaje, historial):
         mensaje,
         historial,
     )
+    return resolver_interpretacion(interpretacion)
+
+
+def procesar_configuracion_foto(mensaje, contexto, historial, producto=None):
+    """Completa un proyecto de pintura usando el contexto seguro de una foto."""
+    try:
+        interpretacion = interpretar_con_gemini(mensaje, historial)
+    except GeminiNoDisponible as exc:
+        raise AsistenteNoDisponible(str(exc)) from exc
+    interpretacion = _normalizar_preferencias_extraidas(
+        interpretacion,
+        mensaje,
+        historial,
+    )
+    if contexto == 'piscina':
+        interpretacion['ambiente'] = 'especial'
+        interpretacion['tipo_superficie'] = 'piscina_estanque'
+    elif contexto in {'interior', 'exterior'}:
+        interpretacion['ambiente'] = contexto
+        if interpretacion.get('tipo_superficie') == 'piscina_estanque':
+            interpretacion['tipo_superficie'] = ''
+    if producto:
+        if not interpretacion.get('color'):
+            interpretacion['color'] = producto.color
+        if interpretacion.get('terminacion') in {'', 'cualquiera'}:
+            interpretacion['terminacion'] = producto.terminacion
+
+    texto_actual = _texto_normalizado(mensaje)
+    indicadores_calculo = (
+        'cuanto', 'cuanta', 'litro', 'litros', 'envase', 'envases',
+        'metro cuadrado', 'metros cuadrados', 'm2', 'presupuesto',
+        'costo', 'costos', 'precio', 'comprar', 'cantidad',
+    )
+    solicita_calculo = (
+        interpretacion.get('intencion') == 'calcular_pintura'
+        and any(indicador in texto_actual for indicador in indicadores_calculo)
+    )
+    if not solicita_calculo:
+        interpretacion['intencion'] = 'recomendar_color'
+        if not interpretacion.get('ambiente'):
+            return {
+                'tipo': 'aclaracion_foto',
+                'mensaje': (
+                    '¡Claro! Antes de buscar el color, cuéntame si la superficie es '
+                    'interior, exterior o una piscina.'
+                ),
+                'productos': [],
+                'sugerencias': ['Es una fachada exterior', 'Es una habitación interior'],
+            }
+        if not interpretacion.get('color'):
+            return {
+                'tipo': 'aclaracion_foto',
+                'mensaje': (
+                    '¡Perfecto! Dime qué color o tono quieres probar. Por ejemplo: '
+                    '“quiero verla en azul claro” o “prefiero un rojo colonial”.'
+                ),
+                'productos': [],
+                'sugerencias': ['Quiero verla en azul claro', 'Muéstrame tonos rojos'],
+            }
+        resultado = _resolver_recomendacion_color(interpretacion)
+        if resultado.get('productos'):
+            resultado['mensaje'] = (
+                f'¡Buena elección! Encontré {len(resultado["productos"])} opción(es) '
+                'compatibles. Aparecieron arriba en Colores recomendados: elige una y '
+                'haz clic sobre la parte de la foto que quieras pintar. Si luego quieres '
+                'saber cuánto comprar, pregúntame por cantidades o costos.'
+            )
+        else:
+            resultado['mensaje'] = (
+                f'Todavía no encontré una pintura {interpretacion.get("color")} compatible '
+                'con esta superficie y con stock. Prefiero no mostrarte una pintura que no '
+                'corresponda. Puedes pedirme otro tono y revisaré las opciones disponibles.'
+            )
+        return resultado
+
+    interpretacion['intencion'] = 'calcular_pintura'
+    faltantes = []
+    if not interpretacion.get('color'):
+        faltantes.append('el color o estilo que quieres probar')
+    if not interpretacion.get('ambiente'):
+        faltantes.append('si el proyecto es interior, exterior o piscina')
+    if not interpretacion.get('superficie'):
+        faltantes.append('los metros cuadrados que pintarás')
+    if not interpretacion.get('tipo_superficie'):
+        faltantes.append('el material de la superficie')
+    if not interpretacion.get('estado_superficie'):
+        faltantes.append('su estado actual')
+    if faltantes:
+        detalle = faltantes[0] if len(faltantes) == 1 else ', '.join(faltantes[:-1]) + ' y ' + faltantes[-1]
+        if producto:
+            referencia_eleccion = (
+                f'Basado en tu elección de arriba, {producto.nombre} en color '
+                f'{producto.color}, '
+            )
+        elif interpretacion.get('color'):
+            referencia_eleccion = (
+                f'Basado en el color {interpretacion["color"]} que elegiste arriba, '
+            )
+        else:
+            referencia_eleccion = ''
+        return {
+            'tipo': 'aclaracion_foto',
+            'mensaje': (
+                f'{referencia_eleccion}¡Con gusto te ayudo a calcularlo! '
+                'Para recomendarte la cantidad correcta, '
+                f'por favor indícame {detalle}. Con esos datos podré mostrarte opciones '
+                'reales, cantidades y costos para tu proyecto.'
+            ),
+            'productos': [],
+            'sugerencias': [
+                'Quiero rojo, son 45 m², hormigón y está en buen estado',
+                'Quiero mantener el color seleccionado y pintar 30 m²',
+            ],
+        }
     return resolver_interpretacion(interpretacion)

@@ -19,6 +19,52 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ## [Sin publicar]
 
+### Asistente SFI y análisis fotográfico
+
+#### Agregado
+
+- Se integró un chat contextual dentro del módulo fotográfico para consultar colores, pinturas, cantidades y costos sin separar la conversación de la imagen analizada.
+- Se incorporaron 24 variantes tintométricas Sipa distribuidas entre látex, esmalte satinado, fachada hidrorrepelente y esmalte semibrillo.
+- Los productos ahora pueden registrar un SKU comercial único, visible y administrable desde la ficha de producto.
+- Los colores solicitados en el chat se incorporan a la lista de pinturas recomendadas cuando existen productos reales, compatibles, activos y con stock.
+- Se añadieron accesos para probar una pintura sobre la fotografía y consultar su ficha de producto.
+- Se incorporaron selección automática con detección de bordes, pincel, borrador y vista de máscara para corregir manualmente las superficies que se pintarán.
+- Se añadió **Autopintura TEST**, una detección experimental de superficies que presenta primero una máscara amarilla revisable.
+- Se agregó una acción separada para aplicar la pintura seleccionada únicamente sobre las zonas marcadas.
+- La pintura seleccionada queda destacada en amarillo para mantener visible la opción activa.
+- El estado de la conversación, la fotografía, el análisis, los colores y las marcas realizadas se conserva por usuario mientras la pestaña permanezca abierta.
+
+#### Modificado
+
+- Al adjuntar una fotografía se oculta el chat general y se utiliza un único flujo contextual asociado a esa imagen.
+- El análisis ofrece automáticamente pinturas compatibles con el ambiente detectado: interior, exterior o piscina.
+- Las consultas destinadas únicamente a visualizar un color muestran opciones disponibles sin exigir medidas innecesarias.
+- Las preguntas sobre cantidades, litros, envases, presupuesto o costos solicitan primero los datos técnicos faltantes, como superficie, material y estado actual.
+- Las respuestas que solicitan información adicional utilizan un lenguaje más claro y amable.
+- Las preguntas de cálculo ahora reconocen explícitamente la pintura o el color seleccionado antes de solicitar medidas y condiciones faltantes.
+- La distribución del módulo fotográfico se reorganizó con la imagen y las herramientas de análisis en la parte superior y el chat contextual debajo.
+- Se restauraron dimensiones visuales más compactas después de revisar la ampliación del área fotográfica y del panel de análisis.
+- El botón **Nueva consulta** reinicia el flujo completo y se resaltó con los colores de SFI.
+- La barra de navegación del asistente ahora replica dimensiones, acciones y comportamiento adaptable de la página de Inicio.
+
+#### Seguridad y validación
+
+- Los cálculos de pintura continúan realizándose con funciones deterministas de Python; Gemini interpreta la intención y redacta la respuesta.
+- El asistente evita inventar productos, precios o existencias y no recomienda pinturas incompatibles con el uso detectado.
+- Las fotografías permanecen en el navegador durante la sesión y no se guardan permanentemente en SFI.
+- Se ampliaron las pruebas del flujo fotográfico, la selección de colores y el cálculo posterior de cantidades.
+
+#### Mejoras de catálogo y base de datos
+
+- Se añadieron las migraciones `0015_producto_sku`, `0016_variantes_pintura_sipa` y `0017_familia_cromatica_variantes`.
+- El asistente y la calculadora reconocen la familia cromática en español aunque el tono tenga un nombre comercial en inglés.
+- Se incorporó un catálogo inicial de 24 productos de quincallería con SKU, ficha técnica, stock demostrativo y precios referenciales de mercado: tornillos, anclajes, seguridad y herrajes para muebles.
+- Cada producto nuevo de quincallería dispone de una imagen individual de catálogo, evitando repetir una sola fotografía por familia.
+- La búsqueda del asistente ahora pondera la consulta completa, ignora conectores genéricos y mantiene el orden por relevancia antes de comparar precios.
+- Se añadió `docs/revertir_catalogo_quincalleria.sql` como procedimiento de contingencia limitado a los 24 SKU `SFI-QUI-*`.
+- Se añadieron las migraciones `0018_catalogo_quincalleria` y `0019_imagenes_individuales_quincalleria`.
+- No se requieren variables de entorno adicionales.
+
 ### Documentación
 
 - Se creó `IDEAS.md` para mantener propuestas futuras separadas de las reglas de trabajo.

@@ -13,16 +13,30 @@
     const hint = document.getElementById("paint-canvas-hint");
     const tolerance = document.getElementById("paint-tolerance");
     const toleranceValue = document.getElementById("paint-tolerance-value");
+    const brushSize = document.getElementById("paint-brush-size");
+    const brushSizeValue = document.getElementById("paint-brush-size-value");
+    const maskPreview = document.getElementById("toggle-paint-mask");
+    const maskToolButtons = Array.from(document.querySelectorAll("[data-mask-tool]"));
+    const autoPaint = document.getElementById("auto-paint-surface");
+    const applyPaint = document.getElementById("apply-paint-mask");
     const selectedProduct = document.getElementById("selected-paint-product");
     const reset = document.getElementById("reset-paint-mask");
     const compare = document.getElementById("compare-original");
     const download = document.getElementById("download-paint-preview");
     const analyze = document.getElementById("analyze-paint-photo");
     const analysis = document.getElementById("paint-analysis");
+    const generalFlow = document.getElementById("general-chat-flow");
+    const miniChat = document.getElementById("paint-mini-chat");
+    const photoChatMessages = document.getElementById("paint-chat-messages");
+    const photoChatForm = document.getElementById("paint-chat-form");
+    const photoChatInput = document.getElementById("paint-chat-input");
+    const photoChatSend = document.getElementById("paint-chat-send");
+    const photoChatError = document.getElementById("paint-chat-error");
     const security = window.FerremasSecurity;
     if (!root || !workbench || !canvas || !fileInput || !security) return;
 
-    const STORAGE_KEY = "sfi_paint_assistant_v1";
+    const userKey = root.dataset.userKey || "guest";
+    const STORAGE_KEY = `sfi_paint_assistant_v2:${userKey}`;
     const context = canvas.getContext("2d", {willReadFrequently: true});
     const {safeUrl} = security;
     let photoFile = null;
@@ -34,6 +48,18 @@
     let marks = [];
     let lastAnalysis = null;
     let imageDataUrl = "";
+    let photoHistory = [];
+    let recommendedPaints = new Map();
+    let lastChatProducts = [];
+    let activeMaskTool = "smart";
+    let showMask = false;
+    let drawingMask = false;
+
+    function setPhotoMode(active) {
+      workbench.hidden = !active;
+      if (generalFlow) generalFlow.hidden = active;
+      root.classList.toggle("photo-mode", active);
+    }
 
     function getCookie(name) {
       const prefix = `${name}=`;
@@ -57,7 +83,12 @@
           selectedPaintName,
           marks,
           analysis: lastAnalysis,
+          photoHistory: photoHistory.slice(-6),
+          recommendedPaints: Array.from(recommendedPaints.values()),
+          lastChatProducts,
           tolerance: Number(tolerance.value),
+          brushSize: Number(brushSize.value),
+          showMask,
         }));
       } catch (_error) {
         // Si el navegador limita el almacenamiento, la herramienta continúa funcionando.
@@ -75,17 +106,30 @@
       marks = [];
       lastAnalysis = null;
       imageDataUrl = "";
+      photoHistory = [];
+      recommendedPaints = new Map();
+      lastChatProducts = [];
       fileInput.value = "";
       canvas.hidden = true;
       emptyState.hidden = false;
       hint.hidden = true;
       analysis.hidden = true;
+      miniChat.hidden = true;
+      photoChatMessages.replaceChildren();
+      photoChatInput.value = "";
+      photoChatError.hidden = true;
       fileName.textContent = "JPG, PNG o WebP · máximo 4 MB";
       selectedProduct.textContent = "Analiza la foto para recibir colores recomendados.";
       analyze.disabled = true;
       reset.disabled = true;
       compare.disabled = true;
       download.disabled = true;
+      maskPreview.disabled = true;
+      showMask = false;
+      maskPreview.classList.remove("active");
+      maskPreview.setAttribute("aria-pressed", "false");
+      autoPaint.disabled = true;
+      applyPaint.disabled = true;
     }
 
     function hexToRgb(hex) {
@@ -134,7 +178,7 @@
 
     function renderPreview(showOriginal = false) {
       if (!sourcePixels) return;
-      if (showOriginal || !selectedMask || !selectedColor) {
+      if (showOriginal || !selectedMask || (!selectedColor && !showMask)) {
         context.putImageData(sourcePixels, 0, 0);
         return;
       }
@@ -144,6 +188,12 @@
       for (let pixel = 0; pixel < selectedMask.length; pixel += 1) {
         if (!selectedMask[pixel]) continue;
         const index = pixel * 4;
+        if (showMask) {
+          output.data[index] = sourcePixels.data[index] * 0.45 + 255 * 0.55;
+          output.data[index + 1] = sourcePixels.data[index + 1] * 0.45 + 189 * 0.55;
+          output.data[index + 2] = sourcePixels.data[index + 2] * 0.45;
+          continue;
+        }
         const sourceHsl = rgbToHsl(sourcePixels.data[index], sourcePixels.data[index + 1], sourcePixels.data[index + 2]);
         const adjustedLight = Math.max(0.04, Math.min(0.96, sourceHsl.l * 0.68 + targetHsl.l * 0.32));
         const colored = hslToRgb(targetHsl.h, targetHsl.s, adjustedLight);
@@ -153,6 +203,111 @@
         output.data[index + 2] = sourcePixels.data[index + 2] * (1 - strength) + colored.b * strength;
       }
       context.putImageData(output, 0, 0);
+    }
+
+    function updateAutoPaintButton() {
+      autoPaint.disabled = !(sourcePixels && selectedColor && lastAnalysis);
+    }
+
+    function pixelDistance(firstIndex, secondIndex) {
+      const red = sourcePixels.data[firstIndex] - sourcePixels.data[secondIndex];
+      const green = sourcePixels.data[firstIndex + 1] - sourcePixels.data[secondIndex + 1];
+      const blue = sourcePixels.data[firstIndex + 2] - sourcePixels.data[secondIndex + 2];
+      return red * red * 0.3 + green * green * 0.59 + blue * blue * 0.11;
+    }
+
+    function autoDetectSurface(record = true) {
+      if (!sourcePixels || !selectedColor || !lastAnalysis) return;
+      const width = canvas.width;
+      const height = canvas.height;
+      const total = width * height;
+      const candidates = new Uint8Array(total);
+      const visited = new Uint8Array(total);
+      const minX = Math.floor(width * 0.035);
+      const maxX = Math.ceil(width * 0.965);
+      const minY = Math.floor(height * 0.12);
+      const maxY = Math.ceil(height * 0.86);
+
+      for (let y = minY; y < maxY; y += 1) {
+        for (let x = minX; x < maxX; x += 1) {
+          const position = y * width + x;
+          const index = position * 4;
+          const hsl = rgbToHsl(sourcePixels.data[index], sourcePixels.data[index + 1], sourcePixels.data[index + 2]);
+          if (hsl.l < 0.2 || hsl.l > 0.95) continue;
+          const likelyVegetation = hsl.h > 0.18 && hsl.h < 0.48 && hsl.s > 0.2;
+          const likelySky = hsl.h > 0.5 && hsl.h < 0.72 && hsl.s > 0.16 && y < height * 0.58;
+          if (likelyVegetation || likelySky) continue;
+          const rightIndex = (position + Math.min(2, maxX - x - 1)) * 4;
+          const downIndex = (position + Math.min(2, maxY - y - 1) * width) * 4;
+          if (pixelDistance(index, rightIndex) > 1450 || pixelDistance(index, downIndex) > 1450) continue;
+          candidates[position] = 1;
+        }
+      }
+
+      const components = [];
+      const queue = new Int32Array(total);
+      for (let start = 0; start < total; start += 1) {
+        if (!candidates[start] || visited[start]) continue;
+        let head = 0;
+        let tail = 0;
+        let sumX = 0;
+        let sumY = 0;
+        const pixels = [];
+        queue[tail++] = start;
+        visited[start] = 1;
+        while (head < tail) {
+          const position = queue[head++];
+          const x = position % width;
+          const y = Math.floor(position / width);
+          pixels.push(position);
+          sumX += x;
+          sumY += y;
+          const neighbours = [x > 0 ? position - 1 : -1, x < width - 1 ? position + 1 : -1, y > 0 ? position - width : -1, y < height - 1 ? position + width : -1];
+          neighbours.forEach(next => {
+            if (next >= 0 && candidates[next] && !visited[next]) {
+              visited[next] = 1;
+              queue[tail++] = next;
+            }
+          });
+        }
+        if (pixels.length < total * 0.0025) continue;
+        const centerX = sumX / pixels.length / width;
+        const centerY = sumY / pixels.length / height;
+        const centerWeight = Math.max(0.25, 1.25 - Math.abs(centerX - 0.5) * 1.4);
+        const verticalWeight = centerY > 0.22 && centerY < 0.78 ? 1 : 0.55;
+        components.push({pixels, score: pixels.length * centerWeight * verticalWeight});
+      }
+
+      selectedMask = new Uint8Array(total);
+      components.sort((first, second) => second.score - first.score);
+      const bestScore = components.length ? components[0].score : 0;
+      let selectedCount = 0;
+      components.slice(0, 5).forEach(component => {
+        if (component.score < bestScore * 0.22 || selectedCount + component.pixels.length > total * 0.55) return;
+        component.pixels.forEach(position => { selectedMask[position] = 1; });
+        selectedCount += component.pixels.length;
+      });
+
+      if (!selectedCount) {
+        hint.hidden = false;
+        hint.textContent = "No se detectó una superficie clara. Usa Selección o Añadir.";
+        renderPreview();
+        return;
+      }
+      if (record) marks = [{mode: "auto"}];
+      showMask = true;
+      maskPreview.disabled = false;
+      maskPreview.classList.add("active");
+      maskPreview.setAttribute("aria-pressed", "true");
+      maskPreview.innerHTML = '<i class="fa-solid fa-eye-slash"></i> Ocultar selección';
+      reset.disabled = false;
+      compare.disabled = false;
+      download.disabled = false;
+      applyPaint.disabled = false;
+      hint.hidden = false;
+      hint.textContent = "Revisa la selección amarilla y corrige con Añadir o Borrar";
+      renderPreview();
+      if (record) saveState();
     }
 
     function markConnectedRegion(startX, startY, record = true, sensitivity = Number(tolerance.value)) {
@@ -175,23 +330,29 @@
       let tail = 0;
       queue[tail++] = start;
       visited[start] = 1;
-      const tryAdd = position => {
+      const tryAdd = (position, fromPosition) => {
         if (position < 0 || position >= visited.length || visited[position]) return;
         visited[position] = 1;
         const index = position * 4;
+        const fromIndex = fromPosition * 4;
         const red = sourcePixels.data[index] - seedR;
         const green = sourcePixels.data[index + 1] - seedG;
         const blue = sourcePixels.data[index + 2] - seedB;
-        if (red * red * 0.3 + green * green * 0.59 + blue * blue * 0.11 <= limit) queue[tail++] = position;
+        const localRed = sourcePixels.data[index] - sourcePixels.data[fromIndex];
+        const localGreen = sourcePixels.data[index + 1] - sourcePixels.data[fromIndex + 1];
+        const localBlue = sourcePixels.data[index + 2] - sourcePixels.data[fromIndex + 2];
+        const seedDistance = red * red * 0.3 + green * green * 0.59 + blue * blue * 0.11;
+        const localDistance = localRed * localRed * 0.3 + localGreen * localGreen * 0.59 + localBlue * localBlue * 0.11;
+        if (seedDistance <= limit && localDistance <= limit * 0.38) queue[tail++] = position;
       };
       while (head < tail) {
         const position = queue[head++];
         selectedMask[position] = 1;
         const x = position % width;
-        if (x > 0) tryAdd(position - 1);
-        if (x < width - 1) tryAdd(position + 1);
-        if (position >= width) tryAdd(position - width);
-        if (position < width * (height - 1)) tryAdd(position + width);
+        if (x > 0) tryAdd(position - 1, position);
+        if (x < width - 1) tryAdd(position + 1, position);
+        if (position >= width) tryAdd(position - width, position);
+        if (position < width * (height - 1)) tryAdd(position + width, position);
       }
       if (record) {
         marks.push({x: startX / width, y: startY / height, sensitivity: Number(sensitivity)});
@@ -200,8 +361,44 @@
       reset.disabled = false;
       compare.disabled = false;
       download.disabled = false;
+      maskPreview.disabled = false;
+      applyPaint.disabled = false;
       hint.hidden = true;
       renderPreview();
+    }
+
+    function paintMaskCircle(centerX, centerY, mode, radius = Number(brushSize.value), record = true) {
+      if (!selectedMask || !sourcePixels) return;
+      const scaledRadius = Math.max(2, Math.round(radius * canvas.width / Math.max(1, canvas.clientWidth)));
+      const minX = Math.max(0, centerX - scaledRadius);
+      const maxX = Math.min(canvas.width - 1, centerX + scaledRadius);
+      const minY = Math.max(0, centerY - scaledRadius);
+      const maxY = Math.min(canvas.height - 1, centerY + scaledRadius);
+      const value = mode === "erase" ? 0 : 1;
+      for (let y = minY; y <= maxY; y += 1) {
+        for (let x = minX; x <= maxX; x += 1) {
+          if ((x - centerX) ** 2 + (y - centerY) ** 2 <= scaledRadius ** 2) selectedMask[y * canvas.width + x] = value;
+        }
+      }
+      if (record) {
+        marks.push({mode, x: centerX / canvas.width, y: centerY / canvas.height, radius: Number(radius)});
+        if (marks.length > 1200) marks = marks.slice(-1200);
+      }
+      reset.disabled = false;
+      compare.disabled = false;
+      download.disabled = false;
+      maskPreview.disabled = false;
+      applyPaint.disabled = false;
+      hint.hidden = true;
+      renderPreview();
+    }
+
+    function canvasPoint(event) {
+      const bounds = canvas.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(canvas.width - 1, Math.floor((event.clientX - bounds.left) * canvas.width / bounds.width))),
+        y: Math.max(0, Math.min(canvas.height - 1, Math.floor((event.clientY - bounds.top) * canvas.height / bounds.height))),
+      };
     }
 
     async function decodePhoto(file) {
@@ -240,16 +437,31 @@
       hint.hidden = false;
       hint.textContent = selectedColor ? "Haz clic en la pared que quieres pintar" : "Analiza la foto para recibir colores";
       analyze.disabled = false;
+      reset.disabled = true;
+      compare.disabled = true;
+      download.disabled = true;
+      maskPreview.disabled = true;
+      applyPaint.disabled = true;
+      showMask = false;
+      maskPreview.classList.remove("active");
+      maskPreview.setAttribute("aria-pressed", "false");
       if (persist) {
         marks = [];
         lastAnalysis = null;
+        photoHistory = [];
+        recommendedPaints = new Map();
+        lastChatProducts = [];
         analysis.hidden = true;
+        miniChat.hidden = true;
+        photoChatMessages.replaceChildren();
+        photoChatError.hidden = true;
         selectedColor = "";
         selectedProductId = null;
         selectedPaintName = "";
         imageDataUrl = canvas.toDataURL("image/jpeg", 0.78);
         saveState();
       }
+      updateAutoPaintButton();
     }
 
     function fillList(elementId, values, fallback) {
@@ -279,26 +491,27 @@
       hint.hidden = false;
       hint.textContent = "Haz clic en la pared que quieres pintar";
       renderPreview();
+      updateAutoPaintButton();
       saveState();
     }
 
-    function renderAnalysis(data, persist = true) {
-      const result = data.analisis || {};
-      analysis.hidden = false;
-      document.getElementById("paint-analysis-title").textContent = result.superficie_detectada || "Superficie revisada";
-      document.getElementById("paint-analysis-summary").textContent = result.resumen || "Revisa la preparación antes de pintar.";
-      fillList("paint-analysis-observations", result.observaciones, "No se identificaron observaciones concluyentes.");
-      fillList("paint-analysis-preparation", result.preparacion_sugerida, "Limpiar, secar y revisar antes de pintar.");
+    function renderRecommendations(recommendations, resetList = false) {
       const recommendedSection = document.getElementById("paint-recommended-colors");
       const recommendedList = document.getElementById("paint-recommended-color-list");
-      recommendedList.replaceChildren();
-      const recommendations = Array.isArray(data.colores_recomendados) ? data.colores_recomendados : [];
+      if (resetList) recommendedPaints = new Map();
       recommendations.forEach(paint => {
-        if (!/^#[0-9A-Fa-f]{6}$/.test(String(paint.color_hex || ""))) return;
+        const productId = Number(paint && paint.id);
+        if (productId && /^#[0-9A-Fa-f]{6}$/.test(String(paint.color_hex || ""))) {
+          recommendedPaints.set(productId, paint);
+        }
+      });
+      recommendedList.replaceChildren();
+      recommendedPaints.forEach(paint => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "paint-recommended-color";
         button.dataset.recommendedProduct = String(paint.id || "");
+        if (Number(paint.id) === selectedProductId) button.classList.add("active");
         const swatch = document.createElement("span");
         swatch.style.backgroundColor = paint.color_hex;
         const label = document.createElement("small");
@@ -308,9 +521,87 @@
         recommendedList.appendChild(button);
       });
       recommendedSection.hidden = !recommendedList.children.length;
+    }
+
+    function renderAnalysis(data, persist = true) {
+      const result = data.analisis || {};
+      analysis.hidden = false;
+      document.getElementById("paint-analysis-title").textContent = result.superficie_detectada || "Superficie revisada";
+      document.getElementById("paint-analysis-summary").textContent = result.resumen || "Revisa la preparación antes de pintar.";
+      fillList("paint-analysis-observations", result.observaciones, "No se identificaron observaciones concluyentes.");
+      fillList("paint-analysis-preparation", result.preparacion_sugerida, "Limpiar, secar y revisar antes de pintar.");
+      const recommendations = Array.isArray(data.colores_recomendados) ? data.colores_recomendados : [];
+      renderRecommendations(recommendations, true);
       lastAnalysis = data;
-      if (!selectedProductId && recommendations.length) selectPaint(recommendations[0]);
+      selectedProduct.textContent = recommendations.length
+        ? "Selecciona un color y usa el chat para calcular cantidades y costos."
+        : "Usa el chat para indicar el color, las medidas y las condiciones del proyecto.";
+      miniChat.hidden = !["interior", "exterior", "piscina", "no_determinado"].includes(data.contexto_pintura);
+      if (!miniChat.hidden && !photoHistory.length) {
+        const contexto = data.contexto_pintura;
+        const contextoTexto = contexto === "no_determinado" ? "cuyo ambiente no se pudo determinar" : contexto;
+        const greeting = `¡Listo! La fotografía parece corresponder a un proyecto ${contextoTexto}. Si quieres probar un tono, dime algo como “quiero verla en azul claro”. Solo te pediré medidas y condiciones si necesitas calcular cuánto comprar o cuánto costaría.`;
+        addPhotoChatMessage("assistant", greeting);
+        photoHistory = [{role: "assistant", content: greeting}];
+      }
       if (persist) saveState();
+      updateAutoPaintButton();
+    }
+
+    function addPhotoChatMessage(role, text) {
+      const message = document.createElement("p");
+      message.className = `paint-chat-message ${role}`;
+      message.textContent = text;
+      photoChatMessages.appendChild(message);
+      photoChatMessages.scrollTop = photoChatMessages.scrollHeight;
+    }
+
+    function formatPrice(value) {
+      return new Intl.NumberFormat("es-CL", {style: "currency", currency: "CLP", maximumFractionDigits: 0}).format(Number(value) || 0);
+    }
+
+    function renderPhotoProducts(products) {
+      if (!products.length) return;
+      const list = document.createElement("div");
+      list.className = "paint-chat-products";
+      products.forEach(paint => {
+        const card = document.createElement("article");
+        card.className = "paint-chat-product";
+        const swatch = document.createElement("span");
+        swatch.className = "paint-chat-product-swatch";
+        swatch.style.backgroundColor = /^#[0-9A-Fa-f]{6}$/.test(String(paint.color_hex || "")) ? paint.color_hex : "#ffffff";
+        const content = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = paint.nombre || "Pintura SFI";
+        const detail = document.createElement("span");
+        detail.textContent = [paint.color, paint.terminacion, paint.presentacion].filter(Boolean).join(" · ");
+        const calculation = document.createElement("span");
+        calculation.className = "paint-chat-product-calculation";
+        calculation.textContent = paint.cantidad_envases
+          ? `Necesitas ${paint.cantidad_envases} envase(s) · ${paint.litros_necesarios} L · Total ${formatPrice(paint.presupuesto_total)}`
+          : `Precio ${formatPrice(paint.precio)} · Stock ${paint.stock}`;
+        content.append(title, detail, calculation);
+        const actions = document.createElement("div");
+        actions.className = "paint-chat-product-actions";
+        if (/^#[0-9A-Fa-f]{6}$/.test(String(paint.color_hex || ""))) {
+          const select = document.createElement("button");
+          select.type = "button";
+          select.textContent = "Probar en foto";
+          select.addEventListener("click", () => selectPaint(paint));
+          actions.appendChild(select);
+        }
+        const url = safeUrl(paint.url);
+        if (url) {
+          const link = document.createElement("a");
+          link.href = url;
+          link.textContent = "Ver producto";
+          actions.appendChild(link);
+        }
+        card.append(swatch, content, actions);
+        list.appendChild(card);
+      });
+      photoChatMessages.appendChild(list);
+      photoChatMessages.scrollTop = photoChatMessages.scrollHeight;
     }
 
     function showError(message) {
@@ -322,26 +613,80 @@
       document.getElementById("paint-recommended-colors").hidden = true;
     }
 
-    attach.addEventListener("click", () => { workbench.hidden = false; fileInput.click(); });
+    attach.addEventListener("click", () => { setPhotoMode(true); fileInput.click(); });
     document.querySelectorAll("[data-open-visualizer]").forEach(button => button.addEventListener("click", () => attach.click()));
-    close.addEventListener("click", () => { workbench.hidden = true; });
+    close.addEventListener("click", () => { setPhotoMode(false); });
     fileInput.addEventListener("change", async () => {
       const file = fileInput.files && fileInput.files[0];
       if (!file) return;
       try {
+        setPhotoMode(true);
         await loadPhoto(file);
         workbench.scrollIntoView({behavior: "smooth", block: "nearest"});
       } catch (error) {
         showError(error.message || "No se pudo abrir la fotografía.");
       }
     });
-    canvas.addEventListener("click", event => {
-      if (!sourcePixels) return;
-      const bounds = canvas.getBoundingClientRect();
-      const x = Math.max(0, Math.min(canvas.width - 1, Math.floor((event.clientX - bounds.left) * canvas.width / bounds.width)));
-      const y = Math.max(0, Math.min(canvas.height - 1, Math.floor((event.clientY - bounds.top) * canvas.height / bounds.height)));
-      markConnectedRegion(x, y);
+    function selectMaskTool(tool) {
+      activeMaskTool = ["smart", "brush", "erase"].includes(tool) ? tool : "smart";
+      maskToolButtons.forEach(button => {
+        const active = button.dataset.maskTool === activeMaskTool;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      canvas.dataset.maskTool = activeMaskTool;
+    }
+
+    maskToolButtons.forEach(button => button.addEventListener("click", () => selectMaskTool(button.dataset.maskTool)));
+    autoPaint.addEventListener("click", () => autoDetectSurface());
+    applyPaint.addEventListener("click", () => {
+      if (!sourcePixels || !selectedMask || !selectedColor || applyPaint.disabled) return;
+      showMask = false;
+      maskPreview.classList.remove("active");
+      maskPreview.setAttribute("aria-pressed", "false");
+      maskPreview.innerHTML = '<i class="fa-solid fa-highlighter"></i> Ver selección';
+      hint.hidden = false;
+      hint.textContent = "Pintura aplicada en las zonas marcadas";
+      renderPreview();
+      saveState();
     });
+    brushSize.addEventListener("input", () => {
+      brushSizeValue.textContent = brushSize.value;
+      saveState();
+    });
+    maskPreview.addEventListener("click", () => {
+      showMask = !showMask;
+      maskPreview.classList.toggle("active", showMask);
+      maskPreview.setAttribute("aria-pressed", String(showMask));
+      maskPreview.innerHTML = showMask
+        ? '<i class="fa-solid fa-eye-slash"></i> Ocultar selección'
+        : '<i class="fa-solid fa-highlighter"></i> Ver selección';
+      renderPreview();
+    });
+    canvas.addEventListener("pointerdown", event => {
+      if (!sourcePixels || !selectedColor) return;
+      const point = canvasPoint(event);
+      if (activeMaskTool === "smart") {
+        markConnectedRegion(point.x, point.y);
+        return;
+      }
+      drawingMask = true;
+      canvas.setPointerCapture(event.pointerId);
+      paintMaskCircle(point.x, point.y, activeMaskTool);
+    });
+    canvas.addEventListener("pointermove", event => {
+      if (!drawingMask || activeMaskTool === "smart") return;
+      const point = canvasPoint(event);
+      paintMaskCircle(point.x, point.y, activeMaskTool);
+    });
+    const finishMaskStroke = event => {
+      if (!drawingMask) return;
+      drawingMask = false;
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      saveState();
+    };
+    canvas.addEventListener("pointerup", finishMaskStroke);
+    canvas.addEventListener("pointercancel", finishMaskStroke);
     tolerance.addEventListener("input", () => { toleranceValue.textContent = tolerance.value; saveState(); });
     reset.addEventListener("click", () => {
       if (!sourcePixels) return;
@@ -351,6 +696,12 @@
       reset.disabled = true;
       compare.disabled = true;
       download.disabled = true;
+      maskPreview.disabled = true;
+      applyPaint.disabled = true;
+      showMask = false;
+      maskPreview.classList.remove("active");
+      maskPreview.setAttribute("aria-pressed", "false");
+      maskPreview.innerHTML = '<i class="fa-solid fa-highlighter"></i> Ver selección';
       hint.hidden = false;
       saveState();
     });
@@ -388,6 +739,44 @@
       }
     });
 
+    photoChatForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      const message = photoChatInput.value.trim();
+      const contexto = lastAnalysis && lastAnalysis.contexto_pintura;
+      if (message.length < 2 || !["interior", "exterior", "piscina", "no_determinado"].includes(contexto)) return;
+      const historyForRequest = photoHistory.slice(-6);
+      addPhotoChatMessage("user", message);
+      photoHistory.push({role: "user", content: message});
+      photoChatInput.value = "";
+      photoChatSend.disabled = true;
+      photoChatError.hidden = true;
+      try {
+        const response = await fetch(root.dataset.photoChatApiUrl, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {"Content-Type": "application/json", Accept: "application/json", "X-CSRFToken": getCookie("csrftoken")},
+          body: JSON.stringify({mensaje: message, contexto, historial: historyForRequest, ...(selectedProductId ? {producto_id: selectedProductId} : {})}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(firstError(data) || "No fue posible configurar la fotografía.");
+        const answer = data.mensaje || "Revisa las pinturas disponibles para este color.";
+        addPhotoChatMessage("assistant", answer);
+        photoHistory.push({role: "assistant", content: answer.slice(0, 700)});
+        photoHistory = photoHistory.slice(-6);
+        const recommendations = Array.isArray(data.productos) ? data.productos : [];
+        renderRecommendations(recommendations);
+        renderPhotoProducts(recommendations);
+        lastChatProducts = recommendations;
+        saveState();
+      } catch (error) {
+        photoChatError.textContent = error.message || "No fue posible configurar la fotografía.";
+        photoChatError.hidden = false;
+      } finally {
+        photoChatSend.disabled = false;
+        photoChatInput.focus();
+      }
+    });
+
     async function restoreState() {
       let stored;
       try { stored = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "null"); } catch (_error) { return; }
@@ -396,33 +785,59 @@
         const blob = await fetch(stored.imageDataUrl).then(response => response.blob());
         const restoredFile = new File([blob], stored.fileName || "foto-sfi.jpg", {type: blob.type || "image/jpeg"});
         imageDataUrl = stored.imageDataUrl;
+        const restoredShowMask = Boolean(stored.showMask);
         selectedColor = stored.selectedColor || "";
         selectedProductId = Number(stored.selectedProductId) || null;
         selectedPaintName = stored.selectedPaintName || "";
         marks = Array.isArray(stored.marks) ? stored.marks : [];
         lastAnalysis = stored.analysis || null;
+        photoHistory = Array.isArray(stored.photoHistory) ? stored.photoHistory.slice(-6) : [];
+        const storedRecommendations = Array.isArray(stored.recommendedPaints) ? stored.recommendedPaints : [];
+        recommendedPaints = new Map(storedRecommendations.map(paint => [Number(paint.id), paint]));
+        lastChatProducts = Array.isArray(stored.lastChatProducts) ? stored.lastChatProducts : [];
         tolerance.value = Number(stored.tolerance) || 55;
         toleranceValue.textContent = tolerance.value;
+        brushSize.value = Number(stored.brushSize) || 24;
+        brushSizeValue.textContent = brushSize.value;
         await loadPhoto(restoredFile, false);
         if (lastAnalysis) renderAnalysis(lastAnalysis, false);
-        const restoredPaint = lastAnalysis && Array.isArray(lastAnalysis.colores_recomendados)
-          ? lastAnalysis.colores_recomendados.find(paint => Number(paint.id) === selectedProductId)
-          : null;
+        renderRecommendations(storedRecommendations);
+        photoChatMessages.replaceChildren();
+        photoHistory.forEach(entry => addPhotoChatMessage(entry.role, entry.content));
+        renderPhotoProducts(lastChatProducts);
+        const restoredPaint = recommendedPaints.get(selectedProductId) || null;
         if (restoredPaint) selectPaint(restoredPaint);
         else if (selectedPaintName) selectedProduct.textContent = selectedPaintName;
         const savedMarks = [...marks];
         marks = [];
-        savedMarks.forEach(mark => markConnectedRegion(Math.min(canvas.width - 1, Math.round(mark.x * canvas.width)), Math.min(canvas.height - 1, Math.round(mark.y * canvas.height)), false, mark.sensitivity));
+        savedMarks.forEach(mark => {
+          if (mark.mode === "auto") {
+            autoDetectSurface(false);
+            return;
+          }
+          const x = Math.min(canvas.width - 1, Math.round(mark.x * canvas.width));
+          const y = Math.min(canvas.height - 1, Math.round(mark.y * canvas.height));
+          if (mark.mode === "brush" || mark.mode === "erase") paintMaskCircle(x, y, mark.mode, mark.radius, false);
+          else markConnectedRegion(x, y, false, mark.sensitivity);
+        });
         marks = savedMarks;
-        workbench.hidden = false;
+        showMask = restoredShowMask;
+        maskPreview.classList.toggle("active", showMask);
+        maskPreview.setAttribute("aria-pressed", String(showMask));
+        maskPreview.innerHTML = showMask
+          ? '<i class="fa-solid fa-eye-slash"></i> Ocultar selección'
+          : '<i class="fa-solid fa-highlighter"></i> Ver selección';
+        renderPreview();
+        setPhotoMode(true);
       } catch (_error) {
         clearState();
+        setPhotoMode(false);
       }
     }
 
-    document.getElementById("clear-chat").addEventListener("click", () => { clearState(); workbench.hidden = true; });
-    // La fotografía y su análisis pertenecen solo a la carga actual.
-    clearState();
-    workbench.hidden = true;
+    document.getElementById("clear-chat").addEventListener("click", () => { clearState(); setPhotoMode(false); });
+    selectMaskTool("smart");
+    setPhotoMode(false);
+    restoreState();
   });
 })();

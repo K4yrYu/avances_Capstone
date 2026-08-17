@@ -7,8 +7,12 @@ from rest_framework.response import Response
 
 from productos.models import Producto
 
-from .serializers import AnalisisFotoPinturaSerializer, ConsultaAsistenteSerializer
-from .services import AsistenteNoDisponible, procesar_consulta
+from .serializers import (
+    AnalisisFotoPinturaSerializer,
+    ConfiguracionFotoPinturaSerializer,
+    ConsultaAsistenteSerializer,
+)
+from .services import AsistenteNoDisponible, procesar_configuracion_foto, procesar_consulta
 from .services.analisis_foto import analizar_foto_pintura
 from .services.gemini import GeminiNoDisponible
 from .services.recomendacion_colores import color_publico, pinturas_compatibles
@@ -43,6 +47,27 @@ def api_consultar_asistente(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @throttle_classes([AsistenteRateThrottle])
+def api_configurar_foto_pintura(request):
+    entrada = ConfiguracionFotoPinturaSerializer(data=request.data)
+    entrada.is_valid(raise_exception=True)
+    producto = None
+    if entrada.validated_data.get('producto_id'):
+        producto = Producto.objects.get(pk=entrada.validated_data['producto_id'])
+    try:
+        resultado = procesar_configuracion_foto(
+            entrada.validated_data['mensaje'],
+            entrada.validated_data['contexto'],
+            entrada.validated_data['historial'],
+            producto,
+        )
+    except AsistenteNoDisponible as exc:
+        return Response({'detail': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return Response(resultado)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AsistenteRateThrottle])
 def api_analizar_foto_pintura(request):
     entrada = AnalisisFotoPinturaSerializer(data=request.data)
     entrada.is_valid(raise_exception=True)
@@ -59,7 +84,7 @@ def api_analizar_foto_pintura(request):
         return Response({'detail': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     contexto = analisis.get('contexto_pintura', 'no_determinado')
     recomendaciones = (
-        [color_publico(item) for item in pinturas_compatibles(contexto, limite=4)]
+        [color_publico(item) for item in pinturas_compatibles(contexto, limite=6)]
         if contexto in {'interior', 'exterior', 'piscina'} else []
     )
     return Response({

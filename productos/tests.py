@@ -176,7 +176,8 @@ class SeguridadProductosTests(TestCase):
     def test_api_publica_ficha_tecnica_estructurada(self):
         self.producto.marca = 'Bauker'
         self.producto.modelo = 'PRO-1'
-        self.producto.save(update_fields=['marca', 'modelo'])
+        self.producto.sku = 'SFI-TEST-PRO-1'
+        self.producto.save(update_fields=['marca', 'modelo', 'sku'])
 
         response = self.client.get(reverse('api_lista_productos'))
 
@@ -184,6 +185,7 @@ class SeguridadProductosTests(TestCase):
         producto = next(item for item in response.json() if item['id'] == self.producto.id)
         self.assertEqual(producto['marca'], 'Bauker')
         self.assertEqual(producto['modelo'], 'PRO-1')
+        self.assertEqual(producto['sku'], 'SFI-TEST-PRO-1')
         self.assertIn('presentacion', producto)
         self.assertIn('apto_para_calculo', producto)
 

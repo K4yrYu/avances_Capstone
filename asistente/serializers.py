@@ -18,6 +18,23 @@ class ConsultaAsistenteSerializer(serializers.Serializer):
         return value
 
 
+class ConfiguracionFotoPinturaSerializer(ConsultaAsistenteSerializer):
+    contexto = serializers.ChoiceField(
+        choices=['interior', 'exterior', 'piscina', 'no_determinado'],
+    )
+    producto_id = serializers.IntegerField(min_value=1, required=False)
+
+    def validate_producto_id(self, value):
+        if not Producto.objects.filter(
+            pk=value,
+            activo=True,
+            categoria='Pinturas',
+            color_hex__gt='',
+        ).exists():
+            raise serializers.ValidationError('La pintura seleccionada no está disponible.')
+        return value
+
+
 class AnalisisFotoPinturaSerializer(serializers.Serializer):
     imagen = serializers.ImageField(allow_empty_file=False, write_only=True)
     color_hex = serializers.RegexField(

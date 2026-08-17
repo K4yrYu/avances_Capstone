@@ -34,7 +34,7 @@ class ProductoSerializer(serializers.ModelSerializer):
         model = Producto
         fields = [
             'id', 'nombre', 'descripcion', 'precio', 'imagen', 'stock', 'categoria', 'activo',
-            'marca', 'modelo', 'color', 'color_hex', 'ambiente_uso', 'ambiente_uso_display',
+            'marca', 'modelo', 'sku', 'color', 'color_hex', 'ambiente_uso', 'ambiente_uso_display',
             'superficies_compatibles', 'superficies_compatibles_display',
             'tipo_pintura', 'tipo_pintura_display', 'terminacion', 'terminacion_display',
             'propiedades_pintura', 'propiedades_pintura_display',
@@ -71,6 +71,10 @@ class ProductoSerializer(serializers.ModelSerializer):
         if not value:
             raise serializers.ValidationError('La marca es obligatoria para identificar el producto.')
         return value
+
+    def validate_sku(self, value):
+        value = str(value or '').strip().upper()
+        return value or None
 
     def validate_imagen(self, value):
         if value.size > 5 * 1024 * 1024:

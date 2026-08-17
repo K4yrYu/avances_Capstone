@@ -209,6 +209,7 @@
           <article><span><i class="fa-solid fa-box-open" aria-hidden="true"></i></span><div><small>Presentación</small><strong>{{ producto.presentacion }}</strong></div></article>
           <article><span><i class="fa-solid fa-copyright" aria-hidden="true"></i></span><div><small>Marca</small><strong>{{ producto.marca|default:"No especificada" }}</strong></div></article>
           <article><span{% if producto.color_hex %} class="technical-color-swatch" style="--product-color: {{ producto.color_hex }}"{% endif %}><i class="fa-solid fa-palette" aria-hidden="true"></i></span><div><small>Color</small><strong>{{ producto.color|default:"No especificado" }}</strong></div></article>
+          {% if producto.sku %}<article><span><i class="fa-solid fa-barcode" aria-hidden="true"></i></span><div><small>SKU</small><strong>{{ producto.sku }}</strong></div></article>{% endif %}
           <article><span><i class="fa-solid fa-calculator" aria-hidden="true"></i></span><div><small>Cálculo de material</small><strong>{% if producto.apto_para_calculo %}Disponible{% else %}No disponible{% endif %}</strong></div></article>
         </div>
 
