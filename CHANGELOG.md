@@ -19,7 +19,17 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ## [Sin publicar]
 
+### Agregado de productos al carrito sin navegación - 17 de agosto de 2026
+
+#### Agregado
+- Componente de alerta emergente (Toast) al agregar productos o recomendaciones al carrito en la vista del Asistente IA y en la Calculadora de Pintura, informando al usuario con la confirmación del producto añadido y un acceso rápido "Ver mi carrito".
+
+#### Modificado
+- La acción de los botones "Agregar" en las tarjetas de productos recomendados del Asistente IA y de la Calculadora de Pintura procesa la adición mediante AJAX en segundo plano sin redirigir ni sacar al usuario de la página actual.
+- Estado visual dinámico en el botón al presionar "Agregar", mostrando una animación de carga y la confirmación "✓ Agregado".
+
 ### Asistente SFI y análisis fotográfico
+
 
 #### Agregado
 

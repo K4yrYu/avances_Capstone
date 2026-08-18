@@ -196,6 +196,23 @@
       form.requestSubmit();
     });
 
+    function showCartToast(message) {
+      const toastElement = document.getElementById("cart-toast");
+      const messageElement = document.getElementById("cart-toast-message");
+      if (messageElement && message) {
+        messageElement.textContent = message;
+      }
+      if (toastElement) {
+        if (window.bootstrap && window.bootstrap.Toast) {
+          const toast = window.bootstrap.Toast.getOrCreateInstance(toastElement, { delay: 4000 });
+          toast.show();
+        } else {
+          toastElement.classList.add("show");
+          setTimeout(() => toastElement.classList.remove("show"), 4000);
+        }
+      }
+    }
+
     messages.addEventListener("click", async event => {
       const button = event.target.closest("[data-chat-add], [data-chat-product]");
       if (!button || button.disabled) return;
@@ -211,22 +228,26 @@
       if (!payload || !payload.producto) return;
       button.disabled = true;
       const original = button.innerHTML;
-      button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Verificando';
+      button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Agregando…';
       try {
         const response = await fetch(
           isCalculation ? root.dataset.addCartUrl : root.dataset.addProductUrl,
           {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {"Content-Type": "application/json", Accept: "application/json", "X-CSRFToken": getCookie("csrftoken")},
-          body: JSON.stringify(payload),
+            method: "POST",
+            credentials: "same-origin",
+            headers: {"Content-Type": "application/json", Accept: "application/json", "X-CSRFToken": getCookie("csrftoken")},
+            body: JSON.stringify(payload),
           },
         );
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(firstError(data) || "No fue posible agregar el cálculo.");
-        window.location.assign(safeUrl(data.redirect_url) || "/carrito/");
+        if (!response.ok) throw new Error(firstError(data) || "No fue posible agregar el producto.");
+
+        button.innerHTML = '<i class="fa-solid fa-circle-check"></i> Agregado';
+        button.classList.add("added");
+
+        showCartToast(data.message || "Producto agregado al carrito exitosamente.");
       } catch (error) {
-        errorBox.textContent = error.message || "No fue posible agregar el cálculo.";
+        errorBox.textContent = error.message || "No fue posible agregar el producto.";
         errorBox.hidden = false;
         button.disabled = false;
         button.innerHTML = original;

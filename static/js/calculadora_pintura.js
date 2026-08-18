@@ -150,10 +150,24 @@
           body: JSON.stringify(currentCalculationPayload(Number(button.dataset.addCalculation))),
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(firstError(data) || "No fue posible agregar la recomendacion.");
-        window.location.assign(safeUrl(data.redirect_url) || safeUrl(cartUrl) || "/carrito/");
+        if (!response.ok) throw new Error(firstError(data) || "No fue posible agregar la recomendación.");
+
+        button.innerHTML = '<i class="fa-solid fa-circle-check"></i> Agregado';
+        button.classList.add("added");
+
+        const toastElement = document.getElementById("cart-toast");
+        const messageElement = document.getElementById("cart-toast-message");
+        if (messageElement && data.message) messageElement.textContent = data.message;
+        if (toastElement) {
+          if (window.bootstrap && window.bootstrap.Toast) {
+            window.bootstrap.Toast.getOrCreateInstance(toastElement, { delay: 4000 }).show();
+          } else {
+            toastElement.classList.add("show");
+            setTimeout(() => toastElement.classList.remove("show"), 4000);
+          }
+        }
       } catch (error) {
-        errorBox.textContent = error.message || "No fue posible agregar la recomendacion.";
+        errorBox.textContent = error.message || "No fue posible agregar la recomendación.";
         errorBox.hidden = false;
         errorBox.scrollIntoView({behavior: "smooth", block: "center"});
         button.disabled = false;
