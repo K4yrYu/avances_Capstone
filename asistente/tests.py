@@ -510,3 +510,64 @@ class AsistenteSfiTests(TestCase):
             cliente_gemini.post(
                 'http://generativelanguage.googleapis.com/v1beta/models/modelo:generateContent'
             )
+
+    def test_resolver_repisa_incluye_herramientas_si_se_solicita(self):
+        Producto.objects.create(
+            nombre='Tablero pino finger joint 120 x 30 x 1,8 cm',
+            precio=12990, stock=10, categoria='Construcción', activo=True,
+        )
+        Producto.objects.create(
+            nombre='Escuadras metálicas reforzadas 25 x 20 cm pack 2',
+            precio=6990, stock=10, categoria='Construcción', activo=True,
+        )
+        Producto.objects.create(
+            nombre='Kit fijación para hormigón y ladrillo pack 10',
+            precio=3990, stock=10, categoria='Construcción', activo=True,
+        )
+        Producto.objects.create(
+            nombre='Tornillos para madera 4 x 40 mm pack 50',
+            precio=4990, stock=10, categoria='Construcción', activo=True,
+        )
+        Producto.objects.create(
+            nombre='Lijas para madera grano 120, 180 y 240 pack 3',
+            precio=2990, stock=10, categoria='Construcción', activo=True,
+        )
+        Producto.objects.create(
+            nombre='Taladro percutor Bauker',
+            precio=25000, stock=5, categoria='Herramientas', activo=True,
+        )
+        Producto.objects.create(
+            nombre='Cinta métrica Stanley 5m',
+            precio=4990, stock=5, categoria='Herramientas', activo=True,
+        )
+
+        datos_sin_herramientas = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'repisa',
+            'ancho_cm': 80,
+            'fondo_cm': 25,
+            'tipo_muro': 'hormigon',
+            'incluir_herramientas': False,
+        }
+        res_sin = resolver_interpretacion(datos_sin_herramientas)
+        self.assertEqual(res_sin['tipo'], 'plan_proyecto')
+        nombres_productos_sin = [p['nombre'] for p in res_sin['productos']]
+        self.assertNotIn('Taladro percutor Bauker', nombres_productos_sin)
+        self.assertIn('Incluir también herramientas', res_sin['sugerencias'])
+
+        datos_con_herramientas = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'repisa',
+            'ancho_cm': 80,
+            'fondo_cm': 25,
+            'tipo_muro': 'hormigon',
+            'incluir_herramientas': True,
+        }
+        res_con = resolver_interpretacion(datos_con_herramientas)
+        self.assertEqual(res_con['tipo'], 'plan_proyecto')
+        nombres_productos_con = [p['nombre'] for p in res_con['productos']]
+        self.assertIn('Taladro percutor Bauker', nombres_productos_con)
+        self.assertIn('Cinta métrica Stanley 5m', nombres_productos_con)
+        self.assertIn('Excluir herramientas', res_con['sugerencias'])
+        self.assertIn('herramientas recomendadas', res_con['mensaje'])
+

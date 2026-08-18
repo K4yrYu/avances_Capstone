@@ -61,6 +61,25 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
     ) or bool(re.search(r'\b\d[\d.]*\s*(?:mil|lucas?)\b', texto_usuario))
     if datos.get('presupuesto') and not presupuesto_expresado:
         datos['presupuesto'] = 0
+
+    texto_mensaje = _texto_normalizado(mensaje)
+    indicadores_excluir_herramientas = (
+        'excluir herramientas', 'sin herramientas', 'quitar herramientas',
+        'solo materiales', 'sin taladro',
+    )
+    indicadores_incluir_herramientas = (
+        'incluir herramientas', 'herramienta', 'herramientas', 'taladro',
+        'cinta metrica', 'wincha', 'metro', 'con herramientas',
+    )
+
+    if any(indicador in texto_mensaje for indicador in indicadores_excluir_herramientas):
+        datos['incluir_herramientas'] = False
+    elif datos.get('incluir_herramientas'):
+        if not any(indicador in texto_usuario for indicador in indicadores_incluir_herramientas):
+            datos['incluir_herramientas'] = False
+    elif any(indicador in texto_mensaje for indicador in indicadores_incluir_herramientas):
+        datos['incluir_herramientas'] = True
+
     return datos
 
 
@@ -161,6 +180,8 @@ def _resolver_repisa(datos):
             'sugerencias': ['120 cm de ancho y 30 cm de fondo', '80 cm de ancho y 25 cm de fondo'],
         }
 
+    incluir_herramientas = bool(datos.get('incluir_herramientas'))
+
     tablero = _producto_catalogo('Tablero pino finger joint')
     escuadras = _producto_catalogo('Escuadras metálicas reforzadas')
     tornillos_madera = _producto_catalogo('Tornillos para madera 4 x 40')
@@ -205,6 +226,24 @@ def _resolver_repisa(datos):
             'Unión tablero y escuadras',
             f'Tornillos para sujetar {cantidad} tablero(s) a sus escuadras',
         ))
+
+    if incluir_herramientas:
+        taladro = _producto_catalogo('Taladro percutor')
+        cinta_metrica = _producto_catalogo('Cinta métrica')
+        if taladro:
+            definiciones.append((
+                taladro,
+                1,
+                'Herramienta recomendada: Taladro',
+                'Taladro percutor para perforar el muro e instalar fijaciones',
+            ))
+        if cinta_metrica:
+            definiciones.append((
+                cinta_metrica,
+                1,
+                'Herramienta recomendada: Cinta métrica',
+                'Cinta métrica para medir y ubicar la repisa',
+            ))
 
     nombres_faltantes = []
     productos_kit = []
@@ -272,10 +311,15 @@ def _resolver_repisa(datos):
         if item_barniz:
             mensaje_presupuesto += f' Con el barniz opcional cuesta {_formatear_clp(total_terminado)}.'
 
+    texto_materiales = 'materiales y herramientas recomendadas' if incluir_herramientas else 'materiales'
+    sugerencia_herramientas = (
+        'Excluir herramientas' if incluir_herramientas else 'Incluir también herramientas'
+    )
+
     return {
         'tipo': 'plan_proyecto',
         'mensaje': (
-            f'Preparé los materiales para {cantidad} repisa(s) de {ancho_cm} × {fondo_cm} cm '
+            f'Preparé los {texto_materiales} para {cantidad} repisa(s) de {ancho_cm} × {fondo_cm} cm '
             f'en muro de {datos["tipo_muro"].replace("_", "-")}. {mensaje_presupuesto} '
             'El barniz es opcional. Antes de instalar, verifica la carga admisible del muro, '
             'la ubicación de instalaciones ocultas y la fijación indicada por el fabricante.'
@@ -285,7 +329,7 @@ def _resolver_repisa(datos):
         'presupuesto': presupuesto,
         'subtotal_basico': subtotal_basico,
         'total_con_terminacion': total_terminado,
-        'sugerencias': ['Incluir también herramientas', 'Cambiar las medidas de la repisa'],
+        'sugerencias': [sugerencia_herramientas, 'Cambiar las medidas de la repisa'],
     }
 
 
