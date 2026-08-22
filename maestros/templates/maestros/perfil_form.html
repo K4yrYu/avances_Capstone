@@ -1,0 +1,14 @@
+{% extends 'maestros/base.html' %}
+{% block title %}{% if es_nuevo %}Crear perfil profesional{% else %}Editar perfil profesional{% endif %}{% endblock %}
+{% block content %}
+<section class="master-mini-hero master-private-hero"><div class="container"><span class="master-eyebrow"><i class="fa-solid fa-id-card"></i> Perfil profesional</span><h1>{% if es_nuevo %}Presenta tu experiencia.{% else %}Actualiza tu información.{% endif %}</h1><p>La información será revisada antes de aparecer públicamente.</p></div></section>
+<section class="master-section master-private-section"><div class="container"><div class="master-form-layout"><form class="master-form-card" method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="master-form-heading"><span class="master-icon"><i class="fa-solid fa-user-gear"></i></span><div><small>Datos del maestro</small><h2>Información profesional</h2></div></div>
+  {% for field in form %}
+    {% if field.name == 'disponible' %}<label class="master-check">{{ field }}<span><strong>{{ field.label }}</strong><small>Indica si actualmente puedes recibir nuevos trabajos.</small></span></label>
+    {% else %}<div class="master-field"><label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<b>*</b>{% endif %}</label>{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<em>{{ error }}</em>{% endfor %}</div>{% endif %}
+  {% endfor %}
+  <div class="master-form-actions"><a class="btn-master-secondary" href="{% if es_nuevo %}{% url 'maestros:trabaja_con_nosotros' %}{% else %}{% url 'maestros:panel' %}{% endif %}">Cancelar</a><button class="btn-master-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Guardar perfil</button></div>
+</form><aside class="master-form-help"><i class="fa-solid fa-lightbulb"></i><h2>Un perfil claro genera confianza.</h2><p>Describe los tipos de trabajo que realizas, tu experiencia y las comunas donde realmente puedes trabajar.</p><ul><li>Usa una foto profesional.</li><li>Selecciona tus especialidades reales.</li><li>No incluyas datos sensibles.</li></ul></aside></div></div></section>
+{% endblock %}

@@ -5,6 +5,7 @@ from django.db.models import Count, F, Sum
 
 from productos.models import Producto, SolicitudReposicion
 from carro_compras.models import Venta
+from maestros.models import PerfilMaestro
 
 
 def index(request):
@@ -60,6 +61,12 @@ def panel_administracion(request):
             estado__in=['pendiente', 'enviada', 'error']
         ).count(),
         'clientes_activos': Usuario.objects.filter(is_active=True, is_staff=False).count(),
+        'maestros_activos': PerfilMaestro.objects.filter(
+            estado=PerfilMaestro.Estado.APROBADO
+        ).count(),
+        'maestros_pendientes': PerfilMaestro.objects.filter(
+            estado=PerfilMaestro.Estado.PENDIENTE
+        ).count(),
         'ventas_pagadas': ventas_pagadas.count(),
         'ingresos': ingresos,
         'ingresos_formateados': f"${ingresos:,.0f}".replace(',', '.'),

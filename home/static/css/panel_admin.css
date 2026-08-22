@@ -382,6 +382,87 @@ body {
   margin-bottom: 1rem;
 }
 
+.masters-overview-card {
+  display: grid;
+  grid-template-columns: auto minmax(240px, 1fr) auto auto auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem 1.2rem;
+  margin-bottom: 1rem;
+  color: inherit;
+  background: linear-gradient(110deg, #fdfefe 0%, #edf6fa 62%, #fff8df 100%);
+  border: 1px solid var(--admin-border);
+  border-radius: 17px;
+  box-shadow: 0 7px 22px rgba(9, 40, 64, 0.045);
+  text-decoration: none;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.masters-overview-card:hover {
+  color: inherit;
+  border-color: #9bb9cb;
+  box-shadow: 0 14px 30px rgba(9, 40, 64, 0.1);
+  transform: translateY(-2px);
+}
+
+.masters-overview-icon {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  color: #fff;
+  background: var(--admin-navy);
+  border-radius: 13px;
+  place-items: center;
+}
+
+.masters-overview-copy span,
+.masters-overview-stat span {
+  display: block;
+  color: var(--admin-muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.masters-overview-copy strong {
+  display: block;
+  margin: 0.12rem 0;
+  color: var(--admin-navy-dark);
+  font-size: 1rem;
+}
+
+.masters-overview-copy small,
+.masters-overview-stat small {
+  color: var(--admin-muted);
+  font-size: 0.66rem;
+}
+
+.masters-overview-stat {
+  min-width: 135px;
+  padding: 0.65rem 1rem;
+  border-left: 1px solid var(--admin-border);
+}
+
+.masters-overview-stat > strong {
+  display: block;
+  color: var(--admin-navy-dark);
+  font-size: 1.55rem;
+  line-height: 1.1;
+}
+
+.masters-overview-stat.approved > strong {
+  color: #18724a;
+}
+
+.masters-overview-stat.pending > strong {
+  color: #9b7000;
+}
+
+.masters-overview-arrow {
+  color: var(--admin-blue);
+}
+
 .metric-card {
   min-width: 0;
   padding: 1.35rem;
@@ -983,6 +1064,20 @@ body {
   .metrics-grid,
   .dashboard-side {
     grid-template-columns: 1fr;
+  }
+
+  .masters-overview-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .masters-overview-stat {
+    min-width: 0;
+    border-top: 1px solid var(--admin-border);
+    border-left: 0;
+  }
+
+  .masters-overview-arrow {
+    display: none;
   }
 
   .operation-list > a {

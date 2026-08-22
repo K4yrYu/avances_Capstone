@@ -40,6 +40,7 @@
             <li class="nav-item"><a class="nav-link" href="{% url 'index' %}">Inicio</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'lista_productos' %}">Productos</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'vista_ofertas' %}">Ofertas</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'maestros:lista' %}">Maestros</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'asistente_sfi' %}">Asistente IA</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'contacto' %}">Nosotros</a></li>
             {% if user.is_staff %}<li class="nav-item"><a class="nav-link" href="{% url 'panel_administracion' %}">Administración</a></li>{% endif %}
@@ -49,6 +50,7 @@
             <div class="user-greeting"><span>Hola,</span><strong>{{ user.first_name|default:user.username }}</strong></div>
             <a class="icon-action" href="{% url 'vista_carrito' %}" aria-label="Ver carrito" title="Carrito"><i class="fa-solid fa-cart-shopping" aria-hidden="true"></i></a>
             <a class="icon-action" href="{% url 'mi_historial_compras' %}" aria-label="Ver mis compras" title="Mis compras"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i></a>
+            {% if user.perfil_maestro %}<a class="btn btn-outline-sfi btn-sm" href="{% url 'maestros:panel' %}">Mi panel</a>{% endif %}
             <form method="post" action="{% url 'cerrar_sesion' %}">
               {% csrf_token %}
               <button class="btn btn-outline-sfi btn-sm" type="submit">Salir</button>

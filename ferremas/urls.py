@@ -10,6 +10,7 @@ urlpatterns = [
     path('', include('usuarios.urls')),  # Incluye las rutas de la app usuarios
     path('', include('carro_compras.urls')),
     path('', include('asistente.urls')),
+    path('', include('maestros.urls')),
 ]
 
 handler404 = 'home.views.custom_404'  # Añade esta línea

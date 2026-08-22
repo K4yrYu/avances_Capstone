@@ -1,0 +1,66 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Revisión de maestros | SFI</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}">
+  <link rel="stylesheet" href="{% static 'maestros/css/maestros.css' %}">
+</head>
+<body>
+  <a class="skip-link" href="#revision-maestros">Saltar al contenido</a>
+  <div class="admin-shell">
+    {% include 'includes/admin_sidebar.html' %}
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <div class="topbar-title">
+          <button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-controls="adminSidebar" aria-label="Abrir menú"><i class="fa-solid fa-bars"></i></button>
+          <div><span>Administración</span><strong>Revisión de maestros</strong></div>
+        </div>
+        <div class="admin-profile"><span class="profile-avatar">{{ user.username|first|upper }}</span><div><strong>{{ user.get_full_name|default:user.username }}</strong><span>Administrador</span></div></div>
+      </header>
+      <main class="master-admin-main" id="revision-maestros">
+        {% if messages %}{% for message in messages %}<div class="alert alert-{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}{% endif %}
+        <div class="master-admin-heading"><div><span><i class="fa-solid fa-user-shield"></i> Red profesional</span><h1>Revisión de maestros</h1><p>Aprueba, rechaza o suspende perfiles profesionales desde un único lugar.</p></div><a class="master-admin-public-link" href="{% url 'maestros:lista' %}"><i class="fa-solid fa-arrow-up-right-from-square"></i> Ver directorio público</a></div>
+        <div class="master-admin-metrics">
+          <article><i class="fa-solid fa-users"></i><span>Total</span><strong>{{ conteos.total }}</strong></article>
+          <article><i class="fa-solid fa-clock"></i><span>En revisión</span><strong>{{ conteos.pendientes }}</strong></article>
+          <article><i class="fa-solid fa-circle-check"></i><span>Aprobados</span><strong>{{ conteos.aprobados }}</strong></article>
+        </div>
+        <section class="master-specialties-admin">
+          <div>
+            <span>ESPECIALIDADES DISPONIBLES</span>
+            <h2>Oficios configurados</h2>
+            <div class="master-tags">{% for especialidad in especialidades %}<em>{{ especialidad.nombre }}{% if not especialidad.activa %} · Inactiva{% endif %}</em>{% empty %}<small>Aún no existen especialidades.</small>{% endfor %}</div>
+          </div>
+          <form method="post" action="{% url 'maestros:admin_crear_especialidad' %}">
+            {% csrf_token %}
+            <label>Nombre{{ especialidad_form.nombre }}</label>
+            <label>Descripción{{ especialidad_form.descripcion }}</label>
+            <button class="btn-master-primary" type="submit"><i class="fa-solid fa-plus"></i> Agregar especialidad</button>
+          </form>
+        </section>
+        <section class="master-admin-card">
+          <div class="master-admin-card-head"><div><small>PERFILES PROFESIONALES</small><h2>Solicitudes registradas</h2></div><form method="get"><label for="estado">Estado</label><select class="form-select" id="estado" name="estado" onchange="this.form.submit()"><option value="">Todos</option>{% for valor, etiqueta in estados %}<option value="{{ valor }}" {% if filtro_estado == valor %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}</select></form></div>
+          <div class="master-admin-list">
+            {% for perfil in perfiles %}
+              <article class="master-review-row">
+                <div class="master-review-person">{% if perfil.foto %}<img src="{{ perfil.foto.url }}" alt="">{% else %}<span>{{ perfil.usuario.username|first|upper }}</span>{% endif %}<div><small>#{{ perfil.id }} · {{ perfil.get_region_display }}</small><h3>{{ perfil.usuario.get_full_name|default:perfil.usuario.username }}</h3><p>{{ perfil.usuario.email }}</p></div></div>
+                <div class="master-review-data"><span>Experiencia</span><b>{{ perfil.anos_experiencia }} años</b><div class="master-tags">{% for especialidad in perfil.especialidades.all %}<em>{{ especialidad.nombre }}</em>{% endfor %}</div></div>
+                <div class="master-review-description"><span>Presentación</span><p>{{ perfil.descripcion_profesional|truncatechars:190 }}</p>{% if perfil.observacion_admin %}<small><b>Observación:</b> {{ perfil.observacion_admin }}</small>{% endif %}</div>
+                <div class="master-review-actions"><span class="master-state state-{{ perfil.estado|lower }}">{{ perfil.get_estado_display }}</span><button class="btn-master-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#acciones-{{ perfil.id }}">Revisar <i class="fa-solid fa-chevron-down"></i></button></div>
+                <div class="collapse master-review-form" id="acciones-{{ perfil.id }}"><form method="post" action="{% url 'maestros:admin_estado' perfil.id %}">{% csrf_token %}<label>Observación para el maestro<textarea class="form-control" name="observacion_admin" rows="2">{{ perfil.observacion_admin }}</textarea></label><div><button class="btn-master-approve" name="estado" value="APROBADO" type="submit"><i class="fa-solid fa-check"></i> Aprobar</button><button class="btn-master-reject" name="estado" value="RECHAZADO" type="submit"><i class="fa-solid fa-xmark"></i> Rechazar</button><button class="btn-master-suspend" name="estado" value="SUSPENDIDO" type="submit"><i class="fa-solid fa-ban"></i> Suspender</button></div></form></div>
+              </article>
+            {% empty %}<div class="master-empty"><i class="fa-solid fa-inbox"></i><h2>No hay perfiles en este estado.</h2></div>{% endfor %}
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

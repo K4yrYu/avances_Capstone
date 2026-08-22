@@ -29,6 +29,9 @@
         <a class="{% if active == 'vista_lista_usuarios' or active == 'vista_agregar_usuario' or active == 'vista_editar_usuario' %}active{% endif %}" href="{% url 'vista_lista_usuarios' %}">
           <i class="fa-solid fa-users" aria-hidden="true"></i><span>Usuarios</span>
         </a>
+        <a class="{% if active == 'admin_revision' or active == 'admin_estado' %}active{% endif %}" href="{% url 'maestros:admin_revision' %}">
+          <i class="fa-solid fa-user-shield" aria-hidden="true"></i><span>Maestros</span>
+        </a>
         <a class="{% if active == 'historial_ventas' %}active{% endif %}" href="{% url 'historial_ventas' %}">
           <i class="fa-solid fa-receipt" aria-hidden="true"></i><span>Ventas</span>
         </a>

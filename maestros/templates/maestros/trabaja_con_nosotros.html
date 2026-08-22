@@ -1,0 +1,49 @@
+{% extends 'maestros/base.html' %}
+{% block title %}Trabaja con nosotros{% endblock %}
+{% block content %}
+<section class="master-hero">
+  <div class="master-grid" aria-hidden="true"></div>
+  <div class="container position-relative">
+    <div class="row align-items-center g-5">
+      <div class="col-lg-7">
+        <span class="master-eyebrow"><i class="fa-solid fa-helmet-safety"></i> Red profesional SFI</span>
+        <h1>Haz visible tu experiencia y tus mejores trabajos.</h1>
+        <p>Crea un perfil profesional, presenta tu portafolio y postula para aparecer en nuestra red de maestros revisados.</p>
+        <div class="master-actions">
+          {% if perfil %}
+            <a class="btn-master-primary" href="{% url 'maestros:panel' %}">Ir a mi panel <i class="fa-solid fa-arrow-right"></i></a>
+          {% elif user.is_authenticated and user.is_active and user.email_confirmado %}
+            <a class="btn-master-primary" href="{% url 'maestros:crear_perfil' %}">Crear perfil profesional <i class="fa-solid fa-arrow-right"></i></a>
+          {% elif user.is_authenticated %}
+            <span class="master-warning"><i class="fa-solid fa-circle-exclamation"></i> Confirma tu correo para crear el perfil.</span>
+          {% else %}
+            <a class="btn-master-primary" href="{% url 'iniciosesion' %}?next={% url 'maestros:crear_perfil' %}">Ingresar para comenzar <i class="fa-solid fa-arrow-right"></i></a>
+          {% endif %}
+          <a class="btn-master-secondary" href="{% url 'maestros:lista' %}">Ver maestros</a>
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <div class="master-hero-card">
+          <span class="master-icon"><i class="fa-solid fa-user-check"></i></span>
+          <h2>Un proceso claro</h2>
+          <ol>
+            <li><b>1</b><span>Completa tu experiencia y especialidades.</span></li>
+            <li><b>2</b><span>Publica trabajos con varias fotografías.</span></li>
+            <li><b>3</b><span>Envía tu perfil a revisión de SFI.</span></li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="master-section">
+  <div class="container">
+    <div class="master-section-heading"><span>Tu perfil profesional</span><h2>Todo lo necesario para mostrar tu oficio.</h2></div>
+    <div class="master-feature-grid">
+      <article><i class="fa-solid fa-id-card"></i><h3>Información profesional</h3><p>Especialidades, experiencia, disponibilidad y zonas donde trabajas.</p></article>
+      <article><i class="fa-solid fa-images"></i><h3>Portafolio real</h3><p>Presenta trabajos realizados y agrega varias imágenes a cada proyecto.</p></article>
+      <article><i class="fa-solid fa-shield-halved"></i><h3>Revisión SFI</h3><p>Solo los perfiles aprobados se muestran públicamente a los clientes.</p></article>
+    </div>
+  </div>
+</section>
+{% endblock %}

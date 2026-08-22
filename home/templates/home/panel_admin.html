@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}?v=20260815-metric-cards">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}?v=20260821-maestros-dashboard">
 </head>
 <body>
   <a class="skip-link" href="#contenido-panel">Saltar al contenido</a>
@@ -169,6 +169,26 @@
           </a>
         </section>
 
+        <a class="masters-overview-card" href="{% url 'maestros:admin_revision' %}" aria-label="Revisar maestros profesionales">
+          <span class="masters-overview-icon"><i class="fa-solid fa-user-shield" aria-hidden="true"></i></span>
+          <div class="masters-overview-copy">
+            <span>Red profesional SFI</span>
+            <strong>Gestión de maestros</strong>
+            <small>Revisa postulaciones y controla los perfiles visibles para clientes.</small>
+          </div>
+          <div class="masters-overview-stat approved">
+            <span>Maestros activos</span>
+            <strong>{{ resumen.maestros_activos }}</strong>
+            <small>Perfiles aprobados</small>
+          </div>
+          <div class="masters-overview-stat pending">
+            <span>Pendientes</span>
+            <strong>{{ resumen.maestros_pendientes }}</strong>
+            <small>Esperando revisión</small>
+          </div>
+          <i class="fa-solid fa-chevron-right masters-overview-arrow" aria-hidden="true"></i>
+        </a>
+
         <div class="dashboard-layout">
           <section class="dashboard-card operations-card">
             <div class="card-heading">
@@ -196,6 +216,12 @@
                 <span class="operation-icon slate"><i class="fa-solid fa-users-gear" aria-hidden="true"></i></span>
                 <div><strong>Gestión de usuarios</strong><small>Cuentas, permisos y estados de acceso</small></div>
                 <span class="operation-meta">{{ resumen.clientes_activos }} clientes</span>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </a>
+              <a href="{% url 'maestros:admin_revision' %}">
+                <span class="operation-icon green"><i class="fa-solid fa-user-shield" aria-hidden="true"></i></span>
+                <div><strong>Gestión de maestros</strong><small>Perfiles profesionales, especialidades y revisión</small></div>
+                <span class="operation-meta {% if resumen.maestros_pendientes %}attention{% endif %}">{{ resumen.maestros_activos }} activos · {{ resumen.maestros_pendientes }} pendientes</span>
                 <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
               </a>
               <a href="{% url 'historial_ventas' %}">
@@ -226,7 +252,7 @@
                   <span>Requiere atención</span>
                   <h2>Alertas</h2>
                 </div>
-                <span class="alert-total">{{ resumen.stock_bajo|add:resumen.sin_stock|add:resumen.retiros_pendientes|add:resumen.despachos_pendientes }}</span>
+                <span class="alert-total">{{ resumen.stock_bajo|add:resumen.sin_stock|add:resumen.retiros_pendientes|add:resumen.despachos_pendientes|add:resumen.maestros_pendientes }}</span>
               </div>
               <div class="alert-list">
                 <a href="{% url 'gestion_reposicion' %}">
@@ -249,6 +275,11 @@
                   <div><strong>Despachos pendientes</strong><small>Entregas por completar</small></div>
                   <b>{{ resumen.despachos_pendientes }}</b>
                 </a>
+                <a href="{% url 'maestros:admin_revision' %}?estado=PENDIENTE">
+                  <span class="alert-dot warning"></span>
+                  <div><strong>Maestros pendientes</strong><small>Perfiles por revisar</small></div>
+                  <b>{{ resumen.maestros_pendientes }}</b>
+                </a>
               </div>
             </section>
 
@@ -260,6 +291,7 @@
                 <a href="{% url 'gestion_reposicion' %}"><i class="fa-solid fa-truck-ramp-box" aria-hidden="true"></i> Reponer stock</a>
                 <a href="{% url 'lista_productos' %}"><i class="fa-solid fa-eye" aria-hidden="true"></i> Ver catálogo</a>
                 <a href="{% url 'vista_ofertas' %}"><i class="fa-solid fa-tags" aria-hidden="true"></i> Revisar ofertas</a>
+                <a href="{% url 'maestros:admin_revision' %}"><i class="fa-solid fa-user-shield" aria-hidden="true"></i> Revisar maestros</a>
               </div>
             </section>
           </aside>

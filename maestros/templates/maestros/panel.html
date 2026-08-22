@@ -1,0 +1,36 @@
+{% extends 'maestros/base.html' %}
+{% block title %}Mi panel profesional{% endblock %}
+{% block content %}
+<section class="master-mini-hero master-private-hero">
+  <div class="container master-dashboard-heading">
+    <div><span class="master-eyebrow"><i class="fa-solid fa-toolbox"></i> Área profesional</span><h1>Mi perfil de maestro.</h1><p>Administra tu presentación, portafolio y estado de revisión.</p></div>
+    <a class="btn-master-secondary light" href="{% url 'maestros:editar_perfil' %}"><i class="fa-solid fa-pen"></i> Editar perfil</a>
+  </div>
+</section>
+<section class="master-section master-private-section">
+  <div class="container">
+    <div class="master-status-card state-{{ perfil.estado|lower }}">
+      <div><span>Estado del perfil</span><h2>{{ perfil.get_estado_display }}</h2><p>{% if perfil.estado == 'BORRADOR' %}Completa tu información y envíala cuando esté lista.{% elif perfil.estado == 'PENDIENTE' %}SFI está revisando tus antecedentes profesionales.{% elif perfil.estado == 'APROBADO' %}Tu perfil ya está visible para todos los clientes.{% elif perfil.estado == 'RECHAZADO' %}Revisa la observación, corrige tu perfil y vuelve a enviarlo.{% else %}Tu perfil no es público mientras permanezca suspendido.{% endif %}</p>{% if perfil.observacion_admin %}<div class="master-admin-note"><strong>Observación de administración:</strong> {{ perfil.observacion_admin }}</div>{% endif %}</div>
+      <div class="master-status-actions">
+        {% if perfil.estado != 'PENDIENTE' and perfil.estado != 'SUSPENDIDO' %}<form method="post" action="{% url 'maestros:enviar_revision' %}">{% csrf_token %}<button class="btn-master-primary" type="submit"><i class="fa-solid fa-paper-plane"></i> Enviar a revisión</button></form>{% endif %}
+        {% if perfil.estado == 'APROBADO' %}<a class="btn-master-secondary" href="{% url 'maestros:detalle' perfil.id %}">Ver perfil público</a>{% endif %}
+      </div>
+    </div>
+    <div class="master-dashboard-grid">
+      <article class="master-panel-card">
+        <div class="master-panel-title"><span class="master-icon"><i class="fa-solid fa-id-card"></i></span><div><small>Perfil profesional</small><h2>{{ perfil.usuario.get_full_name|default:perfil.usuario.username }}</h2></div></div>
+        <dl><div><dt>Experiencia</dt><dd>{{ perfil.anos_experiencia }} años</dd></div><div><dt>Región</dt><dd>{{ perfil.get_region_display }}</dd></div><div><dt>Disponibilidad</dt><dd>{{ perfil.disponible|yesno:'Disponible,No disponible' }}</dd></div></dl>
+        <p class="master-work-zones"><strong>Comunas:</strong> {{ perfil.zonas_trabajo }}</p>
+        <div class="master-tags">{% for especialidad in perfil.especialidades.all %}<span>{{ especialidad.nombre }}</span>{% endfor %}</div>
+        <a class="master-inline-link" href="{% url 'maestros:editar_perfil' %}">Actualizar información <i class="fa-solid fa-arrow-right"></i></a>
+      </article>
+      <article class="master-panel-card">
+        <div class="master-panel-title"><span class="master-icon yellow"><i class="fa-solid fa-images"></i></span><div><small>Portafolio</small><h2>{{ trabajos|length }} trabajo{{ trabajos|length|pluralize }}</h2></div></div>
+        <p>Agrega proyectos terminados y decide cuáles mostrar cuando tu perfil sea aprobado.</p>
+        <div class="master-panel-work-preview">{% for trabajo in trabajos|slice:':3' %}<span><i class="fa-solid fa-hammer"></i> {{ trabajo.titulo }} <small>{{ trabajo.publicado|yesno:'Publicado,Oculto' }}</small></span>{% empty %}<span>Aún no has agregado trabajos.</span>{% endfor %}</div>
+        <div class="master-actions"><a class="btn-master-primary" href="{% url 'maestros:crear_trabajo' %}">Agregar trabajo</a><a class="btn-master-secondary" href="{% url 'maestros:trabajos' %}">Gestionar</a></div>
+      </article>
+    </div>
+  </div>
+</section>
+{% endblock %}

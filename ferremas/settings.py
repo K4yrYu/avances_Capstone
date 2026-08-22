@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'usuarios',  # Aplicación de usuarios
     'carro_compras', # aplicacion de compras
     'asistente',  # Asistente inteligente conectado al catalogo
+    'maestros',  # Perfiles profesionales y portafolios de maestros
 ]
 
 # Middleware necesario para la seguridad, autenticación y manejo de sesiones.

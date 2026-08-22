@@ -19,6 +19,41 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ## [Sin publicar]
 
+### Módulo de maestros profesionales - 21 de agosto de 2026
+
+#### Agregado
+
+- Se creó la Fase 1 del módulo `maestros` con perfiles profesionales asociados a usuarios SFI verificados.
+- Se incorporaron los estados borrador, pendiente, aprobado, rechazado y suspendido, junto con revisión administrativa y fecha de aprobación.
+- Se agregó un directorio público que muestra únicamente maestros aprobados, con filtros automáticos por especialidad, región y comuna.
+- Se incorporaron las 16 regiones y 346 comunas de Chile, con validación de correspondencia entre región y comunas seleccionadas.
+- Se agregaron 13 especialidades iniciales y una opción para que administración registre nuevas especialidades.
+- Los maestros pueden seleccionar varias especialidades y varias comunas de trabajo.
+- Se agregó un portafolio profesional con trabajos publicados, múltiples especialidades y varias imágenes por trabajo.
+- Se incorporó previsualización de la foto profesional y de las imágenes nuevas del portafolio antes de guardar.
+
+#### Modificado
+
+- Todas las barras públicas ahora incluyen acceso a Maestros, Carrito y Mis compras.
+- Los usuarios con perfil de maestro disponen del acceso Mi panel en todas las barras públicas.
+- El panel administrativo muestra maestros activos y pendientes, alertas de revisión y accesos directos a su gestión.
+- Las especialidades seleccionadas se muestran con resaltado y un ticket visible.
+- Las fechas de trabajos realizados se limitan según la experiencia declarada y no permiten fechas futuras o excesivamente antiguas.
+
+#### Seguridad y validación
+
+- Solo usuarios activos con correo confirmado pueden crear un perfil profesional.
+- Cada usuario administra únicamente su propio perfil, trabajos e imágenes.
+- Solo administradores pueden aprobar, rechazar o suspender perfiles y no pueden revisar su propio perfil.
+- Los clientes solo pueden ver perfiles aprobados y trabajos marcados como publicados.
+- Se agregaron 9 pruebas para permisos, estados, visibilidad, múltiples especialidades, comunas y validación de fechas.
+
+#### Base de datos y configuración
+
+- Se registró la aplicación `maestros` en Django y se conectaron sus rutas públicas y administrativas.
+- Se agregaron las migraciones `0001` a `0007` del módulo, incluyendo datos territoriales, especialidades iniciales y preservación de especialidades en trabajos existentes.
+- No se requieren nuevas variables de entorno.
+
 ### Agregado de productos al carrito sin navegación - 17 de agosto de 2026
 
 #### Agregado
