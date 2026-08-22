@@ -7,6 +7,10 @@ from django.utils import timezone
 from .chile import REGIONES_CHOICES
 
 
+MAX_IMAGENES_POR_TRABAJO = 10
+MAX_TAMANO_IMAGEN = 5 * 1024 * 1024
+
+
 def validar_fecha_trabajo(value):
     hoy = timezone.localdate()
     if value > hoy:
@@ -88,6 +92,23 @@ class PerfilMaestro(models.Model):
         self.estado = nuevo_estado
         self.fecha_aprobacion = timezone.now() if nuevo_estado == self.Estado.APROBADO else None
         self.save(update_fields=["estado", "fecha_aprobacion", "actualizado_en"])
+
+    def volver_a_revision_por_edicion(self):
+        """Un cambio profesional invalida la aprobación anterior."""
+        if self.estado != self.Estado.APROBADO:
+            return False
+        self.estado = self.Estado.PENDIENTE
+        self.observacion_admin = ""
+        self.fecha_aprobacion = None
+        self.save(
+            update_fields=[
+                "estado",
+                "observacion_admin",
+                "fecha_aprobacion",
+                "actualizado_en",
+            ]
+        )
+        return True
 
 
 class TrabajoRealizado(models.Model):

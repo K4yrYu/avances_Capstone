@@ -19,6 +19,31 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ## [Sin publicar]
 
+### API segura de maestros - 21 de agosto de 2026
+
+#### Agregado
+
+- Se incorporó una API interna con Django REST Framework para administrar el perfil profesional, enviar postulaciones a revisión y gestionar trabajos e imágenes del portafolio.
+- Se agregó un endpoint administrativo exclusivo para aprobar, rechazar o suspender perfiles profesionales.
+- Se agregó una API pública de solo lectura que entrega únicamente maestros aprobados, trabajos publicados y datos profesionales públicos.
+- Se crearon serializers, permisos y vistas API independientes para mantener sin cambios las vistas HTML existentes.
+
+#### Seguridad y validación
+
+- Las APIs privadas usan autenticación de sesión con protección CSRF y determinan siempre el propietario mediante `request.user`.
+- Los serializers privados no aceptan usuario, estado, observación administrativa ni fecha de aprobación enviados por el maestro.
+- Se impidió consultar, modificar o eliminar perfiles, trabajos e imágenes pertenecientes a otros usuarios.
+- Solo administradores pueden cambiar estados profesionales y ningún administrador puede aprobar su propio perfil.
+- Se validan en backend las especialidades activas, comunas chilenas, regiones, fechas e imágenes.
+- Cada imagen se limita a 5 MB y cada trabajo a un máximo de 10 imágenes.
+- Un perfil aprobado vuelve automáticamente a pendiente cuando cambia información profesional sensible; modificar solo la disponibilidad mantiene la aprobación.
+- La API pública no expone RUT, teléfono, correo, observaciones administrativas ni perfiles sin aprobar.
+
+#### Pruebas y configuración
+
+- El módulo cuenta ahora con 17 pruebas para autenticación, propiedad, manipulación de identificadores, permisos administrativos, visibilidad pública, revalidación y límites de imágenes.
+- No se requieren migraciones nuevas ni variables de entorno adicionales.
+
 ### Módulo de maestros profesionales - 21 de agosto de 2026
 
 #### Agregado

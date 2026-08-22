@@ -67,7 +67,23 @@ def editar_perfil(request):
     form = PerfilMaestroForm(request.POST or None, request.FILES or None, instance=perfil)
     if request.method == "POST" and form.is_valid():
         form.save()
-        messages.success(request, "Tu perfil fue actualizado.")
+        campos_sensibles = {
+            "foto",
+            "descripcion_profesional",
+            "anos_experiencia",
+            "especialidades",
+            "region",
+            "comunas_trabajo",
+        }
+        requiere_revision = bool(campos_sensibles.intersection(form.changed_data))
+        volvio_a_revision = requiere_revision and perfil.volver_a_revision_por_edicion()
+        if volvio_a_revision:
+            messages.success(
+                request,
+                "Tu perfil fue actualizado y volvió a revisión por los cambios profesionales.",
+            )
+        else:
+            messages.success(request, "Tu perfil fue actualizado.")
         return redirect("maestros:panel")
     return render(request, "maestros/perfil_form.html", {"form": form, "perfil": perfil, "es_nuevo": False})
 

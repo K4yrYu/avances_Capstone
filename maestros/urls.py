@@ -1,10 +1,47 @@
 from django.urls import path
 
-from . import views
+from . import api_views, views
 
 app_name = "maestros"
 
 urlpatterns = [
+    path("api/maestros/mi-perfil/", api_views.MiPerfilAPIView.as_view(), name="api_mi_perfil"),
+    path(
+        "api/maestros/mi-perfil/enviar-revision/",
+        api_views.EnviarRevisionAPIView.as_view(),
+        name="api_enviar_revision",
+    ),
+    path("api/maestros/trabajos/", api_views.TrabajosAPIView.as_view(), name="api_trabajos"),
+    path(
+        "api/maestros/trabajos/<int:pk>/",
+        api_views.TrabajoDetalleAPIView.as_view(),
+        name="api_trabajo_detalle",
+    ),
+    path(
+        "api/maestros/trabajos/<int:pk>/imagenes/",
+        api_views.ImagenesTrabajoAPIView.as_view(),
+        name="api_trabajo_imagenes",
+    ),
+    path(
+        "api/maestros/imagenes/<int:pk>/",
+        api_views.ImagenDetalleAPIView.as_view(),
+        name="api_imagen_detalle",
+    ),
+    path(
+        "api/maestros/admin/<int:pk>/estado/",
+        api_views.EstadoMaestroAdminAPIView.as_view(),
+        name="api_admin_estado",
+    ),
+    path(
+        "api/maestros/publicos/",
+        api_views.MaestrosPublicosAPIView.as_view(),
+        name="api_publicos",
+    ),
+    path(
+        "api/maestros/publicos/<int:pk>/",
+        api_views.MaestroPublicoDetalleAPIView.as_view(),
+        name="api_publico_detalle",
+    ),
     path("maestros/", views.lista_maestros, name="lista"),
     path("maestros/trabaja-con-nosotros/", views.trabaja_con_nosotros, name="trabaja_con_nosotros"),
     path("maestros/panel/", views.panel_maestro, name="panel"),

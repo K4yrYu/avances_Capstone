@@ -2,7 +2,12 @@ from django import forms
 from django.utils import timezone
 
 from .chile import COMUNA_REGION, COMUNAS_CHOICES, comunas_de_region
-from .models import Especialidad, PerfilMaestro, TrabajoRealizado
+from .models import (
+    MAX_IMAGENES_POR_TRABAJO,
+    Especialidad,
+    PerfilMaestro,
+    TrabajoRealizado,
+)
 
 
 class MultipleFileInput(forms.ClearableFileInput):
@@ -166,3 +171,12 @@ class TrabajoRealizadoForm(forms.ModelForm):
                 "La fecha no coincide con los años de experiencia indicados en tu perfil."
             )
         return fecha
+
+    def clean_imagenes(self):
+        imagenes = self.cleaned_data.get("imagenes") or []
+        existentes = self.instance.imagenes.count() if self.instance and self.instance.pk else 0
+        if existentes + len(imagenes) > MAX_IMAGENES_POR_TRABAJO:
+            raise forms.ValidationError(
+                f"Cada trabajo puede tener como máximo {MAX_IMAGENES_POR_TRABAJO} imágenes."
+            )
+        return imagenes
