@@ -53,6 +53,7 @@
     let lastChatProducts = [];
     let activeMaskTool = "smart";
     let showMask = false;
+    let showingOriginal = false;
     let drawingMask = false;
 
     function setPhotoMode(active) {
@@ -126,10 +127,14 @@
       download.disabled = true;
       maskPreview.disabled = true;
       showMask = false;
+      showingOriginal = false;
       maskPreview.classList.remove("active");
       maskPreview.setAttribute("aria-pressed", "false");
       autoPaint.disabled = true;
       applyPaint.disabled = true;
+      compare.classList.remove("active");
+      compare.setAttribute("aria-pressed", "false");
+      compare.innerHTML = '<i class="fa-solid fa-eye"></i> Ver antes';
     }
 
     function hexToRgb(hex) {
@@ -176,7 +181,7 @@
       return {r: Math.round(hueToRgb(p, q, h + 1 / 3) * 255), g: Math.round(hueToRgb(p, q, h) * 255), b: Math.round(hueToRgb(p, q, h - 1 / 3) * 255)};
     }
 
-    function renderPreview(showOriginal = false) {
+    function renderPreview(showOriginal = showingOriginal) {
       if (!sourcePixels) return;
       if (showOriginal || !selectedMask || (!selectedColor && !showMask)) {
         context.putImageData(sourcePixels, 0, 0);
@@ -443,6 +448,10 @@
       maskPreview.disabled = true;
       applyPaint.disabled = true;
       showMask = false;
+      showingOriginal = false;
+      compare.classList.remove("active");
+      compare.setAttribute("aria-pressed", "false");
+      compare.innerHTML = '<i class="fa-solid fa-eye"></i> Ver antes';
       maskPreview.classList.remove("active");
       maskPreview.setAttribute("aria-pressed", "false");
       if (persist) {
@@ -705,17 +714,23 @@
       hint.hidden = false;
       saveState();
     });
-    const showOriginal = () => renderPreview(true);
-    const showPreview = () => renderPreview(false);
-    ["pointerdown", "touchstart"].forEach(type => compare.addEventListener(type, showOriginal, {passive: true}));
-    ["pointerup", "pointerleave", "touchend", "touchcancel"].forEach(type => compare.addEventListener(type, showPreview, {passive: true}));
+    compare.addEventListener("click", () => {
+      showingOriginal = !showingOriginal;
+      compare.classList.toggle("active", showingOriginal);
+      compare.setAttribute("aria-pressed", String(showingOriginal));
+      compare.innerHTML = showingOriginal
+        ? '<i class="fa-solid fa-eye-slash"></i> Ver resultado'
+        : '<i class="fa-solid fa-eye"></i> Ver antes';
+      renderPreview(showingOriginal);
+    });
     download.addEventListener("click", () => {
       if (!sourcePixels) return;
-      renderPreview();
+      renderPreview(false);
       const link = document.createElement("a");
       link.download = `sfi-vista-previa-${selectedColor.replace("#", "")}.png`;
       link.href = canvas.toDataURL("image/png");
       link.click();
+      if (showingOriginal) renderPreview(true);
     });
     analyze.addEventListener("click", async () => {
       if (!photoFile || analyze.disabled) return;

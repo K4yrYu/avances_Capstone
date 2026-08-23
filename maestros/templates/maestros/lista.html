@@ -6,6 +6,7 @@
     <span class="master-eyebrow"><i class="fa-solid fa-user-shield"></i> Perfiles aprobados</span>
     <h1>Encuentra un maestro para tu proyecto.</h1>
     <p>Revisa especialidades, experiencia, zonas de trabajo y portafolios profesionales.</p>
+    <a class="master-list-hero-action" href="{% url 'maestros:trabaja_con_nosotros' %}">Trabaja con nosotros <i class="fa-solid fa-arrow-right"></i></a>
   </div>
 </section>
 <section class="master-section master-list-section">
@@ -17,18 +18,29 @@
       <a class="btn-master-secondary" href="{% url 'maestros:lista' %}">Limpiar</a>
       <noscript><button class="btn-master-primary" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Aplicar filtros</button></noscript>
     </form>
-    <div class="master-result-heading"><div><span>Profesionales disponibles</span><h2>{{ maestros|length }} maestro{{ maestros|length|pluralize }}</h2></div><a href="{% url 'maestros:trabaja_con_nosotros' %}">Trabaja con nosotros <i class="fa-solid fa-arrow-right"></i></a></div>
+    <div class="master-result-heading"><div><span>Profesionales disponibles</span><h2>{{ maestros|length }} maestro{{ maestros|length|pluralize }}</h2></div></div>
     <div class="master-card-grid">
       {% for perfil in maestros %}
         <article class="master-card">
-          <div class="master-card-photo">{% if perfil.foto %}<img src="{{ perfil.foto.url }}" alt="Foto de {{ perfil.usuario.get_full_name|default:perfil.usuario.username }}">{% else %}<i class="fa-solid fa-user-helmet-safety"></i>{% endif %}<span><i class="fa-solid fa-circle-check"></i> Aprobado</span></div>
+          <div class="master-card-photo">{% if perfil.foto %}<img src="{{ perfil.foto.url }}" alt="Foto de {{ perfil.usuario.get_full_name|default:perfil.usuario.username }}">{% else %}<i class="fa-solid fa-user-helmet-safety"></i>{% endif %}</div>
           <div class="master-card-body">
+            <div class="master-card-status">
+              <span class="master-approved-badge"><i class="fa-solid fa-circle-check"></i> Aprobado</span>
+              <span class="master-availability {% if perfil.disponible %}available{% endif %}"><i class="fa-solid fa-circle"></i> {{ perfil.disponible|yesno:'Disponible,No disponible' }}</span>
+            </div>
             <p class="master-location"><i class="fa-solid fa-location-dot"></i> {{ perfil.get_region_display }} · {{ perfil.comuna }}</p>
             <h3>{{ perfil.usuario.get_full_name|default:perfil.usuario.username }}</h3>
             <p class="master-summary">{{ perfil.descripcion_profesional|truncatechars:135 }}</p>
-            <div class="master-tags">{% for especialidad in perfil.especialidades.all %}<span>{{ especialidad.nombre }}</span>{% endfor %}</div>
-            <div class="master-card-meta"><span><b>{{ perfil.anos_experiencia }}</b> años de experiencia</span><span class="{% if perfil.disponible %}available{% endif %}">{{ perfil.disponible|yesno:'Disponible,No disponible' }}</span></div>
-            <a class="btn-master-primary w-100" href="{% url 'maestros:detalle' perfil.id %}">Ver perfil y trabajos</a>
+            <div class="master-tags">
+              {% for especialidad in perfil.especialidades.all %}
+                {% if forloop.counter <= 3 %}<span>{{ especialidad.nombre }}</span>{% endif %}
+              {% endfor %}
+              {% if perfil.especialidades.count > 3 %}<span class="master-tags-more">+{{ perfil.especialidades.count|add:'-3' }} más</span>{% endif %}
+            </div>
+            <div class="master-card-footer">
+              <div class="master-card-meta"><i class="fa-solid fa-briefcase"></i><span><b>{{ perfil.anos_experiencia }}</b> años de experiencia</span></div>
+              <a class="btn-master-primary" href="{% url 'maestros:detalle' perfil.id %}">Ver perfil y trabajos <i class="fa-solid fa-arrow-right"></i></a>
+            </div>
           </div>
         </article>
       {% empty %}

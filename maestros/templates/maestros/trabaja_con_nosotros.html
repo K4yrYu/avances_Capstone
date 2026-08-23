@@ -1,7 +1,7 @@
 {% extends 'maestros/base.html' %}
 {% block title %}Trabaja con nosotros{% endblock %}
 {% block content %}
-<section class="master-hero">
+<section class="master-hero master-recruitment-hero">
   <div class="master-grid" aria-hidden="true"></div>
   <div class="container position-relative">
     <div class="row align-items-center g-5">
@@ -9,18 +9,6 @@
         <span class="master-eyebrow"><i class="fa-solid fa-helmet-safety"></i> Red profesional SFI</span>
         <h1>Haz visible tu experiencia y tus mejores trabajos.</h1>
         <p>Crea un perfil profesional, presenta tu portafolio y postula para aparecer en nuestra red de maestros revisados.</p>
-        <div class="master-actions">
-          {% if perfil %}
-            <a class="btn-master-primary" href="{% url 'maestros:panel' %}">Ir a mi panel <i class="fa-solid fa-arrow-right"></i></a>
-          {% elif user.is_authenticated and user.is_active and user.email_confirmado %}
-            <a class="btn-master-primary" href="{% url 'maestros:crear_perfil' %}">Crear perfil profesional <i class="fa-solid fa-arrow-right"></i></a>
-          {% elif user.is_authenticated %}
-            <span class="master-warning"><i class="fa-solid fa-circle-exclamation"></i> Confirma tu correo para crear el perfil.</span>
-          {% else %}
-            <a class="btn-master-primary" href="{% url 'iniciosesion' %}?next={% url 'maestros:crear_perfil' %}">Ingresar para comenzar <i class="fa-solid fa-arrow-right"></i></a>
-          {% endif %}
-          <a class="btn-master-secondary" href="{% url 'maestros:lista' %}">Ver maestros</a>
-        </div>
       </div>
       <div class="col-lg-5">
         <div class="master-hero-card">
@@ -36,13 +24,37 @@
     </div>
   </div>
 </section>
-<section class="master-section">
+
+<section class="master-section master-recruitment-benefits">
   <div class="container">
     <div class="master-section-heading"><span>Tu perfil profesional</span><h2>Todo lo necesario para mostrar tu oficio.</h2></div>
     <div class="master-feature-grid">
       <article><i class="fa-solid fa-id-card"></i><h3>Información profesional</h3><p>Especialidades, experiencia, disponibilidad y zonas donde trabajas.</p></article>
       <article><i class="fa-solid fa-images"></i><h3>Portafolio real</h3><p>Presenta trabajos realizados y agrega varias imágenes a cada proyecto.</p></article>
       <article><i class="fa-solid fa-shield-halved"></i><h3>Revisión SFI</h3><p>Solo los perfiles aprobados se muestran públicamente a los clientes.</p></article>
+    </div>
+  </div>
+</section>
+
+<section class="master-final-cta-section">
+  <div class="container">
+    <div class="master-final-cta">
+      <div>
+        <span>Da el siguiente paso</span>
+        <h2>¿Listo para mostrar tu experiencia?</h2>
+        <p>Crea tu perfil, presenta tus trabajos y prepara tu postulación para la revisión de SFI.</p>
+      </div>
+      <div class="master-final-cta-actions">
+        {% if perfil %}
+          <a class="master-profile-cta compact" href="{% url 'maestros:panel' %}"><i class="fa-solid fa-person-digging"></i><span><strong>Ir a mi panel profesional</strong><small>Administra tu perfil y trabajos</small></span><i class="fa-solid fa-arrow-right"></i></a>
+        {% elif user.is_authenticated and user.is_active and user.email_confirmado %}
+          <a class="master-profile-cta compact" href="{% url 'maestros:crear_perfil' %}"><i class="fa-solid fa-person-digging"></i><span><strong>Crear mi perfil profesional</strong><small>Completa tus datos y portafolio</small></span><i class="fa-solid fa-arrow-right"></i></a>
+        {% elif user.is_authenticated %}
+          <span class="master-warning"><i class="fa-solid fa-circle-exclamation"></i> Confirma tu correo para crear el perfil.</span>
+        {% else %}
+          <a class="master-profile-cta compact" href="{% url 'iniciosesion' %}?next={% url 'maestros:crear_perfil' %}"><i class="fa-solid fa-person-digging"></i><span><strong>Ingresar para comenzar</strong><small>Accede a SFI y crea tu perfil</small></span><i class="fa-solid fa-arrow-right"></i></a>
+        {% endif %}
+      </div>
     </div>
   </div>
 </section>

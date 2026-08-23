@@ -19,6 +19,24 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ## [Sin publicar]
 
+### Mejoras de interfaz en Maestros y visualizador de pintura - 22 de agosto de 2026
+
+#### Modificado
+
+- Se rediseñó el listado de maestros con tarjetas horizontales más amplias, fotografía destacada, información profesional ordenada y adaptación responsive para escritorio y dispositivos móviles.
+- La disponibilidad del profesional ahora tiene mayor presencia visual y las especialidades se presentan de forma resumida cuando existen varias.
+- Se trasladó el acceso `Trabaja con nosotros` al hero del listado y se convirtió en una llamada a la acción amarilla acorde con la identidad visual de SFI.
+- Se amplió la fotografía del perfil individual y se reorganizaron sus datos profesionales para mejorar la lectura.
+- Cada trabajo del portafolio dispone ahora de un carrusel independiente, controles condicionales cuando hay varias fotografías, contador, navegación mediante teclado y gestos táctiles, y una relación visual 4:3 en móviles.
+- Se rediseñó `Trabaja con nosotros` manteniendo su información, proceso y colores, con una llamada a la acción inferior grande que se adapta al estado del usuario y de su perfil.
+- Se eliminaron del hero las acciones duplicadas para crear el perfil y consultar maestros, además del enlace redundante `Ver maestros disponibles` del bloque final.
+- En el visualizador de pintura, `Ver antes` funciona como interruptor: blanco en estado normal y amarillo cuando muestra la fotografía original, permitiendo volver al resultado pintado sin mantener presionado.
+
+#### Pruebas y configuración
+
+- Se verificó la configuración de Django y se ejecutaron correctamente las 17 pruebas del módulo `maestros`.
+- No se requieren migraciones ni variables de entorno adicionales.
+
 ### API segura de maestros - 21 de agosto de 2026
 
 #### Agregado

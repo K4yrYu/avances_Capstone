@@ -122,6 +122,7 @@
 .paint-mask-preview:disabled{opacity:.45}
 .compact-paint-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:.4rem}
 .compact-paint-actions button{display:inline-flex;min-height:36px;align-items:center;justify-content:center;gap:.3rem;color:var(--navy);background:#fff;border:1px solid #cbdbe4;border-radius:9px;font-size:.52rem;font-weight:800}
+.compact-paint-actions #compare-original.active{color:#082e4a;background:#ffedaa;border-color:#e2b930;box-shadow:0 0 0 2px rgba(255,189,0,.14)}
 .compact-paint-actions button:disabled{opacity:.4}
 .chat-paint-controls .paint-reference-warning{margin:0;text-align:left}
 @media(max-width:1199.98px){.site-header .navbar{min-height:82px}.site-header .navbar-brand{width:235px;height:70px}.site-header .navbar-collapse{padding:1rem 0 1.25rem}.site-header .navbar-nav{align-items:flex-start!important}.site-header .navbar-nav .nav-link{display:inline-block}.site-header .nav-actions{flex-wrap:wrap;margin-top:.75rem}}

@@ -1,4 +1,5 @@
 {% extends 'maestros/base.html' %}
+{% load static %}
 {% block title %}{{ perfil.usuario.get_full_name|default:perfil.usuario.username }}{% endblock %}
 {% block content %}
 <section class="master-profile-hero">
@@ -6,7 +7,13 @@
     <a class="master-back" href="{% url 'maestros:lista' %}"><i class="fa-solid fa-arrow-left"></i> Volver a maestros</a>
     <div class="master-profile-summary">
       <div class="master-profile-photo">{% if perfil.foto %}<img src="{{ perfil.foto.url }}" alt="Foto de {{ perfil.usuario.get_full_name|default:perfil.usuario.username }}">{% else %}<i class="fa-solid fa-user-helmet-safety"></i>{% endif %}</div>
-      <div class="master-profile-copy"><span class="master-approved"><i class="fa-solid fa-circle-check"></i> Perfil aprobado por SFI</span><h1>{{ perfil.usuario.get_full_name|default:perfil.usuario.username }}</h1><p><i class="fa-solid fa-location-dot"></i> Región {{ perfil.get_region_display }}</p><p><i class="fa-solid fa-map-location-dot"></i> {{ perfil.zonas_trabajo }}</p><div class="master-tags">{% for especialidad in perfil.especialidades.all %}<span>{{ especialidad.nombre }}</span>{% endfor %}</div></div>
+      <div class="master-profile-copy">
+        <span class="master-approved"><i class="fa-solid fa-circle-check"></i> Perfil aprobado por SFI</span>
+        <h1>{{ perfil.usuario.get_full_name|default:perfil.usuario.username }}</h1>
+        <p><i class="fa-solid fa-location-dot"></i> Región {{ perfil.get_region_display }}</p>
+        <p><i class="fa-solid fa-map-location-dot"></i> {{ perfil.zonas_trabajo }}</p>
+        <div class="master-tags">{% for especialidad in perfil.especialidades.all %}<span>{{ especialidad.nombre }}</span>{% endfor %}</div>
+      </div>
       <div class="master-profile-facts"><strong>{{ perfil.anos_experiencia }}</strong><span>años de experiencia</span><em class="{% if perfil.disponible %}available{% endif %}">{{ perfil.disponible|yesno:'Disponible,No disponible' }}</em></div>
     </div>
   </div>
@@ -21,12 +28,35 @@
     <div class="master-work-grid">
       {% for trabajo in trabajos %}
         <article class="master-work-card">
-          {% with portada=trabajo.imagenes.all|first %}<div class="master-work-cover">{% if portada %}<img src="{{ portada.imagen.url }}" alt="{{ trabajo.titulo }}">{% else %}<i class="fa-solid fa-hammer"></i>{% endif %}</div>{% endwith %}
-          <div class="master-work-body"><div class="master-tags">{% for especialidad in trabajo.especialidades.all %}<span>{{ especialidad.nombre }}</span>{% endfor %}</div><span><i class="fa-solid fa-location-dot"></i> {{ trabajo.comuna }}</span><h3>{{ trabajo.titulo }}</h3><p>{{ trabajo.descripcion|linebreaksbr }}</p>{% if trabajo.fecha %}<small><i class="fa-regular fa-calendar"></i> {{ trabajo.fecha|date:'F Y' }}</small>{% endif %}</div>
-          {% if trabajo.imagenes.count > 1 %}<div class="master-thumbs">{% for imagen in trabajo.imagenes.all %}<img src="{{ imagen.imagen.url }}" alt="Imagen de {{ trabajo.titulo }}">{% endfor %}</div>{% endif %}
+          <div class="master-work-carousel" data-work-carousel aria-label="Fotografías de {{ trabajo.titulo }}" tabindex="0">
+            {% for imagen in trabajo.imagenes.all %}
+              <figure class="master-work-slide{% if forloop.first %} is-active{% endif %}" data-work-slide aria-hidden="{% if forloop.first %}false{% else %}true{% endif %}">
+                <img src="{{ imagen.imagen.url }}" alt="{{ trabajo.titulo }}, fotografía {{ forloop.counter }}" {% if not forloop.first %}loading="lazy"{% endif %}>
+              </figure>
+            {% empty %}
+              <div class="master-work-cover master-work-placeholder"><i class="fa-solid fa-hammer"></i></div>
+            {% endfor %}
+            {% if trabajo.imagenes.count > 1 %}
+              <button class="master-carousel-control previous" type="button" data-work-previous aria-label="Ver fotografía anterior"><i class="fa-solid fa-chevron-left"></i></button>
+              <button class="master-carousel-control next" type="button" data-work-next aria-label="Ver fotografía siguiente"><i class="fa-solid fa-chevron-right"></i></button>
+              <span class="master-carousel-counter" aria-live="polite"><b data-work-current>1</b> / {{ trabajo.imagenes.count }}</span>
+            {% endif %}
+          </div>
+          <div class="master-work-body">
+            <div class="master-work-heading">
+              <div class="master-tags">{% for especialidad in trabajo.especialidades.all %}<span>{{ especialidad.nombre }}</span>{% endfor %}</div>
+              {% if trabajo.fecha %}<small><i class="fa-regular fa-calendar"></i> {{ trabajo.fecha|date:'F Y' }}</small>{% endif %}
+            </div>
+            <span><i class="fa-solid fa-location-dot"></i> {{ trabajo.comuna }}</span>
+            <h3>{{ trabajo.titulo }}</h3>
+            <p>{{ trabajo.descripcion|linebreaksbr }}</p>
+          </div>
         </article>
-      {% empty %}<div class="master-empty"><i class="fa-solid fa-images"></i><h2>Aún no hay trabajos publicados.</h2></div>{% endfor %}
+      {% empty %}
+        <div class="master-empty"><i class="fa-solid fa-images"></i><h2>Aún no hay trabajos publicados.</h2></div>
+      {% endfor %}
     </div>
   </div>
 </section>
 {% endblock %}
+{% block extra_js %}<script src="{% static 'maestros/js/detalle.js' %}?v=20260822-carrusel"></script>{% endblock %}
