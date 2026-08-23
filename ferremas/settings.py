@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'carro_compras', # aplicacion de compras
     'asistente',  # Asistente inteligente conectado al catalogo
     'maestros',  # Perfiles profesionales y portafolios de maestros
+    'movimientos',  # Registro administrativo de movimientos de inventario
 ]
 
 # Middleware necesario para la seguridad, autenticación y manejo de sesiones.

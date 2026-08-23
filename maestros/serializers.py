@@ -253,6 +253,50 @@ class CambioEstadoMaestroSerializer(serializers.Serializer):
     )
     observacion_admin = serializers.CharField(required=False, allow_blank=True, max_length=2000)
 
+    def validate(self, attrs):
+        observacion = attrs.get("observacion_admin", "").strip()
+        perfil = self.context.get("perfil")
+        if (
+            attrs["estado"]
+            in {PerfilMaestro.Estado.APROBADO, PerfilMaestro.Estado.RECHAZADO}
+            and perfil is not None
+            and perfil.estado != PerfilMaestro.Estado.PENDIENTE
+        ):
+            raise serializers.ValidationError(
+                {
+                    "estado": (
+                        "Solo puedes aprobar o rechazar perfiles pendientes de revisión. "
+                        "El maestro debe actualizar y volver a enviar su perfil."
+                    )
+                }
+            )
+        if (
+            attrs["estado"] == PerfilMaestro.Estado.SUSPENDIDO
+            and perfil is not None
+            and perfil.estado != PerfilMaestro.Estado.APROBADO
+        ):
+            raise serializers.ValidationError(
+                {"estado": "Solo puedes suspender un perfil que se encuentre aprobado."}
+            )
+        if (
+            attrs["estado"]
+            in {
+                PerfilMaestro.Estado.RECHAZADO,
+                PerfilMaestro.Estado.SUSPENDIDO,
+            }
+            and len(observacion) < 10
+        ):
+            raise serializers.ValidationError(
+                {
+                    "observacion_admin": (
+                        "Debes escribir una observación de al menos 10 caracteres "
+                        "para rechazar o suspender el perfil."
+                    )
+                }
+            )
+        attrs["observacion_admin"] = observacion
+        return attrs
+
 
 class TrabajoPublicoSerializer(serializers.ModelSerializer):
     especialidades = EspecialidadPublicaSerializer(many=True, read_only=True)

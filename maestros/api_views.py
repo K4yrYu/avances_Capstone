@@ -185,7 +185,10 @@ class EstadoMaestroAdminAPIView(APIView):
                 {"detail": "No puedes revisar tu propio perfil profesional."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        serializer = CambioEstadoMaestroSerializer(data=request.data)
+        serializer = CambioEstadoMaestroSerializer(
+            data=request.data,
+            context={"perfil": perfil},
+        )
         serializer.is_valid(raise_exception=True)
         perfil.observacion_admin = serializer.validated_data.get(
             "observacion_admin", perfil.observacion_admin

@@ -1,11 +1,16 @@
+from datetime import timedelta
+
 from django.shortcuts import render
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
 from django.db.models import Count, F, Sum
+from django.db.models.functions import Coalesce
+from django.utils import timezone
 
-from productos.models import Producto, SolicitudReposicion
+from productos.models import DetalleSolicitudReposicion, Producto, SolicitudReposicion
 from carro_compras.models import Venta
 from maestros.models import PerfilMaestro
+from movimientos.models import MovimientoInventario
 
 
 def index(request):
@@ -50,6 +55,24 @@ def panel_administracion(request):
     ventas_pagadas = Venta.objects.filter(estado_venta='pagado', eliminado=False)
     ingresos = ventas_pagadas.aggregate(total=Sum('total_venta'))['total'] or 0
     fichas_calculo = sum(producto.apto_para_calculo for producto in productos_activos)
+    inicio_movimientos = timezone.now() - timedelta(days=30)
+    movimientos_periodo = MovimientoInventario.objects.filter(
+        creado_en__gte=inicio_movimientos,
+        estado=MovimientoInventario.Estado.APLICADO,
+    )
+    entradas_periodo = movimientos_periodo.filter(
+        tipo=MovimientoInventario.Tipo.ENTRADA,
+    ).aggregate(total=Coalesce(Sum('entrada'), 0))['total']
+    salidas_ventas_periodo = movimientos_periodo.filter(
+        tipo=MovimientoInventario.Tipo.SALIDA,
+        origen=MovimientoInventario.Origen.VENTA,
+    ).aggregate(total=Coalesce(Sum('salida'), 0))['total']
+    ajustes_periodo = movimientos_periodo.filter(
+        origen=MovimientoInventario.Origen.AJUSTE_MANUAL,
+    ).count()
+    unidades_reposicion_pendientes = DetalleSolicitudReposicion.objects.filter(
+        solicitud__estado='enviada',
+    ).aggregate(total=Coalesce(Sum('cantidad_solicitada'), 0))['total']
 
     resumen = {
         'productos_activos': productos_activos.count(),
@@ -76,6 +99,10 @@ def panel_administracion(request):
         'despachos_pendientes': ventas_pagadas.filter(
             tipo_entrega='despacho', estado_entrega='pendiente'
         ).count(),
+        'movimientos_entradas_30d': entradas_periodo,
+        'movimientos_salidas_ventas_30d': salidas_ventas_periodo,
+        'movimientos_ajustes_30d': ajustes_periodo,
+        'movimientos_reposicion_pendiente': unidades_reposicion_pendientes,
     }
     ventas_recientes = ventas_pagadas.select_related('id_usuario').order_by('-fecha_compra')[:5]
 

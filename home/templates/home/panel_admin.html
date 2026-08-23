@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}?v=20260821-maestros-dashboard">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}?v=20260823-topbar-actions">
 </head>
 <body>
   <a class="skip-link" href="#contenido-panel">Saltar al contenido</a>
@@ -106,6 +106,7 @@
           </div>
         </div>
 
+        {% include 'includes/admin_topbar_actions.html' %}
         <div class="admin-profile">
           <span class="profile-avatar">{{ user.username|first|upper }}</span>
           <div>
@@ -169,6 +170,36 @@
           </a>
         </section>
 
+        <a class="movements-overview-card" href="{% url 'movimientos:lista' %}" aria-label="Abrir movimientos de inventario">
+          <span class="movements-overview-icon"><i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i></span>
+          <div class="movements-overview-copy">
+            <span>Inventario · últimos 30 días</span>
+            <strong>Movimientos de inventario</strong>
+            <small>Entradas, ventas, reposiciones y ajustes registrados.</small>
+          </div>
+          <div class="movements-overview-stat incoming">
+            <span>Entradas</span>
+            <strong><i class="fa-solid fa-arrow-up" aria-hidden="true"></i> {{ resumen.movimientos_entradas_30d }}</strong>
+            <small>Unidades recibidas</small>
+          </div>
+          <div class="movements-overview-stat outgoing">
+            <span>Salidas</span>
+            <strong><i class="fa-solid fa-arrow-down" aria-hidden="true"></i> {{ resumen.movimientos_salidas_ventas_30d }}</strong>
+            <small>Unidades vendidas</small>
+          </div>
+          <div class="movements-overview-stat pending">
+            <span>Por recibir</span>
+            <strong>{{ resumen.movimientos_reposicion_pendiente }}</strong>
+            <small>Unidades de reposición</small>
+          </div>
+          <div class="movements-overview-stat adjustments">
+            <span>Ajustes</span>
+            <strong>{{ resumen.movimientos_ajustes_30d }}</strong>
+            <small>Registros manuales</small>
+          </div>
+          <i class="fa-solid fa-chevron-right movements-overview-arrow" aria-hidden="true"></i>
+        </a>
+
         <a class="masters-overview-card" href="{% url 'maestros:admin_revision' %}" aria-label="Revisar maestros profesionales">
           <span class="masters-overview-icon"><i class="fa-solid fa-user-shield" aria-hidden="true"></i></span>
           <div class="masters-overview-copy">
@@ -200,6 +231,12 @@
             </div>
 
             <div class="operation-list">
+              <a href="{% url 'movimientos:lista' %}">
+                <span class="operation-icon yellow"><i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i></span>
+                <div><strong>Movimientos de inventario</strong><small>Entradas, ventas, ajustes e historial de stock</small></div>
+                <span class="operation-meta">{{ resumen.movimientos_entradas_30d }} entradas · {{ resumen.movimientos_salidas_ventas_30d }} salidas</span>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </a>
               <a href="{% url 'lista_productos_crud' %}">
                 <span class="operation-icon blue"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i></span>
                 <div><strong>Catálogo de productos</strong><small>Precios, stock, imágenes y fichas técnicas</small></div>

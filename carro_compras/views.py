@@ -18,6 +18,8 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
+from transbank.common.integration_api_keys import IntegrationApiKeys
+from transbank.common.integration_commerce_codes import IntegrationCommerceCodes
 from transbank.common.integration_type import IntegrationType
 from transbank.common.options import WebpayOptions
 from transbank.webpay.webpay_plus.transaction import Transaction
@@ -72,10 +74,17 @@ def _recalcular_total(venta):
 def _webpay_transaction():
     configurar_transbank_tls()
     environment = str(settings.TRANSBANK['ENVIRONMENT']).upper()
-    integration_type = IntegrationType.LIVE if environment == 'LIVE' else IntegrationType.TEST
+    if environment == 'TEST':
+        commerce_code = IntegrationCommerceCodes.WEBPAY_PLUS
+        api_key = IntegrationApiKeys.WEBPAY
+        integration_type = IntegrationType.TEST
+    else:
+        commerce_code = settings.TRANSBANK['COMMERCE_CODE']
+        api_key = settings.TRANSBANK['API_KEY']
+        integration_type = IntegrationType.LIVE
     options = WebpayOptions(
-        commerce_code=settings.TRANSBANK['COMMERCE_CODE'],
-        api_key=settings.TRANSBANK['API_KEY'],
+        commerce_code=commerce_code,
+        api_key=api_key,
         integration_type=integration_type,
     )
     return Transaction(options)
@@ -582,8 +591,20 @@ def respuesta_pago_webpay(request):
 
             for detalle in detalles:
                 producto = productos[detalle.producto_id]
-                producto.stock -= detalle.cantidad_producto
-                producto.save(update_fields=['stock'])
+                from movimientos.models import MovimientoInventario
+                from movimientos.services import registrar_movimiento_stock
+
+                registrar_movimiento_stock(
+                    producto_id=producto.pk,
+                    tipo=MovimientoInventario.Tipo.SALIDA,
+                    cantidad=detalle.cantidad_producto,
+                    origen=MovimientoInventario.Origen.VENTA,
+                    referencia=f"Venta #{venta.pk}",
+                    observacion="Salida registrada al confirmar el pago.",
+                    responsable=request.user if request.user.is_authenticated else None,
+                    clave_idempotencia=f"venta:{venta.pk}:detalle:{detalle.pk}:salida",
+                    precio_unitario=detalle.precio_unitario,
+                )
 
             venta.estado_entrega = 'pendiente'
             venta.estado_venta = 'pagado'

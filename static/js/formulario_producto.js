@@ -217,6 +217,9 @@
       const performance = Number(fields.rendimiento.value);
       const waste = Number(fields.porcentaje_desperdicio.value);
       const layers = Number(fields.capas_recomendadas.value);
+      const touchDry = Number(fields.secado_tacto_horas.value);
+      const repaintMin = Number(fields.repintado_min_horas.value);
+      const repaintMax = Number(fields.repintado_max_horas.value);
       const calculationType = fields.tipo_calculo.value;
       const verified = fields.informacion_tecnica_verificada.checked;
       const specifications = parseSpecifications(fields.especificaciones.value);

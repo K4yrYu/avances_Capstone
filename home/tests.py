@@ -1,4 +1,4 @@
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from productos.models import Producto
@@ -29,3 +29,12 @@ class HomeSfiTests(TestCase):
         self.assertNotContains(response, 'images.unsplash.com')
         self.assertEqual(response.context['total_productos'], 1)
         self.assertEqual(response.context['total_categorias'], 1)
+
+    @override_settings(DEBUG=False)
+    def test_error_404_usa_pantalla_personalizada_sfi(self):
+        response = self.client.get('/pagina-que-no-existe/')
+
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, 'Página no encontrada', status_code=404)
+        self.assertContains(response, 'ERROR 404', status_code=404)
+        self.assertContains(response, 'img/frieren.gif', status_code=404)

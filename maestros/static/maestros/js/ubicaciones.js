@@ -3,6 +3,13 @@
     const input = document.getElementById("id_foto");
     if (!input) return;
 
+    const fieldContainer = input.closest(".master-field");
+    if (!fieldContainer) return;
+
+    fieldContainer.classList.add("master-photo-field");
+    const layout = document.createElement("div");
+    layout.className = "master-photo-layout";
+
     const preview = document.createElement("div");
     preview.className = "master-photo-preview";
     preview.innerHTML = `
@@ -12,8 +19,17 @@
       </div>
       <div><strong>Vista previa</strong><small>Así se mostrará tu foto en el perfil.</small></div>
     `;
-    const fieldContainer = input.closest(".master-field");
-    fieldContainer?.insertBefore(preview, input);
+    const upload = document.createElement("div");
+    upload.className = "master-photo-upload";
+    upload.innerHTML = `
+      <span class="master-photo-upload-icon"><i class="fa-solid fa-camera"></i></span>
+      <div><strong>Selecciona tu fotografía</strong><small>Utiliza una imagen clara y reciente donde se vea bien tu rostro.</small></div>
+      <div class="master-photo-input"></div>
+    `;
+
+    fieldContainer.insertBefore(layout, input);
+    layout.append(preview, upload);
+    upload.querySelector(".master-photo-input").appendChild(input);
 
     const image = preview.querySelector("img");
     const placeholder = preview.querySelector("span");

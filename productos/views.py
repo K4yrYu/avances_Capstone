@@ -176,9 +176,12 @@ def formulario_producto(request):
 @api_view(['POST'])
 @permission_classes([EsAdmin])
 def api_agregar_producto(request):
+    from movimientos.contexto import contexto_responsable
+
     serializer = ProductoSerializer(data=request.data)
     if serializer.is_valid():
-        serializer.save()
+        with contexto_responsable(request.user):
+            serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -210,9 +213,12 @@ def api_toggle_activo_producto(request, id):
         return JsonResponse({'error': 'No tienes permisos para modificar productos.'}, status=403)
 
     try:
+        from movimientos.contexto import contexto_responsable
+
         producto = Producto.objects.get(id=id)
         producto.activo = not producto.activo
-        producto.save()
+        with contexto_responsable(request.user):
+            producto.save()
         return JsonResponse({'mensaje': 'Estado del producto actualizado correctamente', 'activo': producto.activo}, status=200)
     except Producto.DoesNotExist:
         return JsonResponse({'error': 'Producto no encontrado'}, status=404)
@@ -227,12 +233,15 @@ def lista_productos_crud(request):
 @api_view(['PUT'])
 @permission_classes([EsAdmin])
 def api_editar_producto(request, id):
+    from movimientos.contexto import contexto_responsable
+
     producto = get_object_or_404(Producto, id=id)
     serializer = ProductoSerializer(producto, data=request.data, partial=True)
     if serializer.is_valid():
         precio_anterior = producto.precio
         with transaction.atomic():
-            producto = serializer.save()
+            with contexto_responsable(request.user):
+                producto = serializer.save()
             if producto.precio != precio_anterior:
                 HistorialPrecio.objects.create(
                     producto=producto,
@@ -478,6 +487,9 @@ def reenviar_solicitud_reposicion(request, id):
 @require_http_methods(['POST'])
 @user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def recibir_solicitud_reposicion(request, id):
+    from movimientos.models import MovimientoInventario
+    from movimientos.services import registrar_movimiento_stock
+
     with transaction.atomic():
         solicitud = get_object_or_404(
             SolicitudReposicion.objects.select_for_update(),
@@ -487,8 +499,16 @@ def recibir_solicitud_reposicion(request, id):
             messages.error(request, 'Solo las solicitudes enviadas pueden marcarse como recibidas.')
             return redirect('gestion_reposicion')
         for item in solicitud.items.select_related('producto'):
-            Producto.objects.filter(pk=item.producto_id).update(
-                stock=F('stock') + item.cantidad_solicitada
+            registrar_movimiento_stock(
+                producto_id=item.producto_id,
+                tipo=MovimientoInventario.Tipo.ENTRADA,
+                cantidad=item.cantidad_solicitada,
+                origen=MovimientoInventario.Origen.REPOSICION,
+                referencia=solicitud.numero,
+                observacion=solicitud.observaciones,
+                responsable=request.user,
+                cantidad_solicitada=item.cantidad_solicitada,
+                clave_idempotencia=f"reposicion:{solicitud.pk}:item:{item.pk}:entrada",
             )
         solicitud.estado = 'recibida'
         solicitud.recibida_en = timezone.now()

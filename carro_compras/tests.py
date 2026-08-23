@@ -10,6 +10,8 @@ from usuarios.models import Usuario
 from .models import Detalle, Venta
 from .services.transbank_tls import cliente_http_transbank
 from .views import _webpay_transaction
+from movimientos.models import MovimientoInventario
+from transbank.common.integration_commerce_codes import IntegrationCommerceCodes
 
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
@@ -285,6 +287,10 @@ class SeguridadWebpayTests(TestCase):
         finally:
             sdk_request_service.requests = cliente_anterior
 
+    def test_factory_test_usa_credencial_oficial_del_sdk(self):
+        transaccion = _webpay_transaction()
+        self.assertEqual(transaccion.options.commerce_code, IntegrationCommerceCodes.WEBPAY_PLUS)
+
     def test_iniciar_pago_congela_total_y_referencia(self):
         tx = Mock()
 
@@ -394,3 +400,36 @@ class SeguridadWebpayTests(TestCase):
         self.assertEqual(self.producto.stock, 6)
         self.assertEqual(self.venta.estado_venta, 'pagado')
         self.assertEqual(tx.commit.call_count, 1)
+        self.assertEqual(
+            MovimientoInventario.objects.filter(
+                origen=MovimientoInventario.Origen.VENTA,
+                producto_id_original=self.producto.pk,
+            ).count(),
+            1,
+        )
+
+    def test_pago_rechazado_no_descuenta_stock_ni_registra_salida(self):
+        tx = Mock()
+        self._iniciar_pago(tx)
+        tx.commit.return_value = self._respuesta_autorizada(
+            status='FAILED',
+            response_code=-1,
+        )
+
+        with patch('carro_compras.views._webpay_transaction', return_value=tx):
+            respuesta = self.client.post(
+                reverse('respuesta_pago_webpay'),
+                {'token_ws': 'token-webpay-seguro'},
+            )
+
+        self.producto.refresh_from_db()
+        self.venta.refresh_from_db()
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(self.producto.stock, 8)
+        self.assertEqual(self.venta.estado_venta, 'carrito')
+        self.assertFalse(
+            MovimientoInventario.objects.filter(
+                origen=MovimientoInventario.Origen.VENTA,
+                producto_id_original=self.producto.pk,
+            ).exists()
+        )

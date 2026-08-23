@@ -14,6 +14,8 @@
 .master-page { color: var(--master-text); background: var(--master-bg); }
 .master-page main { min-height: 55vh; }
 .master-messages { padding-top: 1rem; }
+.master-panel-messages { padding-top: 1.2rem; }
+.master-panel-messages .alert { margin: 0; padding: 1rem 1.1rem; border-radius: 12px; font-weight: 650; }
 .master-hero, .master-mini-hero, .master-profile-hero { position: relative; overflow: hidden; color: #fff; background: linear-gradient(115deg, var(--master-navy-dark), #174e78 68%, #285f80); }
 .master-hero { padding: 5.5rem 0; }
 .master-mini-hero { padding: 3.5rem 0; }
@@ -161,6 +163,9 @@
 .master-panel-card dt { color: var(--master-muted); font-size: .7rem; }
 .master-panel-card dd { margin: .2rem 0; color: var(--master-navy-dark); font-weight: 800; }
 .master-inline-link { display: inline-block; margin-top: 1.3rem; }
+.master-profile-update-action { margin-top: 1.3rem; box-shadow: 0 10px 22px rgba(255,188,0,.2); }
+.master-profile-update-action:hover, .master-profile-update-action:focus-visible { box-shadow: 0 13px 28px rgba(255,188,0,.3); }
+.master-portfolio-intro { padding: .8rem .9rem; color: var(--master-navy-dark) !important; background: #fff8df; border-left: 4px solid var(--master-yellow); border-radius: 8px; font-size: .94rem; font-weight: 750; }
 .master-panel-work-preview { display: grid; gap: .45rem; margin: 1rem 0; }
 .master-panel-work-preview span { display: flex; justify-content: space-between; padding: .55rem; background: var(--master-bg); border-radius: 8px; font-size: .8rem; }
 .master-form-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(270px, 1fr); gap: 1.2rem; align-items: start; }
@@ -184,13 +189,21 @@
 .master-field #id_especialidades > div label:has(input:checked)::after { position: absolute; right: .65rem; display: grid; width: 22px; height: 22px; color: #fff; content: "✓"; background: var(--master-green); border-radius: 50%; font-size: .75rem; font-weight: 900; place-items: center; }
 .master-field #id_comunas_trabajo { min-height: 210px; padding: .45rem; }
 .master-field #id_comunas_trabajo option { padding: .45rem .6rem; border-radius: 5px; }
-.master-photo-preview { display: flex; gap: .9rem; align-items: center; padding: .85rem; margin-bottom: .65rem; background: var(--master-bg); border: 1px solid var(--master-border); border-radius: 12px; }
-.master-photo-preview-frame { display: grid; width: 92px; height: 92px; flex: 0 0 92px; overflow: hidden; color: #7894a7; background: #fff; border: 2px solid #fff; border-radius: 14px; box-shadow: 0 4px 14px rgba(9,40,64,.1); place-items: center; }
+.master-photo-field { gap: .65rem; }
+.master-photo-layout { display: grid; grid-template-columns: minmax(210px, 240px) minmax(0, 1fr); gap: 1rem; align-items: stretch; }
+.master-photo-preview { display: flex; min-height: 240px; flex-direction: column; gap: .75rem; align-items: stretch; padding: .8rem; margin: 0; background: var(--master-bg); border: 1px solid var(--master-border); border-radius: 14px; }
+.master-photo-preview-frame { display: grid; width: 100%; min-height: 180px; flex: 1; overflow: hidden; color: #7894a7; background: #fff; border: 2px solid #fff; border-radius: 12px; box-shadow: 0 4px 14px rgba(9,40,64,.1); place-items: center; }
 .master-photo-preview-frame img { width: 100%; height: 100%; object-fit: cover; }
-.master-photo-preview-frame span { font-size: 1.8rem; }
+.master-photo-preview-frame span { font-size: 2.8rem; }
 .master-photo-preview strong, .master-photo-preview small { display: block; }
 .master-photo-preview strong { color: var(--master-navy-dark); font-size: .88rem; }
 .master-photo-preview small { margin-top: .15rem; color: var(--master-muted); font-size: .72rem; }
+.master-photo-upload { display: grid; align-content: center; gap: .8rem; min-height: 240px; padding: 1.35rem; background: #fff; border: 1px dashed #9db8ca; border-radius: 14px; }
+.master-photo-upload-icon { display: grid; width: 46px; height: 46px; color: var(--master-navy); background: #e6f1f7; border-radius: 12px; place-items: center; }
+.master-photo-upload strong, .master-photo-upload small { display: block; }
+.master-photo-upload strong { color: var(--master-navy-dark); font-size: .95rem; }
+.master-photo-upload small { max-width: 390px; margin-top: .25rem; color: var(--master-muted); font-size: .76rem; line-height: 1.5; }
+.master-photo-input input[type="file"] { width: 100%; }
 .master-native-multiselect { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
 .master-commune-picker { overflow: hidden; background: var(--master-bg); border: 1px solid var(--master-border); border-radius: 12px; }
 .master-commune-toolbar { display: flex; gap: .7rem; align-items: center; justify-content: space-between; padding: .7rem; background: #fff; border-bottom: 1px solid var(--master-border); }
@@ -233,13 +246,14 @@
 .master-new-images-grid figcaption { overflow: hidden; padding: .45rem; color: var(--master-muted); font-size: .67rem; text-overflow: ellipsis; white-space: nowrap; }
 .master-list-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: .8rem; }
 .master-list-toolbar .master-back { margin: 0; color: var(--master-navy); }
+.master-work-back { min-height: 48px; padding: .8rem 1.15rem; font-size: .92rem; box-shadow: 0 8px 20px rgba(9,40,64,.08); }
 .master-work-management { display: grid; gap: .8rem; }
-.master-work-management > article { display: grid; grid-template-columns: 130px 1fr auto; gap: 1rem; align-items: center; padding: 1rem; background: #fff; border: 1px solid var(--master-border); border-radius: 15px; }
-.master-work-mini { display: grid; width: 130px; height: 100px; overflow: hidden; color: #8fa5b5; background: var(--master-bg); border-radius: 10px; place-items: center; }
+.master-work-management > article { display: grid; grid-template-columns: 210px minmax(0, 1fr) auto; gap: 1.35rem; align-items: center; min-height: 190px; padding: 1.25rem; background: #fff; border: 1px solid var(--master-border); border-radius: 17px; box-shadow: 0 10px 28px rgba(9,40,64,.07); }
+.master-work-mini { display: grid; width: 210px; height: 160px; overflow: hidden; color: #8fa5b5; background: var(--master-bg); border-radius: 12px; place-items: center; }
 .master-work-mini img { width: 100%; height: 100%; object-fit: cover; }
 .master-work-info > span, .master-work-info > small { color: var(--master-muted); font-size: .72rem; }
-.master-work-info h2 { margin: .2rem 0; color: var(--master-navy-dark); font-size: 1.05rem; font-weight: 800; }
-.master-work-info p { margin: 0; color: var(--master-muted); }
+.master-work-info h2 { margin: .3rem 0; color: var(--master-navy-dark); font-size: 1.25rem; font-weight: 850; }
+.master-work-info p { max-width: 720px; margin: 0 0 .35rem; color: var(--master-muted); font-size: .92rem; line-height: 1.55; }
 .master-row-actions { display: flex; gap: .4rem; }
 .master-row-actions form { margin: 0; }
 
@@ -325,7 +339,10 @@
   .master-form-grid { grid-template-columns: 1fr; }
   .master-full { grid-column: auto; }
   .master-work-management > article { grid-template-columns: 1fr; }
-  .master-work-mini { width: 100%; height: 190px; }
+  .master-work-mini { width: 100%; height: 240px; }
+  .master-list-toolbar { align-items: stretch; flex-direction: column; gap: .75rem; }
+  .master-list-toolbar > span { align-self: flex-end; }
+  .master-work-back { width: 100%; }
   .master-row-actions { flex-wrap: wrap; }
   .master-admin-main { padding: 1rem; }
   .master-review-row { grid-template-columns: 1fr; }
@@ -336,6 +353,9 @@
   .master-commune-toolbar { align-items: stretch; flex-direction: column; }
   .master-commune-toolbar label { min-width: 0; width: 100%; }
   .master-commune-options { grid-template-columns: 1fr; }
+  .master-photo-layout { grid-template-columns: 1fr; }
+  .master-photo-preview, .master-photo-upload { min-height: auto; }
+  .master-photo-preview-frame { min-height: 280px; }
   .master-new-images-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .master-card { grid-template-columns: 1fr; }
   .master-card-photo { min-height: 260px; }

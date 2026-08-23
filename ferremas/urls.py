@@ -11,6 +11,7 @@ urlpatterns = [
     path('', include('carro_compras.urls')),
     path('', include('asistente.urls')),
     path('', include('maestros.urls')),
+    path('', include('movimientos.urls')),
 ]
 
 handler404 = 'home.views.custom_404'  # Añade esta línea

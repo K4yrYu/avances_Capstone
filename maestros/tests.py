@@ -436,6 +436,78 @@ class MaestrosAPITests(TestCase):
         self.assertEqual(perfil.estado, PerfilMaestro.Estado.APROBADO)
         self.assertIsNotNone(perfil.fecha_aprobacion)
 
+    def test_rechazar_perfil_exige_observacion_minima(self):
+        postulante = self.crear_usuario("rechazo_vacio")
+        perfil = self.crear_perfil(postulante, PerfilMaestro.Estado.PENDIENTE)
+        admin = self.crear_usuario("admin_rechazo_vacio", staff=True)
+        self.client.force_login(admin)
+
+        respuesta = self.client.post(
+            reverse("maestros:admin_estado", args=[perfil.id]),
+            {"estado": PerfilMaestro.Estado.RECHAZADO, "observacion_admin": "Corto"},
+        )
+
+        self.assertRedirects(respuesta, reverse("maestros:admin_revision"))
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.PENDIENTE)
+
+    def test_perfil_aprobado_no_puede_aprobarse_nuevamente_pero_si_suspenderse(self):
+        postulante = self.crear_usuario("transicion_aprobado")
+        perfil = self.crear_perfil(postulante, PerfilMaestro.Estado.APROBADO)
+        admin = self.crear_usuario("admin_transicion_aprobado", staff=True)
+        self.client.force_login(admin)
+
+        respuesta = self.client.post(
+            reverse("maestros:admin_estado", args=[perfil.id]),
+            {"estado": PerfilMaestro.Estado.APROBADO},
+        )
+        self.assertRedirects(respuesta, reverse("maestros:admin_revision"))
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.APROBADO)
+
+        respuesta = self.client.post(
+            reverse("maestros:admin_estado", args=[perfil.id]),
+            {
+                "estado": PerfilMaestro.Estado.SUSPENDIDO,
+                "observacion_admin": "Perfil suspendido por antecedentes pendientes.",
+            },
+        )
+        self.assertRedirects(respuesta, reverse("maestros:admin_revision"))
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.SUSPENDIDO)
+
+    def test_api_tambien_bloquea_rechazo_sin_observacion_suficiente(self):
+        postulante = self.crear_usuario("api_rechazo_vacio")
+        perfil = self.crear_perfil(postulante, PerfilMaestro.Estado.PENDIENTE)
+        admin = self.crear_usuario("api_admin_rechazo_vacio", staff=True)
+        self.client.force_login(admin)
+
+        respuesta = self.client.patch(
+            reverse("maestros:api_admin_estado", args=[perfil.id]),
+            {"estado": PerfilMaestro.Estado.RECHAZADO, "observacion_admin": ""},
+            content_type="application/json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.PENDIENTE)
+
+    def test_api_bloquea_suspension_sin_observacion(self):
+        postulante = self.crear_usuario("api_suspension_vacia")
+        perfil = self.crear_perfil(postulante, PerfilMaestro.Estado.APROBADO)
+        admin = self.crear_usuario("api_admin_suspension_vacia", staff=True)
+        self.client.force_login(admin)
+
+        respuesta = self.client.patch(
+            reverse("maestros:api_admin_estado", args=[perfil.id]),
+            {"estado": PerfilMaestro.Estado.SUSPENDIDO, "observacion_admin": ""},
+            content_type="application/json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.APROBADO)
+
     def test_edicion_sensible_de_aprobado_vuelve_a_pendiente(self):
         usuario = self.crear_usuario("api_revalidacion")
         perfil = self.crear_perfil(usuario, PerfilMaestro.Estado.APROBADO)

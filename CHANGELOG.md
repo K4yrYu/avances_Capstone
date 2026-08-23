@@ -19,6 +19,58 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ## [Sin publicar]
 
+### Movimientos de inventario y ajustes administrativos - 23 de agosto de 2026, 04:07 (UTC-04:00)
+
+#### Agregado
+
+- Se incorporó el módulo administrativo `Movimientos`, accesible directamente debajo de Productos en la barra lateral.
+- Se creó un historial de inventario inalterable que conserva una copia del nombre, SKU, categoría, marca, modelo, precio y stock del producto al momento de cada operación, aunque su ficha cambie posteriormente.
+- El historial distingue stock inicial, entradas, salidas, ajustes, modificaciones e inactivaciones, junto con su fecha, operación, referencia y responsable.
+- Se agregaron filtros por producto o SKU, fechas, tipo, estado, origen y categoría, además de paginación y un formulario administrativo para ajustes manuales con observación obligatoria.
+- El dashboard de Movimientos incorpora totales, flujo de entradas y salidas, productos más y menos vendidos, stock bajo y lotes próximos a vencer.
+- Se agregó al resumen administrativo una tarjeta responsive con entradas, salidas por ventas, unidades de reposición pendientes y ajustes de los últimos 30 días, junto con un acceso en `Áreas administrativas`.
+- Se incorporó un comando de administración para respaldar y reiniciar de forma controlada los movimientos cuando sea necesario durante el desarrollo.
+
+#### Integración de inventario
+
+- Las ventas descuentan stock y registran su salida solamente después de que Webpay confirma el pago; los pagos rechazados o incompletos no generan movimientos.
+- La recepción de una reposición registra entradas de inventario con referencia a la orden y protección contra registros duplicados.
+- Las creaciones, ediciones, cambios de precio y cambios de estado de productos conservan movimientos históricos con el administrador responsable.
+- El responsable se presenta según el origen de la operación: administrador, cliente autenticado o proceso automático del sistema.
+- Las variaciones de precio muestran indicadores diferenciados cuando el valor sube o baja.
+- Los productos se desactivan sin eliminar sus referencias históricas ni afectar ventas o boletas existentes.
+
+#### Panel administrativo e interfaz
+
+- `Volver a la tienda` y `Cerrar sesión` se trasladaron desde el pie de la barra lateral al encabezado compartido de todas las secciones administrativas.
+- El regreso a la tienda usa la combinación azul, amarilla y blanca de SFI; el cierre de sesión se diferencia en rojo y continúa enviándose mediante `POST` con CSRF.
+- Ambos controles mantienen una ubicación y ancho uniformes en escritorio y se reducen a iconos accesibles en pantallas pequeñas.
+- Se actualizó la versión del recurso CSS compartido para evitar que la caché conserve estilos anteriores.
+- Se personalizó la pantalla 404 con la identidad visual de SFI, imagen central y regreso al inicio.
+- La barra de la Calculadora de Pintura se ajustó al formato visual de la navegación principal.
+
+#### Maestros profesionales
+
+- La carga de fotografía del perfil dispone de una vista previa más grande junto al selector de archivo y mantiene una disposición adaptable en móviles.
+- Los mensajes de creación y actualización indican que el perfil debe enviarse mediante `Enviar a revisión` para verificar los cambios.
+- Se resaltaron las acciones para actualizar la información y agregar trabajos, y se ampliaron las tarjetas del portafolio privado y el botón para volver al panel.
+- Se descartó el envío decorativo de correos de aprobación o rechazo; los cambios de estado se procesan directamente en el sistema.
+- Solo los perfiles pendientes pueden aprobarse o rechazarse y solo los perfiles aprobados pueden suspenderse.
+- Rechazar o suspender exige una observación administrativa de al menos 10 caracteres, tanto en la interfaz HTML como en la API.
+
+#### Webpay y correcciones
+
+- El entorno de pruebas de Webpay utiliza las credenciales oficiales de integración proporcionadas por el SDK de Transbank, manteniendo las credenciales configuradas para el entorno productivo.
+- Se corrigió la edición administrativa de productos y se agregó cobertura para comprobar que registra los cambios históricos y al usuario responsable.
+- Se agregaron pruebas para pagos aprobados y rechazados, movimientos de ventas, edición de productos, transiciones de maestros, observaciones obligatorias y la pantalla 404.
+
+#### Base de datos y configuración
+
+- Se registró la aplicación `movimientos` y sus rutas administrativas en Django.
+- Se agregaron las migraciones `0001_initial` y `0002_registrar_stock_inicial` para crear el historial y registrar el punto de partida del inventario.
+- La configuración de ejemplo mantiene separados los valores locales, el correo y las integraciones externas sin documentar secretos reales.
+- `python manage.py check` y el renderizado del panel administrativo finalizaron correctamente; la batería completa de pruebas permanece pendiente porque el usuario local de MySQL no puede crear la base `test_ferremas`.
+
 ### Mejoras de interfaz en Maestros y visualizador de pintura - 22 de agosto de 2026
 
 #### Modificado

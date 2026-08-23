@@ -47,7 +47,10 @@ def crear_perfil(request):
         perfil.estado = PerfilMaestro.Estado.BORRADOR
         perfil.save()
         form.save_m2m()
-        messages.success(request, "Tu perfil profesional fue creado como borrador.")
+        messages.success(
+            request,
+            "Tu perfil profesional fue creado como borrador. Cuando esté listo, envíalo usando el botón «Enviar a revisión».",
+        )
         return redirect("maestros:panel")
     return render(request, "maestros/perfil_form.html", {"form": form, "es_nuevo": True})
 
@@ -83,7 +86,10 @@ def editar_perfil(request):
                 "Tu perfil fue actualizado y volvió a revisión por los cambios profesionales.",
             )
         else:
-            messages.success(request, "Tu perfil fue actualizado.")
+            messages.success(
+                request,
+                "Tu perfil fue actualizado. Por favor, envíalo a revisión para verificar los cambios.",
+            )
         return redirect("maestros:panel")
     return render(request, "maestros/perfil_form.html", {"form": form, "perfil": perfil, "es_nuevo": False})
 
@@ -265,7 +271,32 @@ def cambiar_estado_maestro(request, pk):
     }:
         messages.error(request, "La acción seleccionada no es válida.")
         return redirect("maestros:admin_revision")
-    perfil.observacion_admin = request.POST.get("observacion_admin", "").strip()
+    if nuevo_estado in {
+        PerfilMaestro.Estado.APROBADO,
+        PerfilMaestro.Estado.RECHAZADO,
+    } and perfil.estado != PerfilMaestro.Estado.PENDIENTE:
+        messages.error(
+            request,
+            "Solo puedes aprobar o rechazar perfiles pendientes de revisión. El maestro debe actualizar y volver a enviar su perfil.",
+        )
+        return redirect("maestros:admin_revision")
+    if (
+        nuevo_estado == PerfilMaestro.Estado.SUSPENDIDO
+        and perfil.estado != PerfilMaestro.Estado.APROBADO
+    ):
+        messages.error(request, "Solo puedes suspender un perfil que se encuentre aprobado.")
+        return redirect("maestros:admin_revision")
+    observacion = request.POST.get("observacion_admin", "").strip()
+    if nuevo_estado in {
+        PerfilMaestro.Estado.RECHAZADO,
+        PerfilMaestro.Estado.SUSPENDIDO,
+    } and len(observacion) < 10:
+        messages.error(
+            request,
+            "Debes escribir una observación de al menos 10 caracteres para rechazar o suspender el perfil.",
+        )
+        return redirect("maestros:admin_revision")
+    perfil.observacion_admin = observacion
     perfil.save(update_fields=["observacion_admin", "actualizado_en"])
     perfil.cambiar_estado(nuevo_estado)
     messages.success(request, f"El perfil quedó {perfil.get_estado_display().lower()}.")

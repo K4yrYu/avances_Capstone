@@ -2,20 +2,20 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Página No Encontrada (404)</title>
-    <style>
-        body {
-            text-align: center;
-            padding-top: 50px;
-            font-family: Arial, sans-serif;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Página no encontrada (404) | SFI</title>
+  <link rel="stylesheet" href="{% static 'css/error_404.css' %}">
 </head>
 <body>
-    <h1>¡Ups! Página no encontrada (404)</h1>
-    <img src="{% static 'img/frieren.gif' %}" alt="Not Found GIF" style="width:300px;height:auto;">
-    <p>Lo sentimos, la página que buscas no existe o ha sido removida.</p>
-    <a href="/">Volver al Inicio</a>
+  <main class="error-page">
+    <section class="error-content" aria-labelledby="error-title">
+      <h1 id="error-title">¡Ups! Página no encontrada <span>ERROR 404</span></h1>
+      <img class="error-image" src="{% static 'img/frieren.gif' %}" alt="Página no encontrada">
+      <p>Lo sentimos, la página que buscas no existe o ha sido removida.</p>
+      <a class="error-home" href="{% url 'index' %}">Volver al inicio</a>
+    </section>
+  </main>
 </body>
 </html>

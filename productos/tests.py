@@ -10,6 +10,7 @@ from django.urls import reverse
 from usuarios.models import Usuario
 from .models import HistorialPrecio, Producto, Proveedor, SolicitudReposicion
 from .serializers import ProductoSerializer
+from movimientos.models import MovimientoInventario
 
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
@@ -63,6 +64,26 @@ class SeguridadProductosTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(HistorialPrecio.objects.count(), 0)
+
+    def test_edicion_valida_actualiza_producto_y_registra_movimiento(self):
+        self.client.force_login(self.admin)
+        response = self.client.put(
+            reverse('api_editar_producto', args=[self.producto.id]),
+            {'nombre': 'Taladro actualizado', 'precio': 45990},
+            content_type='application/json',
+        )
+
+        self.producto.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.producto.nombre, 'Taladro actualizado')
+        self.assertEqual(self.producto.precio, 45990)
+        movimiento = MovimientoInventario.objects.filter(
+            producto_id_original=self.producto.pk,
+            tipo=MovimientoInventario.Tipo.MODIFICACION,
+        ).latest('id')
+        self.assertIn('nombre', movimiento.cambios)
+        self.assertIn('precio', movimiento.cambios)
+        self.assertEqual(movimiento.responsable, self.admin)
 
     def test_nuevo_producto_exige_archivo_de_imagen(self):
         datos = {
