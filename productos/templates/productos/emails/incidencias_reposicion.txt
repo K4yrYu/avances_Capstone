@@ -1,0 +1,20 @@
+INCIDENCIAS DE RECEPCIÓN SFI {{ solicitud.numero }}
+
+Estimado equipo de {{ solicitud.proveedor.nombre }}:
+
+Al revisar la entrega asociada a {{ solicitud.numero }}, registramos las siguientes incidencias:
+
+{% for detalle in detalles %}- {{ detalle.detalle_solicitud.producto.nombre }}
+  Resultado: {{ detalle.get_resultado_display }}
+  Cantidad solicitada: {{ detalle.detalle_solicitud.cantidad_solicitada }}
+  Cantidad recibida en esta revisión: {{ detalle.cantidad_recibida }}
+  Observación: {{ detalle.motivo|default:"Sin observación adicional." }}
+{% endfor %}
+
+Solicitamos revisar estos antecedentes y coordinar la regularización de los productos pendientes.
+
+Revisión realizada por {{ recepcion.recibida_por.get_full_name|default:recepcion.recibida_por.username }} el {{ recepcion.recibida_en|date:"d/m/Y H:i" }}.
+
+Atentamente,
+Equipo de Administración SFI
+Sistema Ferretero Inteligente

@@ -6,11 +6,13 @@ from django.db import models
 class MovimientoInventario(models.Model):
     class Tipo(models.TextChoices):
         INICIAL = "inicial", "Stock inicial"
+        SOLICITUD = "solicitud", "En proceso"
         ENTRADA = "entrada", "Entrada"
         SALIDA = "salida", "Salida"
         AJUSTE = "ajuste", "Ajuste"
         MODIFICACION = "modificacion", "Modificación"
         ELIMINACION = "eliminacion", "Eliminación"
+        INCIDENCIA = "incidencia", "Incidencia"
 
     class Estado(models.TextChoices):
         PENDIENTE = "pendiente", "Pendiente"
@@ -41,6 +43,7 @@ class MovimientoInventario(models.Model):
     modelo = models.CharField(max_length=120, blank=True)
     unidad_venta = models.CharField(max_length=20, blank=True)
     precio_unitario = models.PositiveBigIntegerField(default=0)
+    proveedor_nombre = models.CharField(max_length=160, blank=True)
 
     tipo = models.CharField(max_length=20, choices=Tipo.choices, db_index=True)
     estado = models.CharField(

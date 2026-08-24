@@ -363,7 +363,8 @@ class HistorialPrecio(models.Model):
 class SolicitudReposicion(models.Model):
     ESTADO_CHOICES = [
         ('pendiente', 'Pendiente de envío'),
-        ('enviada', 'Enviada al proveedor'),
+        ('enviada', 'Envío aprobado'),
+        ('parcial', 'Recepción parcial'),
         ('error', 'Error de envío'),
         ('recibida', 'Mercadería recibida'),
         ('cancelada', 'Cancelada'),
@@ -395,6 +396,10 @@ class SolicitudReposicion(models.Model):
     def total_unidades(self):
         return sum(item.cantidad_solicitada for item in self.items.all())
 
+    @property
+    def total_unidades_pendientes(self):
+        return sum(item.cantidad_pendiente for item in self.items.all())
+
     class Meta:
         ordering = ['-creada_en', '-id']
 
@@ -415,3 +420,83 @@ class DetalleSolicitudReposicion(models.Model):
                 name='reposicion_producto_unico_por_solicitud',
             ),
         ]
+
+    @property
+    def cantidad_recibida_total(self):
+        return sum(
+            detalle.cantidad_recibida
+            for recepcion in self.solicitud.recepciones.all()
+            for detalle in recepcion.detalles.all()
+            if detalle.detalle_solicitud_id == self.pk
+        )
+
+    @property
+    def cantidad_pendiente(self):
+        return max(self.cantidad_solicitada - self.cantidad_recibida_total, 0)
+
+
+class RecepcionReposicion(models.Model):
+    class Estado(models.TextChoices):
+        COMPLETA = 'completa', 'Recepción completa'
+        PARCIAL = 'parcial', 'Recepción parcial'
+        INCIDENCIA = 'incidencia', 'Recepción con incidencias'
+
+    solicitud = models.ForeignKey(
+        SolicitudReposicion,
+        on_delete=models.PROTECT,
+        related_name='recepciones',
+    )
+    recibida_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='recepciones_reposicion',
+    )
+    estado = models.CharField(max_length=20, choices=Estado.choices)
+    clave_idempotencia = models.CharField(max_length=100, unique=True)
+    observaciones = models.TextField(blank=True)
+    recibida_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-recibida_en', '-id']
+
+    def __str__(self):
+        return f'{self.solicitud.numero} | {self.get_estado_display()}'
+
+    @property
+    def total_unidades_recibidas(self):
+        return sum(detalle.cantidad_recibida for detalle in self.detalles.all())
+
+
+class DetalleRecepcionReposicion(models.Model):
+    class Resultado(models.TextChoices):
+        COMPLETO = 'completo', 'Recibido completo'
+        PARCIAL = 'parcial', 'Recibido parcialmente'
+        NO_LLEGO = 'no_llego', 'No llegó'
+        DANADO = 'danado', 'Llegó dañado'
+        EQUIVOCADO = 'equivocado', 'Producto equivocado'
+        OTRO = 'otro', 'Otro problema'
+
+    recepcion = models.ForeignKey(
+        RecepcionReposicion,
+        on_delete=models.PROTECT,
+        related_name='detalles',
+    )
+    detalle_solicitud = models.ForeignKey(
+        DetalleSolicitudReposicion,
+        on_delete=models.PROTECT,
+        related_name='detalles_recepcion',
+    )
+    cantidad_recibida = models.PositiveIntegerField(default=0)
+    resultado = models.CharField(max_length=20, choices=Resultado.choices)
+    motivo = models.TextField(blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['recepcion', 'detalle_solicitud'],
+                name='recepcion_detalle_solicitud_unico',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.detalle_solicitud.producto.nombre}: {self.get_resultado_display()}'

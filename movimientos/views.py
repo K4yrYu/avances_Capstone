@@ -31,7 +31,12 @@ def lista_movimientos(request):
         "origen": (request.GET.get("origen", ""), MovimientoInventario.Origen.values),
     }
     if q:
-        movimientos = movimientos.filter(Q(producto_nombre__icontains=q) | Q(producto_sku__icontains=q) | Q(referencia__icontains=q))
+        movimientos = movimientos.filter(
+            Q(producto_nombre__icontains=q)
+            | Q(producto_sku__icontains=q)
+            | Q(referencia__icontains=q)
+            | Q(proveedor_nombre__icontains=q)
+        )
     for campo, (valor, permitidos) in filtros.items():
         if valor in permitidos:
             movimientos = movimientos.filter(**{campo: valor})
@@ -45,7 +50,13 @@ def lista_movimientos(request):
         movimientos = movimientos.filter(creado_en__date__lte=hasta)
 
     totales = movimientos.aggregate(entradas=Coalesce(Sum("entrada"), 0), salidas=Coalesce(Sum("salida"), 0))
-    pendientes = DetalleSolicitudReposicion.objects.filter(solicitud__estado="enviada").aggregate(total=Coalesce(Sum("cantidad_solicitada"), 0))["total"]
+    detalles_pendientes = DetalleSolicitudReposicion.objects.filter(
+        solicitud__estado__in=['enviada', 'parcial'],
+    ).annotate(recibidas=Coalesce(Sum('detalles_recepcion__cantidad_recibida'), 0))
+    pendientes = sum(
+        max(detalle.cantidad_solicitada - detalle.recibidas, 0)
+        for detalle in detalles_pendientes
+    )
     alertas = Producto.objects.filter(activo=True, stock__lte=F("stock_minimo")).count()
     flujo = (MovimientoInventario.objects.filter(creado_en__date__gte=timezone.localdate() - timedelta(days=13)).annotate(dia=TruncDate("creado_en")).values("dia").annotate(entradas=Coalesce(Sum("entrada"), 0), salidas=Coalesce(Sum("salida"), 0)).order_by("dia"))
     vendidos = MovimientoInventario.objects.filter(origen=MovimientoInventario.Origen.VENTA).values("producto_id_original", "producto_nombre", "producto_sku").annotate(total=Coalesce(Sum("salida"), 0))

@@ -9,7 +9,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}?v=20260823-topbar-actions">
-  <link rel="stylesheet" href="{% static 'css/reposicion.css' %}?v=20260815-observaciones-opcional">
+  <link rel="stylesheet" href="{% static 'css/reposicion.css' %}?v=20260824-historial-recepciones">
 </head>
 <body>
   <a class="skip-link" href="#contenido-reposicion">Saltar al contenido</a>
@@ -60,7 +60,7 @@
         </section>
 
         <section class="replenishment-card">
-          <div class="section-title"><div><span>Alertas automáticas</span><h2>Productos que requieren compra</h2></div><small>Se alerta cuando stock ≤ stock mínimo</small></div>
+          <div class="section-title"><div><span>Alertas automáticas</span><h2>Productos que requieren compra</h2></div><small>Stock bajo o unidades faltantes de una recepción parcial</small></div>
           {% if productos_alerta %}
             {% regroup productos_alerta by proveedor as grupos_proveedor %}
             <div class="supplier-groups">
@@ -80,7 +80,7 @@
                             <td><div class="replenishment-product"><span class="product-mini-image"><img src="{{ producto.imagen.url }}" alt=""></span><div><strong>{{ producto.nombre }}</strong><small>{{ producto.marca }}{% if producto.color %} · {{ producto.color }}{% endif %}</small></div></div></td>
                             <td><span class="stock-chip {% if producto.stock == 0 %}empty{% endif %}">{{ producto.stock }}</span></td>
                             <td>{{ producto.stock_minimo }}</td>
-                            <td><input class="quantity-order" type="number" name="cantidad_{{ producto.id }}" min="1" max="1000000" value="{{ producto.cantidad_reposicion_sugerida }}" required aria-label="Cantidad de {{ producto.nombre }}"></td>
+                            <td><input class="quantity-order" type="number" name="cantidad_{{ producto.id }}" min="1" max="1000000" value="{{ producto.cantidad_alerta_sugerida }}" required aria-label="Cantidad de {{ producto.nombre }}"></td>
                           </tr>
                         {% endfor %}
                       </tbody></table></div>
@@ -97,16 +97,18 @@
           {% endif %}
         </section>
 
-        <section class="replenishment-card">
-          <div class="section-title"><div><span>Trazabilidad</span><h2>Historial de solicitudes</h2></div><small>Últimas 30 órdenes</small></div>
-          {% if solicitudes %}<div class="request-history">
-            {% for solicitud in solicitudes %}<details class="request-record">
-              <summary><div><strong>{{ solicitud.numero }}</strong><span>{{ solicitud.proveedor.nombre }}</span></div><span class="request-date">{{ solicitud.creada_en|date:"d/m/Y H:i" }}</span><span class="request-status {{ solicitud.estado }}">{{ solicitud.get_estado_display }}</span><b>{{ solicitud.total_unidades }} uds.</b><i class="fa-solid fa-chevron-down"></i></summary>
-              <div class="request-detail"><div class="request-products">{% for item in solicitud.items.all %}<p><span>{{ item.producto.nombre }}</span><strong>{{ item.cantidad_solicitada }} {{ item.producto.get_unidad_venta_display|lower }}(s)</strong></p>{% endfor %}</div><div class="request-meta"><p><small>Enviado a</small><strong>{{ solicitud.email_destino }}</strong></p><p><small>Creada por</small><strong>{{ solicitud.creada_por.username }}</strong></p>{% if solicitud.observaciones %}<p><small>Observaciones</small><span>{{ solicitud.observaciones }}</span></p>{% endif %}{% if solicitud.error_envio %}<p class="send-error"><small>Error</small><span>{{ solicitud.error_envio }}</span></p>{% endif %}</div>
-                <div class="request-actions">{% if solicitud.estado == 'error' or solicitud.estado == 'pendiente' %}<form method="post" action="{% url 'reenviar_solicitud_reposicion' solicitud.id %}">{% csrf_token %}<button class="retry-button" type="submit"><i class="fa-solid fa-rotate"></i> Reintentar correo</button></form>{% elif solicitud.estado == 'enviada' %}<form method="post" action="{% url 'recibir_solicitud_reposicion' solicitud.id %}" onsubmit="return confirm('¿Confirmas que recibiste todos los productos? El stock aumentará automáticamente.');">{% csrf_token %}<button class="receive-button" type="submit"><i class="fa-solid fa-boxes-packing"></i> Marcar como recibida</button></form>{% endif %}</div>
-              </div>
-            </details>{% endfor %}
-          </div>{% else %}<div class="history-empty">Aún no se han creado solicitudes de reposición.</div>{% endif %}
+        <section class="replenishment-card request-section pending-requests">
+          <div class="section-title request-section-title"><div><span>Recepción pendiente</span><h2>Solicitudes pendientes de verificar</h2><p>Pedidos enviados que todavía necesitan confirmar la recepción de sus productos.</p></div><strong class="request-count pending"><i class="fa-solid fa-hourglass-half"></i> {{ solicitudes_activas|length }}</strong></div>
+          {% if solicitudes_activas %}<div class="request-history">
+            {% for solicitud in solicitudes_activas %}{% include 'productos/includes/solicitud_reposicion.html' with mostrar_pendientes=True %}{% endfor %}
+          </div>{% else %}<div class="history-empty decorated"><i class="fa-solid fa-circle-check"></i><div><strong>No hay solicitudes pendientes</strong><span>Todas las entregas registradas ya fueron revisadas.</span></div></div>{% endif %}
+        </section>
+
+        <section class="replenishment-card request-section completed-requests">
+          <div class="section-title request-section-title"><div><span>Trazabilidad</span><h2>Historial de recepciones</h2><p>Cada revisión conserva lo que llegó y las incidencias detectadas.</p></div><strong class="request-count completed"><i class="fa-solid fa-box-archive"></i> {{ recepciones_historial|length }}</strong></div>
+          {% if recepciones_historial %}<div class="request-history">
+            {% for recepcion in recepciones_historial %}{% include 'productos/includes/recepcion_reposicion.html' %}{% endfor %}
+          </div>{% else %}<div class="history-empty decorated"><i class="fa-solid fa-clock-rotate-left"></i><div><strong>El historial está vacío</strong><span>Las recepciones confirmadas aparecerán aquí.</span></div></div>{% endif %}
         </section>
 
         <section class="replenishment-card supplier-management">
@@ -120,6 +122,6 @@
   <div class="modal fade" id="modalProveedor" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content supplier-modal"><div class="modal-header"><div><span>Directorio comercial</span><h2 class="modal-title">Nuevo proveedor</h2></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><form method="post" action="{% url 'crear_proveedor' %}">{% csrf_token %}<div class="modal-body"><label>Nombre de empresa<input name="nombre" maxlength="160" required></label><label>Persona de contacto<input name="nombre_contacto" maxlength="160"></label><label>Correo de pedidos<input type="email" name="email" required></label><label>Teléfono<input name="telefono" maxlength="40"></label></div><div class="modal-footer"><button type="button" class="cancel-provider" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="save-provider">Crear proveedor</button></div></form></div></div></div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="{% static 'js/reposicion.js' %}?v=20260815-observaciones-opcional"></script>
+  <script src="{% static 'js/reposicion.js' %}?v=20260824-motivo-no-llego-opcional"></script>
 </body>
 </html>

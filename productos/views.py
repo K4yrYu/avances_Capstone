@@ -1,4 +1,5 @@
 import logging
+import secrets
 
 from django.conf import settings
 from django.contrib import messages
@@ -11,10 +12,12 @@ from rest_framework.response import Response
 from rest_framework import status
 from .forms import ProveedorForm
 from .models import (
+    DetalleRecepcionReposicion,
     DetalleSolicitudReposicion,
     HistorialPrecio,
     Producto,
     Proveedor,
+    RecepcionReposicion,
     SolicitudReposicion,
 )
 from .serializers import CalculoPinturaEntradaSerializer, ProductoSerializer
@@ -24,7 +27,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.db import transaction
-from django.db.models import OuterRef, Subquery, F, Prefetch
+from django.db.models import OuterRef, Subquery, F, Prefetch, Q, Sum
 from carro_compras.models import Venta, Detalle  # Asegúrate de importar esto arriba
 
 
@@ -32,6 +35,48 @@ logger = logging.getLogger(__name__)
 
 
 #--------------------GET-----------------------
+
+
+def _productos_elegibles_reposicion():
+    """Productos bajo mínimo o con faltantes en su última recepción."""
+    ultimo_detalle = DetalleSolicitudReposicion.objects.filter(
+        producto_id=OuterRef('pk'),
+    ).order_by('-solicitud__creada_en', '-solicitud_id', '-id')
+    productos_con_pedido_en_curso = DetalleSolicitudReposicion.objects.filter(
+        solicitud__estado__in=['pendiente', 'error', 'enviada'],
+    ).values('producto_id')
+    return Producto.objects.filter(activo=True).annotate(
+        ultima_solicitud_estado=Subquery(
+            ultimo_detalle.values('solicitud__estado')[:1]
+        ),
+        ultimo_detalle_solicitud_id=Subquery(ultimo_detalle.values('id')[:1]),
+    ).filter(
+        Q(stock__lte=F('stock_minimo')) | Q(ultima_solicitud_estado='parcial'),
+    ).exclude(pk__in=productos_con_pedido_en_curso)
+
+
+def _asignar_cantidades_alerta(productos):
+    ids_detalle = [
+        producto.ultimo_detalle_solicitud_id
+        for producto in productos
+        if producto.ultima_solicitud_estado == 'parcial'
+        and producto.ultimo_detalle_solicitud_id
+    ]
+    detalles = DetalleSolicitudReposicion.objects.filter(
+        pk__in=ids_detalle,
+    ).prefetch_related('detalles_recepcion')
+    detalles_por_id = {detalle.pk: detalle for detalle in detalles}
+    for producto in productos:
+        cantidad = producto.cantidad_reposicion_sugerida
+        if producto.ultima_solicitud_estado == 'parcial':
+            detalle = detalles_por_id.get(producto.ultimo_detalle_solicitud_id)
+            if detalle:
+                recibido = sum(
+                    recepcion.cantidad_recibida
+                    for recepcion in detalle.detalles_recepcion.all()
+                )
+                cantidad = max(detalle.cantidad_solicitada - recibido, 1)
+        producto.cantidad_alerta_sugerida = cantidad
 
 # Vista HTML
 def vista_ofertas(request):
@@ -342,28 +387,97 @@ def _enviar_correo_reposicion(solicitud):
     return True
 
 
+def _enviar_correo_incidencias_reposicion(recepcion):
+    detalles = list(
+        recepcion.detalles.exclude(
+            resultado=DetalleRecepcionReposicion.Resultado.COMPLETO,
+        ).select_related('detalle_solicitud__producto')
+    )
+    if not detalles:
+        return True
+    contexto = {
+        'recepcion': recepcion,
+        'solicitud': recepcion.solicitud,
+        'detalles': detalles,
+    }
+    texto = render_to_string('productos/emails/incidencias_reposicion.txt', contexto)
+    html = render_to_string('productos/emails/incidencias_reposicion.html', contexto)
+    correo = EmailMultiAlternatives(
+        subject=f'Incidencias de recepción SFI {recepcion.solicitud.numero}',
+        body=texto,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[recepcion.solicitud.email_destino],
+    )
+    correo.attach_alternative(html, 'text/html')
+    try:
+        enviados = correo.send(fail_silently=False)
+        if enviados != 1:
+            raise RuntimeError('El servidor de correo no confirmó el envío.')
+    except Exception:
+        logger.exception(
+            'No fue posible notificar las incidencias de la recepción %s',
+            recepcion.pk,
+        )
+        return False
+    return True
+
+
 @user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def gestion_reposicion(request):
-    productos_alerta = Producto.objects.filter(
-        activo=True,
-        stock__lte=F('stock_minimo'),
-    ).select_related('proveedor').order_by('proveedor__nombre', 'nombre')
+    productos_alerta = list(
+        _productos_elegibles_reposicion().select_related('proveedor').order_by(
+            'proveedor__nombre', 'nombre'
+        )
+    )
+    _asignar_cantidades_alerta(productos_alerta)
     solicitudes = SolicitudReposicion.objects.select_related(
         'proveedor', 'creada_por'
-    ).prefetch_related('items__producto')[:30]
+    ).prefetch_related(
+        'items__producto',
+        'recepciones__detalles__detalle_solicitud',
+    )
+    solicitudes_activas = solicitudes.filter(
+        estado__in=['pendiente', 'error', 'enviada'],
+    )[:30]
+    for solicitud in solicitudes_activas:
+        solicitud.token_recepcion = secrets.token_urlsafe(32)
+    recepciones_historial = RecepcionReposicion.objects.select_related(
+        'solicitud__proveedor', 'recibida_por',
+    ).prefetch_related(
+        'detalles__detalle_solicitud__producto',
+    )[:30]
     proveedores = Proveedor.objects.filter(activo=True).prefetch_related('productos')
     return render(request, 'productos/reposicion.html', {
         'productos_alerta': productos_alerta,
-        'solicitudes': solicitudes,
+        'solicitudes_activas': solicitudes_activas,
+        'recepciones_historial': recepciones_historial,
         'proveedores': proveedores,
         'proveedor_form': ProveedorForm(),
-        'total_alertas': productos_alerta.count(),
-        'sin_stock': productos_alerta.filter(stock=0).count(),
-        'sin_proveedor': productos_alerta.filter(proveedor__isnull=True).count(),
+        'total_alertas': len(productos_alerta),
+        'sin_stock': sum(producto.stock == 0 for producto in productos_alerta),
+        'sin_proveedor': sum(producto.proveedor_id is None for producto in productos_alerta),
         'solicitudes_abiertas': SolicitudReposicion.objects.filter(
             estado__in=['pendiente', 'enviada', 'error']
         ).count(),
     })
+
+
+def _registrar_pedido_en_movimientos(solicitud):
+    from movimientos.models import MovimientoInventario
+    from movimientos.services import registrar_evento_reposicion
+
+    for item in solicitud.items.select_related('producto'):
+        registrar_evento_reposicion(
+            producto_id=item.producto_id,
+            tipo=MovimientoInventario.Tipo.SOLICITUD,
+            cantidad_solicitada=item.cantidad_solicitada,
+            cantidad_pendiente=item.cantidad_solicitada,
+            referencia=solicitud.numero,
+            proveedor_nombre=solicitud.proveedor.nombre,
+            observacion=solicitud.observaciones or 'Pedido enviado al proveedor.',
+            responsable=solicitud.creada_por,
+            clave_idempotencia=f'reposicion:{solicitud.pk}:item:{item.pk}:solicitud',
+        )
 
 
 @user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
@@ -422,14 +536,12 @@ def crear_solicitud_reposicion(request):
         messages.error(request, 'Selecciona al menos un producto para solicitar.')
         return redirect('gestion_reposicion')
 
-    productos = list(Producto.objects.filter(
+    productos = list(_productos_elegibles_reposicion().filter(
         pk__in=ids,
-        activo=True,
         proveedor=proveedor,
-        stock__lte=F('stock_minimo'),
     ).order_by('nombre'))
     if len(productos) != len(set(ids)):
-        messages.error(request, 'La selección contiene productos que ya no requieren reposición.')
+        messages.error(request, 'La selección contiene productos que ya no requieren reposición o que ya tienen un pedido en curso.')
         return redirect('gestion_reposicion')
 
     cantidades = {}
@@ -465,6 +577,7 @@ def crear_solicitud_reposicion(request):
         ])
 
     if _enviar_correo_reposicion(solicitud):
+        _registrar_pedido_en_movimientos(solicitud)
         messages.success(request, f'{solicitud.numero} enviada correctamente a {proveedor.email}.')
     else:
         messages.error(request, f'{solicitud.numero} fue guardada, pero el correo no pudo enviarse. Puedes reintentarlo.')
@@ -478,6 +591,7 @@ def reenviar_solicitud_reposicion(request, id):
     if solicitud.estado not in {'pendiente', 'error'}:
         messages.error(request, 'Esta solicitud no se encuentra disponible para reenvío.')
     elif _enviar_correo_reposicion(solicitud):
+        _registrar_pedido_en_movimientos(solicitud)
         messages.success(request, f'{solicitud.numero} reenviada correctamente.')
     else:
         messages.error(request, 'El correo volvió a fallar. Revisa la configuración SMTP o el email del proveedor.')
@@ -488,30 +602,153 @@ def reenviar_solicitud_reposicion(request, id):
 @user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def recibir_solicitud_reposicion(request, id):
     from movimientos.models import MovimientoInventario
-    from movimientos.services import registrar_movimiento_stock
+    from movimientos.services import registrar_evento_reposicion, registrar_movimiento_stock
 
     with transaction.atomic():
         solicitud = get_object_or_404(
             SolicitudReposicion.objects.select_for_update(),
             pk=id,
         )
-        if solicitud.estado != 'enviada':
-            messages.error(request, 'Solo las solicitudes enviadas pueden marcarse como recibidas.')
+        token_recepcion = request.POST.get('token_recepcion', '').strip()
+        if not 20 <= len(token_recepcion) <= 100:
+            messages.error(request, 'La confirmación de recepción no es válida. Recarga la página e inténtalo nuevamente.')
             return redirect('gestion_reposicion')
-        for item in solicitud.items.select_related('producto'):
-            registrar_movimiento_stock(
-                producto_id=item.producto_id,
-                tipo=MovimientoInventario.Tipo.ENTRADA,
-                cantidad=item.cantidad_solicitada,
-                origen=MovimientoInventario.Origen.REPOSICION,
-                referencia=solicitud.numero,
-                observacion=solicitud.observaciones,
-                responsable=request.user,
-                cantidad_solicitada=item.cantidad_solicitada,
-                clave_idempotencia=f"reposicion:{solicitud.pk}:item:{item.pk}:entrada",
+        if RecepcionReposicion.objects.filter(clave_idempotencia=token_recepcion).exists():
+            messages.info(request, 'Esta recepción ya fue registrada. No se duplicaron sus movimientos.')
+            return redirect('gestion_reposicion')
+        if solicitud.estado != 'enviada':
+            messages.error(request, 'Esta solicitud no tiene unidades pendientes de recepción.')
+            return redirect('gestion_reposicion')
+
+        items = list(solicitud.items.select_for_update().select_related('producto'))
+        datos = []
+        for item in items:
+            recibido_previo = item.detalles_recepcion.aggregate(
+                total=Sum('cantidad_recibida')
+            )['total'] or 0
+            pendiente = max(item.cantidad_solicitada - recibido_previo, 0)
+            if not pendiente:
+                continue
+            resultado = request.POST.get(f'resultado_{item.pk}', '').strip()
+            motivo = request.POST.get(f'motivo_{item.pk}', '').strip()[:2000]
+            try:
+                cantidad = int(request.POST.get(f'cantidad_{item.pk}', '0'))
+            except (TypeError, ValueError):
+                cantidad = -1
+            resultados_validos = DetalleRecepcionReposicion.Resultado.values
+            if resultado not in resultados_validos:
+                messages.error(request, f'Selecciona el resultado de {item.producto.nombre}.')
+                return redirect('gestion_reposicion')
+            if cantidad < 0 or cantidad > pendiente:
+                messages.error(request, f'La cantidad recibida de {item.producto.nombre} no es válida.')
+                return redirect('gestion_reposicion')
+            if resultado == DetalleRecepcionReposicion.Resultado.COMPLETO and cantidad != pendiente:
+                messages.error(request, f'Para marcar {item.producto.nombre} como completo deben recibirse {pendiente} unidades.')
+                return redirect('gestion_reposicion')
+            if resultado == DetalleRecepcionReposicion.Resultado.PARCIAL and not 0 < cantidad < pendiente:
+                messages.error(request, f'Indica una cantidad parcial válida para {item.producto.nombre}.')
+                return redirect('gestion_reposicion')
+            if resultado not in {
+                DetalleRecepcionReposicion.Resultado.COMPLETO,
+                DetalleRecepcionReposicion.Resultado.PARCIAL,
+            } and cantidad != 0:
+                messages.error(request, f'Las unidades con incidencia de {item.producto.nombre} no pueden ingresar al stock.')
+                return redirect('gestion_reposicion')
+            if resultado not in {
+                DetalleRecepcionReposicion.Resultado.COMPLETO,
+                DetalleRecepcionReposicion.Resultado.NO_LLEGO,
+            } and len(motivo) < 10:
+                messages.error(request, f'Explica en al menos 10 caracteres el problema con {item.producto.nombre}.')
+                return redirect('gestion_reposicion')
+            datos.append((item, pendiente, cantidad, resultado, motivo))
+
+        if not datos:
+            messages.error(request, 'La solicitud ya no tiene productos pendientes.')
+            return redirect('gestion_reposicion')
+
+        hay_incidencias = any(resultado != DetalleRecepcionReposicion.Resultado.COMPLETO for _, _, _, resultado, _ in datos)
+        recepcion = RecepcionReposicion.objects.create(
+            solicitud=solicitud,
+            recibida_por=request.user,
+            estado=(RecepcionReposicion.Estado.INCIDENCIA if hay_incidencias else RecepcionReposicion.Estado.COMPLETA),
+            clave_idempotencia=token_recepcion,
+        )
+        for item, pendiente, cantidad, resultado, motivo in datos:
+            DetalleRecepcionReposicion.objects.create(
+                recepcion=recepcion,
+                detalle_solicitud=item,
+                cantidad_recibida=cantidad,
+                resultado=resultado,
+                motivo=motivo,
             )
-        solicitud.estado = 'recibida'
-        solicitud.recibida_en = timezone.now()
+            pendiente_resultante = pendiente - cantidad
+            if cantidad:
+                registrar_movimiento_stock(
+                    producto_id=item.producto_id,
+                    tipo=MovimientoInventario.Tipo.ENTRADA,
+                    cantidad=cantidad,
+                    origen=MovimientoInventario.Origen.REPOSICION,
+                    referencia=solicitud.numero,
+                    proveedor_nombre=solicitud.proveedor.nombre,
+                    observacion=motivo or 'Producto recibido correctamente.',
+                    responsable=request.user,
+                    cantidad_solicitada=item.cantidad_solicitada,
+                    cantidad_pendiente=pendiente_resultante,
+                    estado=(MovimientoInventario.Estado.PARCIAL if pendiente_resultante else MovimientoInventario.Estado.APLICADO),
+                    clave_idempotencia=f'reposicion:{solicitud.pk}:recepcion:{recepcion.pk}:item:{item.pk}:entrada',
+                )
+            if resultado != DetalleRecepcionReposicion.Resultado.COMPLETO:
+                resultado_texto = dict(
+                    DetalleRecepcionReposicion.Resultado.choices
+                )[resultado]
+                detalle_incidencia = (
+                    f'{resultado_texto}: {motivo}' if motivo else resultado_texto
+                )
+                registrar_evento_reposicion(
+                    producto_id=item.producto_id,
+                    tipo=MovimientoInventario.Tipo.INCIDENCIA,
+                    cantidad_solicitada=item.cantidad_solicitada,
+                    cantidad_pendiente=pendiente_resultante,
+                    referencia=f'{solicitud.numero} · {detalle_incidencia}',
+                    proveedor_nombre=solicitud.proveedor.nombre,
+                    observacion=detalle_incidencia,
+                    responsable=request.user,
+                    estado=MovimientoInventario.Estado.PENDIENTE,
+                    clave_idempotencia=f'reposicion:{solicitud.pk}:recepcion:{recepcion.pk}:item:{item.pk}:incidencia',
+                )
+
+        quedan_pendientes = any(
+            item.cantidad_solicitada > (item.detalles_recepcion.aggregate(total=Sum('cantidad_recibida'))['total'] or 0)
+            for item in items
+        )
+        solicitud.estado = 'parcial' if quedan_pendientes else 'recibida'
+        solicitud.recibida_en = None if quedan_pendientes else timezone.now()
         solicitud.save(update_fields=['estado', 'recibida_en'])
-    messages.success(request, f'{solicitud.numero} recibida. El stock fue actualizado automáticamente.')
+        recepcion.estado = (
+            RecepcionReposicion.Estado.PARCIAL if quedan_pendientes
+            else RecepcionReposicion.Estado.COMPLETA
+        )
+        recepcion.save(update_fields=['estado'])
+    correo_incidencias_enviado = True
+    if hay_incidencias:
+        correo_incidencias_enviado = _enviar_correo_incidencias_reposicion(recepcion)
+
+    if solicitud.estado == 'recibida':
+        messages.success(request, f'{solicitud.numero} recibida completamente. El stock fue actualizado.')
+    else:
+        messages.error(
+            request,
+            f'{solicitud.numero} fue cerrada con incidencias. Los productos pendientes volvieron a la lista de compra.',
+        )
+    if hay_incidencias:
+        if correo_incidencias_enviado:
+            messages.info(
+                request,
+                f'Las incidencias fueron notificadas a {solicitud.email_destino}.',
+            )
+        else:
+            messages.error(
+                request,
+                'La recepción quedó registrada, pero no fue posible enviar la notificación al proveedor.',
+            )
     return redirect('gestion_reposicion')

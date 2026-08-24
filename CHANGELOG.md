@@ -19,6 +19,38 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ## [Sin publicar]
 
+### Módulo Movimientos y Reposición 2.0 - 24 de agosto de 2026, 04:07 (UTC-04:00)
+
+#### Reposición y recepción
+
+- Se incorporó una recepción detallada por producto con resultados completo, parcial, no recibido, dañado, equivocado u otra incidencia.
+- Las cantidades recibidas correctamente actualizan el stock; las unidades con incidencias no ingresan al inventario.
+- Las solicitudes pendientes y el historial de recepciones se presentan en secciones independientes y cada confirmación conserva su trazabilidad.
+- Toda confirmación cierra la solicitud pendiente: las recepciones correctas muestran un aviso verde y las que contienen incidencias muestran un aviso rojo.
+- Las incidencias se notifican al correo del proveedor e incluyen productos, cantidades, resultado y observaciones registradas.
+- Los pedidos enviados, las entradas confirmadas y las incidencias quedaron integrados con el Registro de movimientos.
+
+#### Control de duplicados y compras pendientes
+
+- Los productos que ya tienen una solicitud pendiente, con error o enviada se ocultan temporalmente de `Productos que requieren compra` y el backend rechaza solicitudes duplicadas.
+- La confirmación de recepción bloquea el botón mientras se procesa y utiliza una clave de idempotencia única para impedir recepciones, correos o movimientos repetidos por múltiples clics.
+- Los productos faltantes en una recepción parcial vuelven a la lista de compra aunque el stock resultante supere el mínimo.
+- La cantidad sugerida para esos productos corresponde exactamente a las unidades no recibidas.
+- Solo se considera la solicitud más reciente, por lo que una reposición posterior completada resuelve la alerta anterior y evita que reaparezca indefinidamente.
+
+#### Registro de movimientos
+
+- La interfaz se estandarizó bajo el nombre `Registro de movimientos` y diferencia visualmente solicitudes en proceso, entradas e incidencias de reposición.
+- Los movimientos conservan los datos históricos del producto, proveedor, orden, responsable, cantidades y resultado aun cuando cambie la ficha del producto.
+- Se reorganizaron las columnas de fecha, operación y observaciones extensas para mejorar su lectura.
+
+#### Base de datos y verificación
+
+- Se agregaron modelos y migraciones para recepciones, detalles por producto, datos históricos del proveedor e idempotencia de cada confirmación.
+- La conexión MySQL configurada en `.env`, las migraciones y `python manage.py check` fueron verificados correctamente.
+- Se ejecutaron 115 pruebas automatizadas en una base aislada: todas finalizaron correctamente.
+- Se corrigió una prueba y la lógica asociada que omitían productos parcialmente recibidos cuando su stock superaba el mínimo.
+
 ### Movimientos de inventario y ajustes administrativos - 23 de agosto de 2026, 04:07 (UTC-04:00)
 
 #### Agregado

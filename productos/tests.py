@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db.models import Sum
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
@@ -458,6 +459,33 @@ class ReposicionInventarioTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['compras@example.com'])
         self.assertIn(solicitud.numero, mail.outbox[0].subject)
+        movimiento = MovimientoInventario.objects.get(
+            tipo=MovimientoInventario.Tipo.SOLICITUD,
+            producto=self.producto,
+        )
+        self.assertEqual(movimiento.cantidad_solicitada, 16)
+        self.assertEqual(movimiento.proveedor_nombre, self.proveedor.nombre)
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.stock, 4)
+        pagina = self.client.get(reverse('gestion_reposicion'))
+        self.assertContains(pagina, 'Confirmar recibo de productos')
+        self.assertContains(pagina, f'id="recepcion-{solicitud.id}"')
+        self.assertNotIn(self.producto, pagina.context['productos_alerta'])
+
+    def test_producto_con_pedido_enviado_no_puede_solicitarse_otra_vez(self):
+        datos = {
+            'proveedor_id': self.proveedor.id,
+            'productos': [self.producto.id],
+            f'cantidad_{self.producto.id}': 16,
+        }
+
+        self.client.post(reverse('crear_solicitud_reposicion'), datos)
+        respuesta_repetida = self.client.post(
+            reverse('crear_solicitud_reposicion'), datos
+        )
+
+        self.assertRedirects(respuesta_repetida, reverse('gestion_reposicion'))
+        self.assertEqual(SolicitudReposicion.objects.count(), 1)
 
     def test_producto_sobre_el_minimo_no_puede_solicitarse(self):
         self.producto.stock = 11
@@ -495,8 +523,19 @@ class ReposicionInventarioTests(TestCase):
         })
         solicitud = SolicitudReposicion.objects.get(proveedor=self.proveedor)
 
-        response = self.client.post(reverse('recibir_solicitud_reposicion', args=[solicitud.id]))
-        repetida = self.client.post(reverse('recibir_solicitud_reposicion', args=[solicitud.id]))
+        item = solicitud.items.get()
+        datos = {
+            'token_recepcion': 'recepcion-completa-prueba-unica',
+            f'cantidad_{item.id}': 16,
+            f'resultado_{item.id}': 'completo',
+            f'motivo_{item.id}': '',
+        }
+        response = self.client.post(
+            reverse('recibir_solicitud_reposicion', args=[solicitud.id]), datos
+        )
+        repetida = self.client.post(
+            reverse('recibir_solicitud_reposicion', args=[solicitud.id]), datos
+        )
 
         self.producto.refresh_from_db()
         solicitud.refresh_from_db()
@@ -504,3 +543,118 @@ class ReposicionInventarioTests(TestCase):
         self.assertRedirects(repetida, reverse('gestion_reposicion'))
         self.assertEqual(self.producto.stock, 20)
         self.assertEqual(solicitud.estado, 'recibida')
+        self.assertEqual(
+            MovimientoInventario.objects.filter(
+                tipo=MovimientoInventario.Tipo.ENTRADA,
+                producto=self.producto,
+            ).count(),
+            1,
+        )
+
+    def test_producto_no_recibido_permite_motivo_vacio_y_no_aumenta_stock(self):
+        self.client.post(reverse('crear_solicitud_reposicion'), {
+            'proveedor_id': self.proveedor.id,
+            'productos': [self.producto.id],
+            f'cantidad_{self.producto.id}': 16,
+        })
+        solicitud = SolicitudReposicion.objects.get(proveedor=self.proveedor)
+        item = solicitud.items.get()
+        url = reverse('recibir_solicitud_reposicion', args=[solicitud.id])
+
+        self.client.post(url, {
+            'token_recepcion': 'recepcion-no-llego-prueba-unica',
+            f'cantidad_{item.id}': 0,
+            f'resultado_{item.id}': 'no_llego',
+            f'motivo_{item.id}': '',
+        })
+        self.producto.refresh_from_db()
+        solicitud.refresh_from_db()
+        self.assertEqual(self.producto.stock, 4)
+        self.assertEqual(solicitud.estado, 'parcial')
+        self.assertTrue(MovimientoInventario.objects.filter(
+            tipo=MovimientoInventario.Tipo.INCIDENCIA,
+            producto=self.producto,
+        ).exists())
+        incidencia = MovimientoInventario.objects.get(
+            tipo=MovimientoInventario.Tipo.INCIDENCIA,
+            producto=self.producto,
+        )
+        self.assertIn('No llegó', incidencia.referencia)
+        self.assertIn('No llegó', incidencia.observacion)
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(mail.outbox[-1].to, [self.proveedor.email])
+        self.assertIn('Incidencias de recepción', mail.outbox[-1].subject)
+        self.assertIn(self.producto.nombre, mail.outbox[-1].body)
+        pagina = self.client.get(reverse('gestion_reposicion'))
+        self.assertIn(self.producto, pagina.context['productos_alerta'])
+        self.assertEqual(len(pagina.context['solicitudes_activas']), 0)
+        self.assertEqual(len(pagina.context['recepciones_historial']), 1)
+
+    def test_recepcion_parcial_cierra_pendiente_y_vuelve_a_lista_de_compra(self):
+        self.client.post(reverse('crear_solicitud_reposicion'), {
+            'proveedor_id': self.proveedor.id,
+            'productos': [self.producto.id],
+            f'cantidad_{self.producto.id}': 16,
+        })
+        solicitud = SolicitudReposicion.objects.get(proveedor=self.proveedor)
+        item = solicitud.items.get()
+        url = reverse('recibir_solicitud_reposicion', args=[solicitud.id])
+
+        self.client.post(url, {
+            'token_recepcion': 'recepcion-parcial-prueba-primera',
+            f'cantidad_{item.id}': 10,
+            f'resultado_{item.id}': 'parcial',
+            f'motivo_{item.id}': 'El proveedor dejo seis unidades pendientes.',
+        })
+        solicitud.refresh_from_db()
+        self.producto.refresh_from_db()
+        self.assertEqual(solicitud.estado, 'parcial')
+        self.assertEqual(self.producto.stock, 14)
+        pagina_parcial = self.client.get(reverse('gestion_reposicion'))
+        self.assertEqual(len(pagina_parcial.context['solicitudes_activas']), 0)
+        self.assertEqual(len(pagina_parcial.context['recepciones_historial']), 1)
+        self.assertContains(pagina_parcial, '<b>10</b> recibido(s)', html=True)
+        self.assertIn(self.producto, pagina_parcial.context['productos_alerta'])
+
+        respuesta_repetida = self.client.post(url, {
+            'token_recepcion': 'recepcion-parcial-prueba-segunda',
+            f'cantidad_{item.id}': 6,
+            f'resultado_{item.id}': 'completo',
+            f'motivo_{item.id}': '',
+        })
+        solicitud.refresh_from_db()
+        self.producto.refresh_from_db()
+        self.assertRedirects(respuesta_repetida, reverse('gestion_reposicion'))
+        self.assertEqual(solicitud.estado, 'parcial')
+        self.assertEqual(self.producto.stock, 14)
+        self.assertEqual(solicitud.recepciones.count(), 1)
+        self.assertEqual(MovimientoInventario.objects.filter(
+            tipo=MovimientoInventario.Tipo.ENTRADA,
+            producto=self.producto,
+        ).aggregate(total=Sum('entrada'))['total'], 10)
+
+    def test_repetir_recepcion_con_incidencia_no_duplica_movimiento(self):
+        self.client.post(reverse('crear_solicitud_reposicion'), {
+            'proveedor_id': self.proveedor.id,
+            'productos': [self.producto.id],
+            f'cantidad_{self.producto.id}': 16,
+        })
+        solicitud = SolicitudReposicion.objects.get(proveedor=self.proveedor)
+        item = solicitud.items.get()
+        url = reverse('recibir_solicitud_reposicion', args=[solicitud.id])
+        datos = {
+            'token_recepcion': 'recepcion-incidencia-doble-click',
+            f'cantidad_{item.id}': 0,
+            f'resultado_{item.id}': 'no_llego',
+            f'motivo_{item.id}': '',
+        }
+
+        self.client.post(url, datos)
+        self.client.post(url, datos)
+
+        self.assertEqual(solicitud.recepciones.count(), 1)
+        self.assertEqual(MovimientoInventario.objects.filter(
+            tipo=MovimientoInventario.Tipo.INCIDENCIA,
+            producto=self.producto,
+        ).count(), 1)
+        self.assertEqual(len(mail.outbox), 2)

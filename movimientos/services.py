@@ -24,7 +24,8 @@ def datos_historicos_producto(producto):
 def registrar_movimiento_stock(
     *, producto_id, tipo, cantidad, origen, referencia="", observacion="",
     responsable=None, cantidad_solicitada=None, cantidad_pendiente=0,
-    clave_idempotencia=None, precio_unitario=None,
+    clave_idempotencia=None, precio_unitario=None, proveedor_nombre="",
+    estado=MovimientoInventario.Estado.APLICADO,
 ):
     if cantidad <= 0:
         raise ValidationError("La cantidad del movimiento debe ser mayor que cero.")
@@ -51,7 +52,7 @@ def registrar_movimiento_stock(
     return MovimientoInventario.objects.create(
         **datos,
         tipo=tipo,
-        estado=MovimientoInventario.Estado.APLICADO,
+        estado=estado,
         origen=origen,
         cantidad_solicitada=cantidad_solicitada if cantidad_solicitada is not None else cantidad,
         cantidad_movida=cantidad,
@@ -61,6 +62,36 @@ def registrar_movimiento_stock(
         stock_anterior=stock_anterior,
         stock_resultante=stock_resultante,
         referencia=referencia,
+        observacion=observacion,
+        proveedor_nombre=proveedor_nombre,
+        responsable=responsable,
+        clave_idempotencia=clave_idempotencia,
+    )
+
+
+@transaction.atomic
+def registrar_evento_reposicion(
+    *, producto_id, tipo, cantidad_solicitada, cantidad_pendiente, referencia,
+    proveedor_nombre, observacion, responsable, clave_idempotencia,
+    estado=MovimientoInventario.Estado.PENDIENTE,
+):
+    existente = MovimientoInventario.objects.filter(
+        clave_idempotencia=clave_idempotencia,
+    ).first()
+    if existente:
+        return existente
+    producto = Producto.objects.select_for_update().get(pk=producto_id)
+    return MovimientoInventario.objects.create(
+        **datos_historicos_producto(producto),
+        tipo=tipo,
+        estado=estado,
+        origen=MovimientoInventario.Origen.REPOSICION,
+        cantidad_solicitada=cantidad_solicitada,
+        cantidad_pendiente=cantidad_pendiente,
+        stock_anterior=producto.stock,
+        stock_resultante=producto.stock,
+        referencia=referencia,
+        proveedor_nombre=proveedor_nombre,
         observacion=observacion,
         responsable=responsable,
         clave_idempotencia=clave_idempotencia,

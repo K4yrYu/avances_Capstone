@@ -70,9 +70,13 @@ def panel_administracion(request):
     ajustes_periodo = movimientos_periodo.filter(
         origen=MovimientoInventario.Origen.AJUSTE_MANUAL,
     ).count()
-    unidades_reposicion_pendientes = DetalleSolicitudReposicion.objects.filter(
-        solicitud__estado='enviada',
-    ).aggregate(total=Coalesce(Sum('cantidad_solicitada'), 0))['total']
+    detalles_reposicion_pendientes = DetalleSolicitudReposicion.objects.filter(
+        solicitud__estado__in=['enviada', 'parcial'],
+    ).annotate(recibidas=Coalesce(Sum('detalles_recepcion__cantidad_recibida'), 0))
+    unidades_reposicion_pendientes = sum(
+        max(detalle.cantidad_solicitada - detalle.recibidas, 0)
+        for detalle in detalles_reposicion_pendientes
+    )
 
     resumen = {
         'productos_activos': productos_activos.count(),
@@ -81,7 +85,7 @@ def panel_administracion(request):
         'stock_bajo': productos_activos.filter(stock__gt=0, stock__lte=F('stock_minimo')).count(),
         'sin_stock': productos_activos.filter(stock=0).count(),
         'solicitudes_reposicion': SolicitudReposicion.objects.filter(
-            estado__in=['pendiente', 'enviada', 'error']
+            estado__in=['pendiente', 'enviada', 'parcial', 'error']
         ).count(),
         'clientes_activos': Usuario.objects.filter(is_active=True, is_staff=False).count(),
         'maestros_activos': PerfilMaestro.objects.filter(

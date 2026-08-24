@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="es"><body style="margin:0;background:#eef4f7;font-family:Arial,sans-serif;color:#082d4a">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:28px 12px"><tr><td align="center">
+    <table role="presentation" width="680" cellspacing="0" cellpadding="0" style="max-width:680px;background:#fff;border-radius:14px;overflow:hidden">
+      <tr><td style="padding:24px 28px;background:#0d466c;color:#fff"><div style="color:#ffca28;font-size:12px;font-weight:bold;text-transform:uppercase">Recepción de reposición</div><h1 style="margin:8px 0 0;font-size:24px">Incidencias de {{ solicitud.numero }}</h1></td></tr>
+      <tr><td style="padding:24px 28px"><p>Estimado equipo de <strong>{{ solicitud.proveedor.nombre }}</strong>:</p><p>Al revisar la entrega registramos los siguientes productos pendientes de regularización:</p>
+        {% for detalle in detalles %}<div style="margin:14px 0;padding:16px;border-left:5px solid #c93443;border-radius:8px;background:#fff0f1"><strong>{{ detalle.detalle_solicitud.producto.nombre }}</strong><p style="margin:8px 0 0"><b>Resultado:</b> {{ detalle.get_resultado_display }}<br><b>Solicitado:</b> {{ detalle.detalle_solicitud.cantidad_solicitada }} &nbsp; <b>Recibido ahora:</b> {{ detalle.cantidad_recibida }}<br><b>Observación:</b> {{ detalle.motivo|default:"Sin observación adicional." }}</p></div>{% endfor %}
+        <p>Solicitamos revisar estos antecedentes y coordinar la regularización correspondiente.</p><p style="margin-top:24px;color:#60798b;font-size:13px">Revisión realizada por {{ recepcion.recibida_por.get_full_name|default:recepcion.recibida_por.username }} el {{ recepcion.recibida_en|date:"d/m/Y H:i" }}.</p>
+      </td></tr>
+      <tr><td style="padding:16px 28px;background:#fff3bf;color:#624900;font-size:12px">Sistema Ferretero Inteligente · Administración SFI</td></tr>
+    </table>
+  </td></tr></table>
+</body></html>

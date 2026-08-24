@@ -1,0 +1,22 @@
+<details class="request-record reception-history-record">
+  <summary>
+    <div><strong>{{ recepcion.solicitud.numero }}</strong><span>{{ recepcion.solicitud.proveedor.nombre }}</span></div>
+    <span class="request-date">{{ recepcion.recibida_en|date:"d/m/Y H:i" }}</span>
+    <span class="request-status {{ recepcion.estado }}">{{ recepcion.get_estado_display }}</span>
+    <b>{{ recepcion.total_unidades_recibidas }} uds. recibidas</b>
+    <i class="fa-solid fa-chevron-down"></i>
+  </summary>
+  <div class="request-detail">
+    <div class="reception-history-items">
+      {% for detalle in recepcion.detalles.all %}
+      <article class="reception-history-item {% if detalle.resultado != 'completo' %}with-incident{% endif %}">
+        <div><strong>{{ detalle.detalle_solicitud.producto.nombre }}</strong><small>{{ detalle.detalle_solicitud.producto.sku|default:"Sin SKU" }}</small></div>
+        <span class="received-amount"><b>{{ detalle.cantidad_recibida }}</b> recibido(s)</span>
+        <span class="reception-result {{ detalle.resultado }}">{{ detalle.get_resultado_display }}</span>
+        {% if detalle.motivo %}<p><i class="fa-solid fa-message"></i> {{ detalle.motivo }}</p>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    <div class="request-meta"><p><small>Confirmada por</small><strong>{{ recepcion.recibida_por.username }}</strong></p><p><small>Proveedor notificado</small><strong>{{ recepcion.solicitud.email_destino }}</strong></p></div>
+  </div>
+</details>

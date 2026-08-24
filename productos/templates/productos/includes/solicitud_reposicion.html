@@ -1,0 +1,40 @@
+<details class="request-record"{% if solicitud.estado == 'enviada' or solicitud.estado == 'parcial' %} open{% endif %}>
+  <summary><div><strong>{{ solicitud.numero }}</strong><span>{{ solicitud.proveedor.nombre }}</span></div><span class="request-date">{{ solicitud.creada_en|date:"d/m/Y H:i" }}</span><span class="request-status {{ solicitud.estado }}">{{ solicitud.get_estado_display }}</span><b>{% if mostrar_pendientes %}{{ solicitud.total_unidades_pendientes }} uds. pendientes{% else %}{{ solicitud.total_unidades }} uds.{% endif %}</b><i class="fa-solid fa-chevron-down"></i></summary>
+  <div class="request-detail"><div class="request-products">{% for item in solicitud.items.all %}{% if not mostrar_pendientes or item.cantidad_pendiente %}<p><span>{{ item.producto.nombre }}</span><strong>{% if mostrar_pendientes %}{{ item.cantidad_pendiente }} pendiente(s){% else %}{{ item.cantidad_solicitada }} {{ item.producto.get_unidad_venta_display|lower }}(s){% endif %}</strong></p>{% endif %}{% endfor %}</div><div class="request-meta"><p><small>Enviado a</small><strong>{{ solicitud.email_destino }}</strong></p><p><small>Creada por</small><strong>{{ solicitud.creada_por.username }}</strong></p>{% if solicitud.observaciones %}<p><small>Observaciones</small><span>{{ solicitud.observaciones }}</span></p>{% endif %}{% if solicitud.error_envio %}<p class="send-error"><small>Error</small><span>{{ solicitud.error_envio }}</span></p>{% endif %}</div>
+    <div class="request-actions">{% if solicitud.estado == 'error' or solicitud.estado == 'pendiente' %}<form method="post" action="{% url 'reenviar_solicitud_reposicion' solicitud.id %}">{% csrf_token %}<button class="retry-button" type="submit"><i class="fa-solid fa-rotate"></i> Reintentar correo</button></form>{% elif solicitud.estado == 'enviada' or solicitud.estado == 'parcial' %}<button class="receive-button" type="button" data-bs-toggle="modal" data-bs-target="#recepcion-{{ solicitud.id }}"><i class="fa-solid fa-boxes-packing"></i> Confirmar recibo de productos</button>{% endif %}</div>
+  </div>
+  {% if solicitud.estado == 'enviada' or solicitud.estado == 'parcial' %}
+  <div class="modal fade" id="recepcion-{{ solicitud.id }}" tabindex="-1" aria-labelledby="recepcion-titulo-{{ solicitud.id }}" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <form method="post" action="{% url 'recibir_solicitud_reposicion' solicitud.id %}" class="modal-content reception-modal" data-reception-form>
+        {% csrf_token %}
+        <input type="hidden" name="token_recepcion" value="{{ solicitud.token_recepcion }}">
+        <div class="modal-header">
+          <div><span>Recepción de reposición</span><h2 class="modal-title" id="recepcion-titulo-{{ solicitud.id }}">{{ solicitud.numero }} · {{ solicitud.proveedor.nombre }}</h2></div>
+          <button class="btn-close btn-close-white" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="reception-guidance" role="note">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            <div><strong>Revisa la entrega antes de confirmar</strong><p>Todos los productos aparecen como recibidos. Activa <b>Marcar problema</b> solamente si un producto no llegó, llegó incompleto, dañado o equivocado. La fila se destacará en rojo y deberás explicar el motivo, salvo cuando selecciones <b>No llegó</b>.</p></div>
+          </div>
+          <div class="reception-supplier"><span><i class="fa-solid fa-building"></i></span><div><strong>{{ solicitud.proveedor.nombre }}</strong><small>{{ solicitud.email_destino }}</small></div><b>{{ solicitud.total_unidades }} uds. solicitadas</b></div>
+          <div class="reception-items">
+            {% for item in solicitud.items.all %}{% if item.cantidad_pendiente %}
+            <article class="reception-item" data-reception-item data-pending="{{ item.cantidad_pendiente }}">
+              <label class="reception-issue-check"><input type="checkbox" data-incident-toggle><span><i class="fa-solid fa-triangle-exclamation"></i> Marcar problema</span></label>
+              <div class="reception-product"><span class="product-mini-image">{% if item.producto.imagen %}<img src="{{ item.producto.imagen.url }}" alt="">{% else %}<i class="fa-solid fa-box"></i>{% endif %}</span><div><strong>{{ item.producto.nombre }}</strong><small>{{ item.producto.sku|default:"Sin SKU" }}</small></div></div>
+              <div class="reception-amount"><span>Solicitado</span><strong>{{ item.cantidad_solicitada }}</strong>{% if item.cantidad_recibida_total %}<small>{{ item.cantidad_recibida_total }} recibido previamente</small>{% endif %}</div>
+              <label class="reception-quantity"><span>Recibido ahora</span><input type="number" name="cantidad_{{ item.id }}" min="0" max="{{ item.cantidad_pendiente }}" value="{{ item.cantidad_pendiente }}" required data-received-quantity></label>
+              <input type="hidden" name="resultado_{{ item.id }}" value="completo" data-result-input>
+              <div class="reception-incident-fields" hidden data-incident-fields><label><span>Resultado</span><select data-result-select><option value="no_llego">No llegó</option><option value="parcial">Recibido parcialmente</option><option value="danado">Llegó dañado</option><option value="equivocado">Producto equivocado</option><option value="otro">Otro problema</option></select></label><label class="reception-reason"><span data-reason-label>Explicación opcional</span><textarea name="motivo_{{ item.id }}" minlength="10" maxlength="2000" placeholder="Puedes agregar un detalle si lo necesitas" data-incident-reason></textarea></label></div>
+            </article>
+            {% endif %}{% endfor %}
+          </div>
+        </div>
+        <div class="modal-footer"><button type="button" class="cancel-provider" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="confirm-reception-button"><i class="fa-solid fa-check"></i> Confirmar productos recibidos</button></div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+</details>

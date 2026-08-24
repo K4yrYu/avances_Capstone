@@ -7,6 +7,7 @@ Este documento conserva propuestas teóricas que podrían incorporarse al proyec
 - **Posible:** propuesta aceptada para análisis futuro.
 - **Priorizada:** seleccionada para diseñar su alcance.
 - **En desarrollo:** implementación autorizada y comenzada.
+- **Implementada:** incorporada al proyecto y verificada.
 - **Descartada:** propuesta que no continuará.
 
 ---
@@ -97,3 +98,80 @@ Resultado esperado:
 - Agrega únicamente productos reales y disponibles.
 - Mantiene la privacidad de la imagen.
 - Cuenta con pruebas para permisos, archivos inválidos, límites, ambigüedad y validación de stock.
+
+---
+
+## Recepción controlada de reposiciones
+
+**Estado:** Implementada
+
+**Tipo:** Inventario, proveedores y trazabilidad
+
+**Implementada el:** 24/08/2026
+
+### Problema que resuelve
+
+Actualmente una solicitud enviada se recibe como una operación completa: todos sus productos aumentan el stock por la cantidad solicitada y la orden cambia inmediatamente a recibida. Este flujo no permite representar entregas parciales, productos ausentes, unidades dañadas o mercadería incorrecta.
+
+### Propuesta
+
+Agregar una etapa de recepción controlada entre la aprobación del envío y la recepción definitiva. La orden mostrará el estado `Envío aprobado` y habilitará `Confirmar recepción` cuando llegue la mercadería.
+
+Al confirmar, se abrirá un modal con todos los productos solicitados. Cada fila permitirá:
+
+- Marcar o desmarcar si el producto fue recibido correctamente.
+- Indicar la cantidad realmente recibida.
+- Seleccionar un resultado: recibido completo, recibido parcial, no recibido, dañado, producto equivocado u otro.
+- Escribir una observación obligatoria cuando exista una incidencia.
+- Comparar claramente cantidad solicitada, cantidad recibida y cantidad pendiente.
+
+### Flujo esperado
+
+1. SFI crea y envía la solicitud al proveedor.
+2. La aprobación comercial se registra manualmente como `Envío aprobado`, ya que actualmente no existe un portal o API del proveedor que pueda confirmarla automáticamente.
+3. Cuando llega la mercadería, administración abre `Confirmar recepción`.
+4. El modal carga todos los detalles de la orden con sus cantidades originales.
+5. El administrador confirma las unidades correctas y clasifica las incidencias.
+6. Django valida nuevamente cada cantidad y actualiza el stock solamente con unidades efectivamente recibidas en buen estado.
+7. Cada entrada queda registrada en Movimientos con la orden, el producto, el administrador responsable y la cantidad pendiente.
+8. La solicitud queda `Recibida` si no hay pendientes, o `Recepción parcial` si faltan unidades por resolver.
+9. Una recepción parcial puede volver a abrirse para registrar entregas posteriores sin duplicar las entradas anteriores.
+
+### Datos que deben conservarse
+
+- Cantidad solicitada por producto.
+- Cantidad recibida acumulada.
+- Cantidad aceptada en cada recepción.
+- Cantidad rechazada o pendiente.
+- Resultado y motivo de cada incidencia.
+- Observación administrativa.
+- Usuario que confirmó la recepción.
+- Fecha y hora de cada entrega.
+- Referencia a la solicitud y al movimiento de inventario generado.
+
+### Reglas obligatorias
+
+- No confiar en cantidades ni estados enviados solamente por JavaScript.
+- Bloquear cantidades negativas o superiores al saldo pendiente.
+- No aumentar stock por productos dañados, equivocados o no recibidos.
+- Exigir un motivo y una observación para cualquier incidencia.
+- Procesar cada confirmación dentro de una transacción de base de datos.
+- Usar claves de idempotencia para impedir entradas duplicadas por doble clic o reenvío.
+- Mantener el historial de recepciones; una corrección posterior debe generar otro registro, no editar el anterior.
+- No considerar la orden totalmente recibida mientras quede alguna unidad pendiente.
+
+### Alcance sugerido para la primera versión
+
+- Nuevo estado `Envío aprobado` y estado `Recepción parcial`.
+- Confirmación manual de aprobación del proveedor.
+- Modal responsive con una fila por producto.
+- Cantidad recibida y motivo de incidencia por fila.
+- Actualización parcial de stock y registro en Movimientos.
+- Reapertura de órdenes parciales para entregas posteriores.
+- Pruebas de recepción completa, parcial, dañada, duplicada y con cantidades manipuladas.
+
+### Decisiones aplicadas
+
+- `Envío aprobado` representa la solicitud enviada correctamente al proveedor.
+- Las unidades no recibidas, dañadas o equivocadas no ingresan al stock y permanecen pendientes.
+- Las diferencias generan una incidencia trazable en Movimientos y no crean otra solicitud automáticamente.
