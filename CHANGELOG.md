@@ -43,6 +43,40 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 - `python manage.py check` finalizó sin observaciones.
 - Se ejecutaron 87 pruebas del módulo `asistente`; todas finalizaron correctamente.
 
+### Consolidación del módulo de maestros - 28 de agosto de 2026 (UTC-04:00)
+
+#### Perfiles, portafolio y contacto
+
+- Se consolidó el flujo completo para crear, editar y enviar perfiles profesionales a revisión, junto con la aprobación, rechazo y suspensión controlados desde administración.
+- Los perfiles admiten varias especialidades y comunas de trabajo asociadas a una región de Chile, con validaciones en backend y filtros públicos automáticos.
+- Las fotografías del perfil y del portafolio disponen de previsualización, límites de tamaño, imágenes de respaldo y presentación adaptable a dispositivos móviles.
+- Los trabajos realizados permiten varias especialidades, múltiples imágenes, publicación controlada y fechas coherentes con la experiencia declarada, sin aceptar fechas futuras.
+- El perfil público de un maestro aprobado muestra teléfono, acceso directo a WhatsApp y correo electrónico para facilitar el contacto profesional.
+- Todas las barras públicas mantienen los accesos a Maestros, Carrito y Mis compras; quienes poseen perfil profesional también disponen de `Mi panel`.
+
+#### Administración, seguridad y API
+
+- El resumen administrativo incorpora maestros activos, postulaciones pendientes, alertas de revisión y accesos directos a la gestión profesional.
+- Se mantiene una API privada protegida por autenticación, CSRF, propiedad de recursos y permisos administrativos, además de una API pública limitada a perfiles aprobados y datos autorizados.
+- Las modificaciones sensibles de un perfil aprobado vuelven a dejarlo pendiente de revisión; cambiar únicamente su disponibilidad conserva la aprobación.
+- Solo se publican perfiles aprobados y disponibles, junto con los trabajos marcados como publicados.
+- Se preservaron las vistas HTML y la identidad visual existente de SFI sin modificar los módulos de carrito, Webpay o suscripciones.
+
+#### Integración con el asistente SFI
+
+- El asistente puede buscar maestros por especialidad y comuna usando únicamente perfiles aprobados y disponibles.
+- El flujo conversacional reconoce solicitudes como mostrar todos los profesionales de una especialidad, buscar en cualquier comuna o cambiar de especialidad sin conservar filtros anteriores incorrectos.
+- Las respuestas mantienen el contexto de búsqueda y enlazan al perfil público para consultar experiencia, zonas, portafolio y medios de contacto.
+- La búsqueda de profesionales se mantiene separada de Gemini y consulta directamente los datos verificados en Django.
+
+#### Datos, limpieza y pruebas
+
+- Se agregó la migración `0010_eliminar_maestros_demo` para retirar exclusivamente los 14 usuarios y perfiles de demostración conocidos, junto con sus portafolios relacionados.
+- Se conservó intacto el perfil profesional original y la base quedó sin usuarios `demo_*`.
+- Las pruebas del asistente ahora crean sus propios maestros temporales y ya no dependen de datos demostrativos instalados en la base local.
+- `python manage.py check` finalizó correctamente.
+- Se ejecutaron 42 pruebas de `maestros` y 87 pruebas de `asistente`; todas finalizaron correctamente.
+
 ### Módulo Movimientos y Reposición 2.0 - 24 de agosto de 2026, 04:07 (UTC-04:00)
 
 #### Reposición y recepción

@@ -5,8 +5,11 @@ from unittest.mock import Mock, patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
+from maestros.models import Especialidad, PerfilMaestro
 from productos.models import Producto
+from usuarios.models import Usuario
 from .services import procesar_configuracion_foto, procesar_consulta, resolver_interpretacion
 from .services.cliente_gemini import cliente_gemini
 from .services.gemini import GeminiNoDisponible, interpretar_con_gemini
@@ -42,6 +45,7 @@ class AsistenteSfiTests(TestCase):
             unidad_venta='unidad', contenido=Decimal('3.200'), unidad_contenido='m',
             especificaciones={'Sección nominal': '2 x 3 pulgadas', 'Material': 'Pino'},
         )
+        self.crear_maestros_para_busquedas()
 
     def test_pagina_del_asistente_es_publica_y_accesible_desde_inicio(self):
         pagina = self.client.get(reverse('asistente_sfi'))
@@ -731,6 +735,40 @@ class AsistenteSfiTests(TestCase):
             return_value=interpretacion,
         ):
             return procesar_consulta(mensaje, historial or [])
+
+    def crear_maestros_para_busquedas(self):
+        datos = (
+            ('Pedro', 'González', 'Carpintería', 'Maipú', 'Maipú, Cerrillos'),
+            ('María', 'Soto', 'Pintura', 'Maipú', 'Maipú, Cerrillos'),
+            ('Jorge', 'Rojas', 'Pintura', 'Providencia', 'Providencia, Ñuñoa'),
+            ('Daniela', 'Silva', 'Pintura', 'Santiago', 'Santiago, San Miguel'),
+            ('Luis', 'Pérez', 'Gasfitería', 'Pudahuel', 'Pudahuel, Maipú'),
+            ('Andrea', 'Torres', 'Electricidad', 'Ñuñoa', 'Ñuñoa, Santiago'),
+            ('Miguel', 'Castro', 'Cerámica y revestimientos', 'Puente Alto', 'Puente Alto, La Florida'),
+        )
+        for indice, (nombre, apellido, oficio, comuna, zonas) in enumerate(datos, start=1):
+            usuario = Usuario.objects.create_user(
+                username=f'maestro_busqueda_{indice}',
+                email=f'maestro-busqueda-{indice}@example.invalid',
+                rut=f'2555555{indice}-{indice}',
+                telefono=f'+5695555500{indice}',
+                password=None,
+                first_name=nombre,
+                last_name=apellido,
+                email_confirmado=True,
+            )
+            perfil = PerfilMaestro.objects.create(
+                usuario=usuario,
+                descripcion_profesional=f'{oficio} creado únicamente para esta prueba.',
+                anos_experiencia=8,
+                region='RM',
+                comuna=comuna,
+                zonas_trabajo=zonas,
+                disponible=True,
+                estado=PerfilMaestro.Estado.APROBADO,
+                fecha_aprobacion=timezone.now(),
+            )
+            perfil.especialidades.add(Especialidad.objects.get(nombre=oficio))
 
     def test_repisa_diy_no_muestra_maestros_antes_de_aceptar(self):
         resultado = self.consultar_maestro(
