@@ -10,6 +10,7 @@ from productos.models import Producto
 from .services import procesar_configuracion_foto, procesar_consulta, resolver_interpretacion
 from .services.cliente_gemini import cliente_gemini
 from .services.gemini import GeminiNoDisponible, interpretar_con_gemini
+from .services.sinonimos_ferreteros import expandir_consulta
 
 
 class AsistenteSfiTests(TestCase):
@@ -952,3 +953,314 @@ class AsistenteSfiTests(TestCase):
         self.assertIn('Qué trabajo', resultado['mensaje'])
         self.assertFalse(resultado['maestros'])
 
+class SinonimosYBusquedaSemanticaTests(TestCase):
+    """Tests para sinónimos ferreteros y búsqueda semántica."""
+
+    def setUp(self):
+        self.taladro = Producto.objects.create(
+            nombre='Taladro percutor Bauker con cable',
+            descripcion='Taladro percutor con selector para perforación con o sin impacto.',
+            precio=57000, stock=20, categoria='Herramientas', marca='Bauker',
+            uso_recomendado='Perforaciones domésticas en madera, metal y mampostería.',
+            activo=True,
+        )
+        self.cinta = Producto.objects.create(
+            nombre='Cinta métrica Stanley Pro 8 m',
+            descripcion='Huincha de medir retráctil Stanley Pro de ocho metros.',
+            precio=12990, stock=25, categoria='Herramientas', marca='Stanley',
+            uso_recomendado='Mediciones de longitud en construcción e instalación.',
+            activo=True,
+        )
+        self.martillo = Producto.objects.create(
+            nombre='Martillo carpintero Unitools 16 oz',
+            descripcion='Martillo de uña curva con cabeza de acero.',
+            precio=14990, stock=18, categoria='Herramientas', marca='Unitools',
+            uso_recomendado='Clavar y extraer clavos en trabajos de carpintería.',
+            activo=True,
+        )
+        self.perno = Producto.objects.create(
+            nombre='Perno hexagonal métrico de acero',
+            descripcion='Perno métrico de cabeza hexagonal para fijaciones desmontables.',
+            precio=5000, stock=40, categoria='Construcción', marca='Genérico',
+            uso_recomendado='Fijaciones mecánicas en estructuras y montajes.',
+            activo=True,
+        )
+        self.adhesivo = Producto.objects.create(
+            nombre='Adhesivo cerámico zonas húmedas 25 kg',
+            descripcion='Adhesivo cementicio para cerámica y porcelanato en baños y cocinas.',
+            precio=8990, stock=30, categoria='Construcción', marca='SFI',
+            uso_recomendado='Instalación de cerámica y porcelanato en zonas húmedas.',
+            activo=True,
+        )
+        self.sanitario = Producto.objects.create(
+            nombre='Sanitario dos piezas doble descarga',
+            descripcion='Sanitario con doble descarga y sistema de ahorro de agua.',
+            precio=79990, stock=10, categoria='Gasfitería', marca='SFI',
+            uso_recomendado='Baños residenciales con salida muro y piso.',
+            activo=True,
+        )
+        self.sierra = Producto.objects.create(
+            nombre='Sierra circular Stanley 7-1/4 pulgadas 1600 W',
+            descripcion='Sierra circular de 1600 W con disco para cortes rectos en madera.',
+            precio=60000, stock=31, categoria='Herramientas', marca='Stanley',
+            uso_recomendado='Cortes rectos en tableros y piezas de madera.',
+            activo=True,
+        )
+        self.pino = Producto.objects.create(
+            nombre='Pino dimensionado 2 x 3 pulgadas x 3,2 m',
+            descripcion='Pieza de pino dimensionado para estructuras livianas.',
+            precio=5900, stock=120, categoria='Construcción', marca='Genérico',
+            uso_recomendado='Estructuras livianas, tabiques y trabajos en madera.',
+            activo=True,
+        )
+
+    # ── Tests de expandir_consulta ──
+
+    def test_expandir_wincha_agrega_cinta_metrica(self):
+        expandidas, agregados = expandir_consulta(['wincha'])
+        self.assertIn('cinta', agregados)
+        self.assertIn('metrica', agregados)
+        self.assertIn('wincha', expandidas)
+
+    def test_expandir_flexometro_agrega_cinta_metrica(self):
+        expandidas, agregados = expandir_consulta(['flexometro'])
+        self.assertIn('cinta', agregados)
+        self.assertIn('metrica', agregados)
+
+    def test_expandir_perforadora_agrega_taladro(self):
+        expandidas, agregados = expandir_consulta(['perforadora'])
+        self.assertIn('taladro', agregados)
+        self.assertIn('percutor', agregados)
+
+    def test_expandir_taladro_no_agrega_duplicados(self):
+        expandidas, agregados = expandir_consulta(['taladro'])
+        self.assertEqual(expandidas.count('taladro'), 1)
+        self.assertNotIn('taladro', agregados)
+
+    def test_expandir_pegar_azulejo_agrega_adhesivo(self):
+        expandidas, agregados = expandir_consulta(['pegar', 'azulejo'])
+        self.assertIn('adhesivo', agregados)
+        self.assertIn('ceramico', agregados)
+
+    def test_expandir_inodoro_agrega_sanitario(self):
+        expandidas, agregados = expandir_consulta(['inodoro'])
+        self.assertIn('sanitario', agregados)
+
+    def test_expandir_combo_agrega_martillo(self):
+        expandidas, agregados = expandir_consulta(['combo'])
+        self.assertIn('martillo', agregados)
+
+    def test_expandir_serrucho_agrega_sierra(self):
+        expandidas, agregados = expandir_consulta(['serrucho'])
+        self.assertIn('sierra', agregados)
+
+    def test_expandir_bulon_agrega_perno(self):
+        expandidas, agregados = expandir_consulta(['bulon'])
+        self.assertIn('perno', agregados)
+        self.assertIn('hexagonal', agregados)
+
+    def test_expandir_madera_agrega_pino_tablero(self):
+        expandidas, agregados = expandir_consulta(['madera'])
+        self.assertIn('pino', agregados)
+        self.assertIn('dimensionado', agregados)
+        self.assertIn('tablero', agregados)
+
+    def test_expandir_terminos_humedad_juntas_y_ducha(self):
+        casos = [
+            (['impermeabilizante'], {'membrana', 'impermeable'}),
+            (['sello', 'humedad'], {'membrana', 'impermeable'}),
+            (['rellenar', 'junta'], {'frague'}),
+            (['ducha', 'telefono'], {'kit'}),
+        ]
+        for palabras, esperadas in casos:
+            with self.subTest(palabras=palabras):
+                _, agregados = expandir_consulta(palabras)
+                self.assertTrue(esperadas.issubset(agregados))
+
+    def test_concepto_colgar_cuadro_agrega_taladro_y_tornillo(self):
+        expandidas, agregados = expandir_consulta(['colgar', 'cuadro'])
+        self.assertIn('taladro', agregados)
+        self.assertIn('tornillo', agregados)
+
+    def test_concepto_pintar_fachada_agrega_pintura(self):
+        expandidas, agregados = expandir_consulta(['pintar', 'fachada'])
+        self.assertIn('pintura', agregados)
+        self.assertIn('fachada', expandidas)
+        self.assertIn('hidrorrepelente', agregados)
+
+    # ── Tests de búsqueda con sinónimos ──
+
+    def test_buscar_flexometro_encuentra_cinta_metrica(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('flexómetro')
+        ids = [p.id for p in resultados]
+        self.assertIn(self.cinta.id, ids)
+
+    def test_buscar_wincha_encuentra_cinta_metrica(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('wincha')
+        ids = [p.id for p in resultados]
+        self.assertIn(self.cinta.id, ids)
+
+    def test_buscar_metro_no_confunde_metrico_con_cinta_metrica(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('metro')
+        ids = [p.id for p in resultados]
+
+        self.assertIn(self.cinta.id, ids)
+        self.assertNotIn(self.perno.id, ids)
+
+    def test_buscar_perforadora_encuentra_taladro(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('perforadora')
+        ids = [p.id for p in resultados]
+        self.assertIn(self.taladro.id, ids)
+
+    def test_buscar_pegar_azulejos_encuentra_adhesivo(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('algo para pegar azulejos')
+        ids = [p.id for p in resultados]
+        self.assertIn(self.adhesivo.id, ids)
+
+    def test_buscar_sello_humedad_encuentra_membrana_impermeable(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('necesito un sello para la humedad')
+        self.assertIn('BAN-IMP-4', {producto.sku for producto in resultados})
+
+    def test_buscar_rellenar_junta_encuentra_frague(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('algo para rellenar la junta de cerámica')
+        self.assertIn('BAN-FRA-5', {producto.sku for producto in resultados})
+
+    def test_buscar_inodoro_encuentra_sanitario(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('inodoro')
+        ids = [p.id for p in resultados]
+        self.assertIn(self.sanitario.id, ids)
+
+    def test_buscar_combo_encuentra_martillo(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('combo para clavar')
+        ids = [p.id for p in resultados]
+        self.assertIn(self.martillo.id, ids)
+
+    def test_buscar_bulon_encuentra_perno(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('bulón')
+        ids = [p.id for p in resultados]
+        self.assertIn(self.perno.id, ids)
+
+    def test_buscar_serrucho_encuentra_sierra(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('serrucho')
+        ids = [p.id for p in resultados]
+        self.assertIn(self.sierra.id, ids)
+
+    def test_buscar_madera_encuentra_pino(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('madera para estructura')
+        ids = [p.id for p in resultados]
+        self.assertIn(self.pino.id, ids)
+
+    def test_busqueda_directa_taladro_sigue_funcionando(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('taladro')
+        ids = [p.id for p in resultados]
+        self.assertIn(self.taladro.id, ids)
+
+    def test_busqueda_especifica_no_incluye_sierra_por_coincidir_solo_en_cable(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('taladro percutor Bauker con cable')
+
+        self.assertIn(self.taladro.id, [producto.id for producto in resultados])
+        self.assertNotIn(self.sierra.id, [producto.id for producto in resultados])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_taladro_mas_caro_devuelve_solo_el_taladro_de_mayor_precio(self, interpretar):
+        from .services.asistente_sfi import _buscar_productos
+        candidatos = _buscar_productos('taladro')
+        esperado = max(candidatos, key=lambda producto: producto.precio)
+        interpretar.return_value = {
+            'intencion': 'buscar_producto',
+            'consulta_producto': 'taladro percutor Bauker con cable',
+            'presupuesto': 0,
+            'terminacion': 'cualquiera',
+            'color': '',
+            'incluir_herramientas': False,
+        }
+
+        resultado = procesar_consulta('El taladro más caro', [])
+
+        self.assertEqual(len(resultado['productos']), 1)
+        self.assertEqual(resultado['productos'][0]['id'], esperado.id)
+        self.assertIn('mayor precio', resultado['mensaje'])
+        self.assertNotIn('Sierra', resultado['productos'][0]['nombre'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_sanitario_mas_caro_que_valor_tiene_limpia_la_consulta(self, interpretar):
+        from .services.asistente_sfi import _buscar_productos
+        esperado = max(
+            _buscar_productos('sanitario'),
+            key=lambda producto: producto.precio,
+        )
+        interpretar.return_value = {
+            'intencion': 'buscar_producto',
+            'consulta_producto': 'sanitario que valor tiene',
+            'presupuesto': 0,
+            'terminacion': 'cualquiera',
+            'color': '',
+            'incluir_herramientas': False,
+        }
+
+        resultado = procesar_consulta('El sanitario más caro qué valor tiene', [])
+
+        self.assertEqual(len(resultado['productos']), 1)
+        self.assertEqual(resultado['productos'][0]['id'], esperado.id)
+        precio_esperado = f'${esperado.precio:,}'.replace(',', '.')
+        self.assertIn(precio_esperado, resultado['mensaje'])
+
+    def test_comparacion_de_precio_funciona_para_distintos_productos(self):
+        from .services.asistente_sfi import _buscar_productos
+        for consulta in ('taladro', 'sanitario', 'pintura', 'ceramica'):
+            with self.subTest(consulta=consulta):
+                candidatos = _buscar_productos(consulta)
+                esperado = max(candidatos, key=lambda producto: producto.precio)
+                resultado = resolver_interpretacion({
+                    'intencion': 'buscar_producto',
+                    'consulta_producto': consulta,
+                    'orden_producto': 'precio_desc',
+                    'consulta_precio': True,
+                    'presupuesto': 0,
+                })
+
+                self.assertEqual(len(resultado['productos']), 1)
+                self.assertEqual(resultado['productos'][0]['id'], esperado.id)
+
+    def test_consulta_de_valor_sin_comparacion_muestra_precios(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'buscar_producto',
+            'consulta_producto': 'sanitario',
+            'consulta_precio': True,
+            'presupuesto': 0,
+        })
+
+        self.assertEqual(resultado['tipo'], 'productos')
+        self.assertTrue(resultado['productos'])
+        self.assertIn('precios actuales registrados en SFI', resultado['mensaje'])
+
+    def test_busqueda_directa_cinta_metrica_sigue_funcionando(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('cinta métrica')
+        ids = [p.id for p in resultados]
+        self.assertIn(self.cinta.id, ids)
+
+    def test_busqueda_directa_tiene_mayor_puntaje_que_sinonimo(self):
+        """Un producto encontrado por nombre directo debe puntuar más alto
+        que uno encontrado solo por sinónimo."""
+        from .services.asistente_sfi import _buscar_productos
+        # "taladro" encuentra directamente, "perforadora" por sinónimo
+        directos = _buscar_productos('taladro')
+        sinonimos = _buscar_productos('perforadora')
+        # Ambos deben encontrar el taladro
+        self.assertIn(self.taladro.id, [p.id for p in directos])
+        self.assertIn(self.taladro.id, [p.id for p in sinonimos])

@@ -19,6 +19,30 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ## [Sin publicar]
 
+### Mejora de IA con filtros - 28 de agosto de 2026 (UTC-04:00)
+
+#### Búsqueda semántica ferretera
+
+- Se agregó un diccionario local de sinónimos ferreteros chilenos para interpretar términos como wincha, flexómetro, perforadora, combo, azulejo, inodoro, vanitorio e impermeabilizante sin depender de nuevas APIs externas.
+- Se incorporaron conceptos relacionados para búsquedas por proyecto, entre ellos colgar repisas, pintar muros, instalar cerámica, renovar baños y armar muebles.
+- Las palabras escritas directamente por el cliente conservan mayor puntuación que las expansiones semánticas y los resultados mantienen un máximo de seis productos reales del catálogo.
+- Se reforzó la relevancia de consultas específicas para descartar coincidencias aisladas, como una sierra que solo compartía la expresión `con cable` con la búsqueda de un taladro.
+- Se corrigió la ambigüedad entre `metro` y `métrico`, evitando mostrar pernos métricos cuando el cliente solicita una cinta de medir.
+
+#### Consultas y filtros de precio
+
+- El asistente reconoce para cualquier producto o categoría preguntas como `cuánto cuesta`, `qué valor tiene`, `el más caro` y `el más económico`.
+- Las palabras conversacionales se eliminan antes de buscar, por lo que expresiones como `sanitario que valor tiene` no reducen la precisión del catálogo.
+- Las comparaciones se realizan en Django con los precios registrados en la base de datos; Gemini solamente interpreta la intención y no inventa valores.
+- Las respuestas de mayor o menor precio devuelven una única alternativa, mientras que las consultas generales muestran hasta seis opciones con sus precios actuales.
+- Cuando un presupuesto no alcanza, la alternativa económica se determina por su precio real y no por la posición previa del resultado.
+
+#### Verificación
+
+- No se agregaron migraciones, credenciales ni servicios externos.
+- `python manage.py check` finalizó sin observaciones.
+- Se ejecutaron 87 pruebas del módulo `asistente`; todas finalizaron correctamente.
+
 ### Módulo Movimientos y Reposición 2.0 - 24 de agosto de 2026, 04:07 (UTC-04:00)
 
 #### Reposición y recepción

@@ -111,6 +111,9 @@ extraer los datos del proyecto; Django calculará cantidades, precios y stock.
 Reglas obligatorias:
 - Nunca inventes productos, precios, stock, rendimiento, cantidades ni identificadores.
 - Usa únicamente el catálogo entregado para mencionar productos.
+- Para preguntas como "cuánto cuesta", "qué valor tiene", "el más caro" o "el más
+  económico", usa buscar_producto y deja en consulta_producto solamente el producto,
+  tipo o categoría solicitada. Django consultará y comparará los precios reales.
 - Para calcular pintura extrae metros cuadrados, ambiente, superficie, estado y terminación.
 - Usa "recomendar_color" cuando el cliente quiera elegir, comparar o recibir sugerencias de
   colores sin pedir todavía un cálculo de litros. Reconoce interior, exterior y piscina.

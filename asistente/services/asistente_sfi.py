@@ -12,6 +12,7 @@ from .recomendacion_colores import (
     detectar_contexto_pintura,
     pinturas_compatibles,
 )
+from .sinonimos_ferreteros import expandir_consulta
 
 
 class AsistenteNoDisponible(Exception):
@@ -306,6 +307,45 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
             datos['incluir_herramientas'] = False
     elif any(indicador in texto_mensaje for indicador in indicadores_incluir_herramientas):
         datos['incluir_herramientas'] = True
+
+    if datos.get('intencion') == 'buscar_producto':
+        orden_precio = ''
+        if any(frase in texto_mensaje for frase in (
+            'mas caro', 'mayor precio', 'precio mas alto',
+        )):
+            orden_precio = 'precio_desc'
+        elif any(frase in texto_mensaje for frase in (
+            'mas barato', 'mas economico', 'menor precio', 'precio mas bajo',
+        )):
+            orden_precio = 'precio_asc'
+        consulta_precio = bool(orden_precio) or any(
+            frase in texto_mensaje for frase in (
+                'cuanto cuesta', 'cuanto cuestan', 'cuanto vale', 'cuanto valen',
+                'que valor', 'que precio', 'valor tiene', 'valor tienen',
+                'precio tiene', 'precio tienen', 'cuanto sale', 'cuanto salen',
+            )
+        )
+        if consulta_precio:
+            datos['consulta_precio'] = True
+        if orden_precio:
+            datos['orden_producto'] = orden_precio
+        if consulta_precio:
+            descartadas = {
+                'cual', 'cuales', 'dame', 'muestra', 'muestrame', 'quiero',
+                'necesito', 'busco', 'producto', 'productos', 'opcion', 'opciones',
+                'el', 'la', 'los', 'las', 'un', 'una', 'mas', 'caro', 'cara',
+                'caros', 'caras', 'barato', 'barata', 'baratos', 'baratas',
+                'economico', 'economica', 'precio', 'precios', 'mayor', 'menor',
+                'alto', 'bajo', 'que', 'cuanto', 'cuantos', 'cuanta', 'cuantas',
+                'cuesta', 'cuestan', 'vale', 'valen', 'valor', 'valores', 'tiene',
+                'tienen', 'sale', 'salen', 'costo', 'costos', 'saber',
+            }
+            terminos = [
+                palabra for palabra in re.findall(r'[a-z0-9-]+', texto_mensaje)
+                if len(palabra) >= 3 and palabra not in descartadas
+            ]
+            if terminos:
+                datos['consulta_producto'] = ' '.join(terminos[:8])
 
     proyecto_normalizado = _texto_normalizado(datos.get('proyecto'))
     es_proyecto_bano = (
@@ -974,15 +1014,28 @@ def _buscar_productos(consulta):
     palabras_omitidas = {
         'para', 'con', 'una', 'uno', 'unos', 'unas', 'por', 'del', 'las', 'los',
         'que', 'quiero', 'necesito', 'busco', 'producto', 'productos',
+        'algo', 'como', 'mas', 'caro', 'cara', 'caros', 'caras', 'barato', 'barata',
+        'baratos', 'baratas', 'economico', 'economica', 'precio', 'precios',
+        'cuanto', 'cuantos', 'cuesta', 'cuestan', 'vale', 'valen', 'valor',
+        'valores', 'tiene', 'tienen', 'sale', 'salen', 'costo', 'costos',
     }
-    palabras = [
+    palabras_originales = [
         palabra for palabra in re.findall(r'[\wáéíóúñü-]+', _texto_normalizado(consulta))
         if len(palabra) >= 3 and palabra not in palabras_omitidas
     ][:8]
-    if not palabras:
+    if not palabras_originales:
         return []
+
+    # Expandir con sinónimos ferreteros
+    palabras_expandidas, sinonimos_agregados = expandir_consulta(palabras_originales)
+
     consulta_normalizada = _texto_normalizado(consulta)
+
     def contiene(texto, palabra):
+        # "metro" es una medida coloquial para cinta métrica, pero no debe
+        # coincidir con adjetivos como "métrico" en pernos o tornillos.
+        if palabra == 'metro':
+            return bool(re.search(r'\bmetros?\b', texto))
         return bool(re.search(rf'\b{re.escape(palabra)}\w*', texto))
 
     resultados = []
@@ -999,17 +1052,22 @@ def _buscar_productos(consulta):
             ])
         )
         puntaje = 8 if consulta_normalizada in nombre else 0
-        for palabra in palabras:
+        texto_completo = f'{nombre} {identificacion} {detalle}'
+
+        for palabra in palabras_expandidas:
+            es_sinonimo = palabra in sinonimos_agregados
             if contiene(nombre, palabra):
-                puntaje += 5
+                puntaje += 4 if es_sinonimo else 5
             elif contiene(identificacion, palabra):
-                puntaje += 3
+                puntaje += 2 if es_sinonimo else 3
             elif contiene(detalle, palabra):
                 puntaje += 1
+
         coincidencias = sum(
-            contiene(f'{nombre} {identificacion} {detalle}', palabra) for palabra in palabras
+            contiene(texto_completo, palabra) for palabra in palabras_expandidas
         )
-        if puntaje and coincidencias:
+        coincidencias_minimas = 2 if len(palabras_originales) >= 3 else 1
+        if puntaje and coincidencias >= coincidencias_minimas:
             resultados.append((coincidencias, puntaje, producto))
     resultados.sort(key=lambda item: (
         -item[0], -item[1], item[2].precio, item[2].nombre.casefold(),
@@ -1314,7 +1372,7 @@ def resolver_interpretacion(datos):
                     f'{_formatear_clp(presupuesto)} para “{consulta}”.'
                 )
             else:
-                economico = productos[0]
+                economico = min(productos, key=lambda producto: producto.precio)
                 diferencia = economico.precio - presupuesto
                 productos = [economico]
                 mensaje = (
@@ -1325,6 +1383,30 @@ def resolver_interpretacion(datos):
                 )
         else:
             mensaje = f'Encontré {len(productos)} producto(s) relacionados con “{consulta}”.'
+        orden_producto = datos.get('orden_producto')
+        if orden_producto == 'precio_desc' and productos:
+            productos = [max(productos, key=lambda producto: producto.precio)]
+            mensaje = (
+                f'La opción de mayor precio para “{consulta}” es '
+                f'{productos[0].nombre} a {_formatear_clp(productos[0].precio)}.'
+            )
+        elif orden_producto == 'precio_asc' and productos:
+            productos = [min(productos, key=lambda producto: producto.precio)]
+            mensaje = (
+                f'La opción más económica para “{consulta}” es '
+                f'{productos[0].nombre} a {_formatear_clp(productos[0].precio)}.'
+            )
+        elif datos.get('consulta_precio') and productos:
+            if len(productos) == 1:
+                mensaje = (
+                    f'{productos[0].nombre} tiene un valor de '
+                    f'{_formatear_clp(productos[0].precio)}.'
+                )
+            else:
+                mensaje = (
+                    f'Encontré {len(productos)} opciones para “{consulta}”. '
+                    'Estos son sus precios actuales registrados en SFI.'
+                )
         productos_publicos = []
         for producto in productos:
             producto_publico = _producto_publico(producto)
