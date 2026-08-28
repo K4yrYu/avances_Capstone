@@ -54,11 +54,11 @@ def activar_cuenta(request, token):
         email = signer.unsign(token, max_age=max_age)
         with transaction.atomic():
             user = Usuario.objects.select_for_update().get(email=email)
-            if (
-                user.email_confirmado
-                or not user.activacion_expira_en
-                or user.activacion_expira_en <= timezone.now()
-            ):
+            if user.email_confirmado or not user.activacion_expira_en:
+                return render(request, 'usuarios/activacion_fallida.html')
+            if user.activacion_expira_en <= timezone.now():
+                if not user.is_active and not user.email_confirmado:
+                    user.delete()
                 return render(request, 'usuarios/activacion_fallida.html')
             user.is_active = True
             user.email_confirmado = True
