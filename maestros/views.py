@@ -1,3 +1,5 @@
+import re
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -226,7 +228,20 @@ def detalle_maestro(request, pk):
         estado=PerfilMaestro.Estado.APROBADO,
     )
     trabajos = perfil.trabajos.filter(publicado=True).prefetch_related("especialidades", "imagenes")
-    return render(request, "maestros/detalle.html", {"perfil": perfil, "trabajos": trabajos})
+    telefono = perfil.usuario.telefono or ""
+    telefono_digitos = re.sub(r"\D", "", telefono)
+    if len(telefono_digitos) == 9:
+        telefono_digitos = f"56{telefono_digitos}"
+    return render(
+        request,
+        "maestros/detalle.html",
+        {
+            "perfil": perfil,
+            "trabajos": trabajos,
+            "telefono_contacto": telefono,
+            "telefono_whatsapp": telefono_digitos,
+        },
+    )
 
 
 @login_required

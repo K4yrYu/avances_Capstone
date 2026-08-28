@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-labelledby="t d">
+  <title id="t">Trabajo de gasfitería</title><desc id="d">Ilustración SFI de tuberías y grifería domiciliaria.</desc>
+  <rect width="800" height="500" fill="#eaf3f7"/><path d="M0 0h800v82H0z" fill="#0a3452"/><text x="45" y="53" fill="#fff" font-family="Arial" font-size="28" font-weight="700">GASFITERÍA · SFI DEMO</text>
+  <path d="M175 150v105h170v120h280" fill="none" stroke="#8ba6b6" stroke-width="46" stroke-linejoin="round"/><path d="M175 150v105h170v120h280" fill="none" stroke="#fff" stroke-width="24" stroke-linejoin="round"/>
+  <circle cx="345" cy="255" r="48" fill="#ffbd00" stroke="#0a3452" stroke-width="10"/><path d="M315 255h60M345 225v60" stroke="#0a3452" stroke-width="12"/>
+  <path d="M520 210h105v75h-65" fill="none" stroke="#0a3452" stroke-width="18" stroke-linecap="round"/><path d="M558 300c28 34 28 58 0 72-28-14-28-38 0-72z" fill="#23865d"/>
+  <text x="400" y="460" text-anchor="middle" fill="#0a3452" font-family="Arial" font-size="26" font-weight="700">INSTALACIÓN SANITARIA</text>
+</svg>

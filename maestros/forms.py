@@ -8,6 +8,7 @@ from .models import (
     PerfilMaestro,
     TrabajoRealizado,
 )
+from .presentacion import avatar_maestro_url
 
 
 class MultipleFileInput(forms.ClearableFileInput):
@@ -71,6 +72,7 @@ class PerfilMaestroForm(forms.ModelForm):
         self.fields["especialidades"].required = True
         self.fields["foto"].help_text = "JPG, PNG o WebP. Máximo 5 MB."
         self.fields["foto"].widget.attrs["accept"] = "image/jpeg,image/png,image/webp"
+        self.fields["foto"].widget.attrs["data-fallback-url"] = avatar_maestro_url()
         if self.instance and self.instance.pk:
             actuales = [zona.strip() for zona in self.instance.zonas_trabajo.split(",") if zona.strip()]
             self.initial["comunas_trabajo"] = actuales or [self.instance.comuna]

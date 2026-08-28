@@ -15,6 +15,7 @@
 
     const {escapeHtml, safeUrl} = security;
     const fallbackImage = safeUrl(root.dataset.placeholderUrl);
+    const fallbackMasterImage = safeUrl(root.dataset.masterPlaceholderUrl) || fallbackImage;
     const authenticated = root.dataset.authenticated === "true";
     const userKey = root.dataset.userKey || "guest";
     const sessionOwnerKey = "sfi_assistant_session_owner_v1";
@@ -44,11 +45,12 @@
       }
     }
 
-    function rememberMessage(role, text, products = []) {
+    function rememberMessage(role, text, products = [], masters = []) {
       conversationEntries.push({
         role,
         text: String(text || "").slice(0, 1400),
         products: Array.isArray(products) ? products.slice(0, 8) : [],
+        masters: Array.isArray(masters) ? masters.slice(0, 5) : [],
       });
       conversationEntries = conversationEntries.slice(-24);
       saveConversation();
@@ -116,17 +118,41 @@
           : product.cantidad_requerida
             ? `<p class="assistant-product-calc">${escapeHtml(product.rol || "Material")} · ${escapeHtml(product.cantidad_requerida)} unidad(es) · Subtotal ${formatClp(product.subtotal)}</p><p class="assistant-product-calc">${escapeHtml(product.detalle_material || "")}</p>`
             : "";
+        const optionalText = product.es_opcional
+          ? '<p class="assistant-product-optional"><i class="fa-solid fa-circle-info"></i> Opcional · no incluido en el total seleccionado</p>'
+          : "";
         const addButton = calculation && product.stock_suficiente
           ? `<button type="button" data-chat-add="${id}"><i class="fa-solid fa-cart-plus"></i> Agregar cálculo</button>`
           : product.carrito_cantidad
             ? `<button type="button" data-chat-product="${id}"><i class="fa-solid fa-cart-plus"></i> Agregar ${escapeHtml(product.carrito_cantidad)}</button>`
             : "";
-        return `<article class="assistant-product"><div class="assistant-product-image"><img src="${image}" alt="${escapeHtml(product.nombre || "Producto SFI")}" loading="lazy"></div><div class="assistant-product-body"><small>${escapeHtml(product.rol || product.marca || product.categoria || "SFI")}</small><h3>${escapeHtml(product.nombre || "Producto")}</h3><div class="assistant-product-meta"><span>${escapeHtml(product.presentacion || "")}</span><span>${escapeHtml(product.terminacion || "")}</span><span>${escapeHtml(product.stock)} disponibles</span></div>${calculationText}<strong class="assistant-product-price">${formatClp(product.precio)} c/u</strong><div class="assistant-product-actions"><a href="${url}">Ver producto</a>${addButton}</div></div></article>`;
+        return `<article class="assistant-product"><div class="assistant-product-image"><img src="${image}" alt="${escapeHtml(product.nombre || "Producto SFI")}" loading="lazy"></div><div class="assistant-product-body"><small>${escapeHtml(product.rol || product.marca || product.categoria || "SFI")}</small><h3>${escapeHtml(product.nombre || "Producto")}</h3><div class="assistant-product-meta"><span>${escapeHtml(product.presentacion || "")}</span><span>${escapeHtml(product.terminacion || "")}</span><span>${escapeHtml(product.stock)} disponibles</span></div>${calculationText}${optionalText}<strong class="assistant-product-price">${formatClp(product.precio)} c/u</strong><div class="assistant-product-actions"><a href="${url}">Ver producto</a>${addButton}</div></div></article>`;
       }).join("");
       messages.appendChild(container);
       container.querySelectorAll("img").forEach(image => image.addEventListener("error", function replaceImage() {
         image.removeEventListener("error", replaceImage);
         if (fallbackImage) image.src = fallbackImage;
+      }));
+      scrollToLatest();
+    }
+
+    function renderMasters(masters) {
+      if (!Array.isArray(masters) || !masters.length) return;
+      const container = document.createElement("div");
+      container.className = "assistant-masters";
+      container.innerHTML = masters.map(master => {
+        const id = Math.max(0, Math.trunc(Number(master.id) || 0));
+        const image = safeUrl(master.foto) || fallbackMasterImage;
+        const url = safeUrl(master.url) || `/maestros/${id}/`;
+        const specialties = Array.isArray(master.especialidades) ? master.especialidades : [];
+        const communes = Array.isArray(master.comunas) ? master.comunas : [];
+        const years = Math.max(0, Math.trunc(Number(master.anos_experiencia) || 0));
+        return `<article class="assistant-master"><div class="assistant-master-image"><img src="${image}" alt="Foto profesional de ${escapeHtml(master.nombre || "Maestro SFI")}" loading="lazy"><span><i class="fa-solid fa-circle-check"></i> Verificado por SFI</span></div><div class="assistant-master-body"><small>Maestro disponible</small><h3>${escapeHtml(master.nombre || "Profesional SFI")}</h3><p class="assistant-master-specialties">${escapeHtml(specialties.join(" · "))}</p><ul><li><i class="fa-solid fa-briefcase"></i> ${escapeHtml(years)} ${years === 1 ? "año" : "años"} de experiencia</li><li><i class="fa-solid fa-location-dot"></i> ${escapeHtml(communes.join(" · "))}</li></ul><a href="${url}"><i class="fa-regular fa-address-card"></i> Ver perfil</a></div></article>`;
+      }).join("");
+      messages.appendChild(container);
+      container.querySelectorAll("img").forEach(image => image.addEventListener("error", function replaceMasterImage() {
+        image.removeEventListener("error", replaceMasterImage);
+        if (fallbackMasterImage) image.src = fallbackMasterImage;
       }));
       scrollToLatest();
     }
@@ -157,10 +183,11 @@
         typing.remove();
         const answer = String(data.mensaje || "Cuéntame un poco más sobre tu proyecto.");
         addMessage("assistant", answer);
-        rememberMessage("assistant", answer, data.productos);
+        rememberMessage("assistant", answer, data.productos, data.maestros);
         history.push({role: "assistant", content: answer});
         history = history.slice(-6);
         renderProducts(data.productos);
+        renderMasters(data.maestros);
         renderSuggestions(data.sugerencias);
       } catch (error) {
         typing.remove();
@@ -290,7 +317,10 @@
       messages.innerHTML = "";
       conversationEntries.forEach(entry => {
         addMessage(entry.role, entry.text);
-        if (entry.role === "assistant") renderProducts(entry.products);
+        if (entry.role === "assistant") {
+          renderProducts(entry.products);
+          renderMasters(entry.masters);
+        }
       });
       history = conversationEntries.slice(-6).map(entry => ({
         role: entry.role,

@@ -301,6 +301,7 @@ class CambioEstadoMaestroSerializer(serializers.Serializer):
 class TrabajoPublicoSerializer(serializers.ModelSerializer):
     especialidades = EspecialidadPublicaSerializer(many=True, read_only=True)
     imagenes = ImagenTrabajoSerializer(many=True, read_only=True)
+    portada_url = serializers.SerializerMethodField()
 
     class Meta:
         model = TrabajoRealizado
@@ -312,10 +313,18 @@ class TrabajoPublicoSerializer(serializers.ModelSerializer):
             "comuna",
             "fecha",
             "imagenes",
+            "portada_url",
         )
+
+    def get_portada_url(self, obj):
+        url = obj.portada_publica_url
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
 
 
 class PerfilMaestroPublicoSerializer(serializers.ModelSerializer):
+    foto = serializers.SerializerMethodField()
+    foto_fallback_url = serializers.SerializerMethodField()
     nombre = serializers.SerializerMethodField()
     especialidades = EspecialidadPublicaSerializer(many=True, read_only=True)
     comunas_trabajo = ComunasTrabajoField(source="zonas_trabajo", read_only=True)
@@ -328,6 +337,7 @@ class PerfilMaestroPublicoSerializer(serializers.ModelSerializer):
             "id",
             "nombre",
             "foto",
+            "foto_fallback_url",
             "descripcion_profesional",
             "anos_experiencia",
             "especialidades",
@@ -340,6 +350,16 @@ class PerfilMaestroPublicoSerializer(serializers.ModelSerializer):
 
     def get_nombre(self, obj):
         return obj.usuario.get_full_name() or obj.usuario.username
+
+    def _url_absoluta(self, url):
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
+
+    def get_foto(self, obj):
+        return self._url_absoluta(obj.foto_publica_url)
+
+    def get_foto_fallback_url(self, obj):
+        return self._url_absoluta(obj.foto_fallback_url)
 
     def get_region_nombre(self, obj):
         return REGIONES_COMUNAS.get(obj.region, (obj.region, ()))[0]

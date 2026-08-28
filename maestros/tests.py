@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.templatetags.static import static
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -16,6 +17,7 @@ from .models import (
     PerfilMaestro,
     TrabajoRealizado,
 )
+from .services import buscar_maestros
 
 
 TEST_MEDIA_ROOT = tempfile.mkdtemp()
@@ -554,8 +556,10 @@ class MaestrosAPITests(TestCase):
         respuesta = self.client.get(reverse("maestros:api_publicos"))
         self.assertEqual(respuesta.status_code, 200)
         datos = respuesta.json()
-        self.assertEqual([item["id"] for item in datos], [aprobado.id])
-        perfil_publico = datos[0]
+        ids_publicos = [item["id"] for item in datos]
+        self.assertIn(aprobado.id, ids_publicos)
+        self.assertNotIn(pendiente.id, ids_publicos)
+        perfil_publico = next(item for item in datos if item["id"] == aprobado.id)
         for campo_privado in (
             "usuario",
             "email",
@@ -622,3 +626,223 @@ class MaestrosAPITests(TestCase):
         respuesta = self.client.post(url, {"imagenes": [self.imagen_valida()]})
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn(str(MAX_IMAGENES_POR_TRABAJO), str(respuesta.json()))
+
+    def test_maestro_sin_foto_usa_avatar_generico(self):
+        perfil = self.crear_perfil(
+            self.crear_usuario("api_avatar_default"),
+            PerfilMaestro.Estado.APROBADO,
+        )
+
+        self.assertFalse(perfil.foto)
+        self.assertEqual(
+            perfil.foto_publica_url,
+            static("maestros/img/maestro_default.svg"),
+        )
+
+    def test_listado_y_detalle_renderizan_avatar_generico(self):
+        perfil = self.crear_perfil(
+            self.crear_usuario("api_avatar_templates"),
+            PerfilMaestro.Estado.APROBADO,
+        )
+        avatar = static("maestros/img/maestro_default.svg")
+
+        listado = self.client.get(reverse("maestros:lista"))
+        detalle = self.client.get(reverse("maestros:detalle", args=[perfil.id]))
+
+        self.assertContains(listado, avatar)
+        self.assertContains(detalle, avatar)
+
+    def test_trabajo_sin_imagen_usa_fallback_de_especialidad(self):
+        perfil = self.crear_perfil(
+            self.crear_usuario("api_trabajo_fallback"),
+            PerfilMaestro.Estado.APROBADO,
+        )
+        trabajo = self.crear_trabajo(perfil)
+
+        self.assertEqual(
+            trabajo.portada_publica_url,
+            static("maestros/demo/carpinteria-mueble.svg"),
+        )
+        detalle = self.client.get(reverse("maestros:detalle", args=[perfil.id]))
+        self.assertContains(detalle, static("maestros/demo/carpinteria-mueble.svg"))
+
+    def test_trabajo_con_imagen_real_la_prioriza(self):
+        perfil = self.crear_perfil(
+            self.crear_usuario("api_trabajo_real"),
+            PerfilMaestro.Estado.APROBADO,
+        )
+        trabajo = self.crear_trabajo(perfil)
+        imagen = ImagenTrabajoRealizado.objects.create(
+            trabajo=trabajo,
+            imagen=self.imagen_valida("portada-real.png"),
+        )
+
+        self.assertEqual(trabajo.portada_publica_url, imagen.imagen.url)
+        self.assertNotEqual(trabajo.portada_publica_url, trabajo.imagen_fallback_url)
+
+    def test_api_publica_entrega_fallbacks_sin_datos_privados(self):
+        perfil = self.crear_perfil(
+            self.crear_usuario("api_fallback_publico"),
+            PerfilMaestro.Estado.APROBADO,
+        )
+        self.crear_trabajo(perfil)
+
+        respuesta = self.client.get(
+            reverse("maestros:api_publico_detalle", args=[perfil.id])
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        datos = respuesta.json()
+        self.assertTrue(datos["foto"].endswith("/static/maestros/img/maestro_default.svg"))
+        self.assertTrue(
+            datos["trabajos"][0]["portada_url"].endswith(
+                "/static/maestros/demo/carpinteria-mueble.svg"
+            )
+        )
+        for campo in ("email", "telefono", "rut", "observacion_admin"):
+            self.assertNotIn(campo, datos)
+
+
+class BuscadorMaestrosTests(TestCase):
+    contador = 0
+
+    def setUp(self):
+        self.User = get_user_model()
+        self.especialidad = Especialidad.objects.create(
+            nombre="Terminación Élite",
+            descripcion="Especialidad para pruebas del buscador.",
+            activa=True,
+        )
+
+    def crear_perfil(
+        self,
+        nombre="Profesional Prueba",
+        estado=PerfilMaestro.Estado.APROBADO,
+        disponible=True,
+        comuna="Vitacura",
+        zonas="Vitacura, Las Condes",
+        especialidad=None,
+        experiencia=5,
+    ):
+        type(self).contador += 1
+        numero = type(self).contador
+        nombres = nombre.split(" ", 1)
+        usuario = self.User.objects.create_user(
+            username=f"buscador_maestro_{numero}",
+            password=None,
+            first_name=nombres[0],
+            last_name=nombres[1] if len(nombres) > 1 else "",
+            email=f"buscador-{numero}@example.invalid",
+            rut=f"28{numero:06d}-{numero % 9}",
+            telefono=f"+5698{numero:07d}",
+            email_confirmado=True,
+            is_active=True,
+        )
+        perfil = PerfilMaestro.objects.create(
+            usuario=usuario,
+            descripcion_profesional="Descripción privada del profesional.",
+            anos_experiencia=experiencia,
+            region="RM",
+            comuna=comuna,
+            zonas_trabajo=zonas,
+            disponible=disponible,
+            estado=estado,
+            observacion_admin="Dato administrativo reservado.",
+            fecha_aprobacion=(
+                timezone.now() if estado == PerfilMaestro.Estado.APROBADO else None
+            ),
+        )
+        perfil.especialidades.add(especialidad or self.especialidad)
+        return perfil
+
+    def test_aprobado_y_disponible_aparece(self):
+        perfil = self.crear_perfil()
+        ids = [item["id"] for item in buscar_maestros("Terminación Élite", "Vitacura")]
+        self.assertIn(perfil.id, ids)
+
+    def test_pendiente_no_aparece(self):
+        perfil = self.crear_perfil(estado=PerfilMaestro.Estado.PENDIENTE)
+        self.assertNotIn(perfil.id, [item["id"] for item in buscar_maestros("Terminación Élite")])
+
+    def test_rechazado_no_aparece(self):
+        perfil = self.crear_perfil(estado=PerfilMaestro.Estado.RECHAZADO)
+        self.assertNotIn(perfil.id, [item["id"] for item in buscar_maestros("Terminación Élite")])
+
+    def test_suspendido_no_aparece(self):
+        perfil = self.crear_perfil(estado=PerfilMaestro.Estado.SUSPENDIDO)
+        self.assertNotIn(perfil.id, [item["id"] for item in buscar_maestros("Terminación Élite")])
+
+    def test_no_disponible_no_aparece(self):
+        perfil = self.crear_perfil(disponible=False)
+        self.assertNotIn(perfil.id, [item["id"] for item in buscar_maestros("Terminación Élite")])
+
+    def test_especialidad_incorrecta_no_aparece(self):
+        perfil = self.crear_perfil()
+        self.assertNotIn(perfil.id, [item["id"] for item in buscar_maestros("Techumbre")])
+
+    def test_especialidad_inactiva_no_aparece(self):
+        perfil = self.crear_perfil()
+        self.especialidad.activa = False
+        self.especialidad.save(update_fields=["activa"])
+        self.assertNotIn(perfil.id, [item["id"] for item in buscar_maestros("Terminación Élite")])
+
+    def test_normaliza_tildes(self):
+        perfil = self.crear_perfil()
+        self.assertIn(perfil.id, [item["id"] for item in buscar_maestros("terminacion elite")])
+
+    def test_normaliza_mayusculas(self):
+        perfil = self.crear_perfil()
+        self.assertIn(perfil.id, [item["id"] for item in buscar_maestros("TERMINACIÓN ÉLITE")])
+
+    def test_comuna_correcta_aparece(self):
+        perfil = self.crear_perfil()
+        self.assertIn(perfil.id, [item["id"] for item in buscar_maestros("Terminación Élite", "las condes")])
+
+    def test_comuna_incorrecta_no_aparece(self):
+        perfil = self.crear_perfil()
+        self.assertNotIn(perfil.id, [item["id"] for item in buscar_maestros("Terminación Élite", "Maipú")])
+
+    def test_comuna_no_usa_coincidencias_parciales(self):
+        perfil = self.crear_perfil(comuna="Maipucito", zonas="Maipucito")
+        self.assertNotIn(perfil.id, [item["id"] for item in buscar_maestros("Terminación Élite", "Maipú")])
+
+    def test_limita_resultados_a_cinco(self):
+        for indice in range(7):
+            self.crear_perfil(nombre=f"Profesional {indice}", experiencia=indice)
+        self.assertEqual(len(buscar_maestros("Terminación Élite", limite=99)), 5)
+
+    def test_no_duplica_maestro_con_varias_especialidades(self):
+        perfil = self.crear_perfil()
+        perfil.especialidades.add(
+            Especialidad.objects.create(nombre="Terminación Complementaria", activa=True)
+        )
+        ids = [item["id"] for item in buscar_maestros("Terminación Élite")]
+        self.assertEqual(ids.count(perfil.id), 1)
+
+    def test_resultado_no_expone_datos_privados_y_usa_fallback(self):
+        perfil = self.crear_perfil()
+        resultado = next(
+            item for item in buscar_maestros("Terminación Élite") if item["id"] == perfil.id
+        )
+        self.assertEqual(
+            set(resultado),
+            {
+                "id", "nombre", "foto", "especialidades", "anos_experiencia",
+                "comunas", "disponible", "url",
+            },
+        )
+        self.assertEqual(resultado["foto"], static("maestros/img/maestro_default.svg"))
+        for privado in ("rut", "telefono", "email", "observacion_admin", "fecha_aprobacion"):
+            self.assertNotIn(privado, resultado)
+
+    def test_perfil_publico_aprobado_muestra_canales_de_contacto(self):
+        perfil = self.crear_perfil(nombre="Contacto Profesional")
+
+        respuesta = self.client.get(reverse("maestros:detalle", args=[perfil.id]))
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, f'mailto:{perfil.usuario.email}')
+        self.assertContains(respuesta, f'tel:{perfil.usuario.telefono}')
+        telefono_whatsapp = perfil.usuario.telefono.replace("+", "")
+        self.assertContains(respuesta, f'https://wa.me/{telefono_whatsapp}')
+        self.assertContains(respuesta, "No compartas claves ni códigos de pago")

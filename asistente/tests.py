@@ -61,6 +61,7 @@ class AsistenteSfiTests(TestCase):
         self.assertContains(pagina, 'id="toggle-paint-mask"')
         self.assertContains(pagina, 'id="auto-paint-surface"')
         self.assertContains(pagina, 'id="apply-paint-mask"')
+        self.assertContains(pagina, 'data-suggestion="Quiero renovar mi baño"')
         self.assertNotContains(pagina, reverse('mi_historial_compras'))
         self.assertContains(pagina, 'Compra protegida con Webpay')
         self.assertContains(inicio, reverse('asistente_sfi'))
@@ -389,6 +390,145 @@ class AsistenteSfiTests(TestCase):
         self.assertIn('no alcanza', resultado['mensaje'])
         self.assertIn('faltan $27.950', resultado['mensaje'])
 
+    def test_repisa_separa_obligatorios_herramientas_y_opcionales(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto', 'proyecto': 'repisa',
+            'ancho_cm': 50, 'fondo_cm': 25, 'cantidad': 2,
+            'tipo_muro': 'hormigon', 'presupuesto': 0,
+            'incluir_herramientas': False,
+        })
+
+        tablero = next(
+            item for item in resultado['productos']
+            if item['rol'] == 'Superficie de la repisa'
+        )
+        lijas = next(
+            item for item in resultado['productos']
+            if item['rol'] == 'Preparación de la madera'
+        )
+        barniz = next(item for item in resultado['productos'] if item.get('es_opcional'))
+        incluidos = [item for item in resultado['productos'] if not item.get('es_opcional')]
+
+        self.assertEqual(tablero['cantidad_requerida'], 1)
+        self.assertEqual(lijas['cantidad_requerida'], 2)
+        self.assertEqual(
+            resultado['subtotal_basico'],
+            sum(item['subtotal'] for item in incluidos),
+        )
+        self.assertEqual(resultado['subtotal_herramientas'], 0)
+        self.assertEqual(resultado['subtotal_opcionales'], barniz['subtotal'])
+        self.assertEqual(
+            resultado['total_con_terminacion'],
+            resultado['subtotal_basico'] + barniz['subtotal'],
+        )
+        self.assertIn('materiales obligatorios', resultado['mensaje'])
+        self.assertIn('barniz opcional', resultado['mensaje'])
+
+    def test_bano_pide_alcance_antes_de_calcular(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'baño',
+            'alcance_bano': '',
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertIn('piso, muros, artefactos', resultado['mensaje'])
+        self.assertFalse(resultado['productos'])
+
+    def test_bano_completo_calcula_envases_stock_y_total_desde_catalogo(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'renovación de baño',
+            'alcance_bano': 'completo',
+            'superficie': 6,
+            'superficie_muros': 20,
+            'incluir_sanitario': True,
+            'incluir_lavamanos': True,
+            'incluir_ducha': True,
+            'presupuesto': 500000,
+        })
+
+        cantidades = {
+            item['sku']: item['cantidad_requerida']
+            for item in resultado['productos']
+        }
+        self.assertEqual(resultado['tipo'], 'plan_proyecto')
+        self.assertEqual(cantidades['BAN-POR-144'], 5)
+        self.assertEqual(cantidades['BAN-CER-150'], 15)
+        self.assertEqual(cantidades['BAN-ADH-25'], 6)
+        self.assertEqual(cantidades['BAN-FRA-5'], 3)
+        self.assertEqual(cantidades['BAN-IMP-4'], 5)
+        self.assertEqual(cantidades['BAN-WC-DD'], 1)
+        self.assertEqual(cantidades['BAN-MUE-60'], 1)
+        self.assertEqual(cantidades['BAN-DUC-CRO'], 1)
+        self.assertEqual(
+            resultado['subtotal_basico'],
+            sum(item['subtotal'] for item in resultado['productos']),
+        )
+        self.assertEqual(resultado['subtotal_basico'], 919060)
+        self.assertEqual(resultado['faltantes_catalogo'], [])
+        self.assertIn('faltan $419.060', resultado['mensaje'])
+        self.assertTrue(all(item['imagen'] for item in resultado['productos']))
+
+    def test_bano_solo_piso_no_agrega_artefactos_que_cliente_no_pidio(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'baño',
+            'alcance_bano': 'piso',
+            'superficie': 5,
+            'superficie_muros': 0,
+            'incluir_sanitario': False,
+            'incluir_lavamanos': False,
+            'incluir_ducha': False,
+            'presupuesto': 0,
+        })
+
+        skus = {item['sku'] for item in resultado['productos']}
+        self.assertIn('BAN-POR-144', skus)
+        self.assertNotIn('BAN-CER-150', skus)
+        self.assertNotIn('BAN-WC-DD', skus)
+        self.assertNotIn('BAN-MUE-60', skus)
+        self.assertNotIn('BAN-DUC-CRO', skus)
+
+    def test_bano_no_cierra_plan_si_un_producto_no_tiene_stock(self):
+        Producto.objects.filter(sku='BAN-POR-144').update(stock=0)
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'baño',
+            'alcance_bano': 'piso',
+            'superficie': 5,
+            'superficie_muros': 0,
+            'presupuesto': 0,
+        })
+
+        self.assertIn('Revestimiento de piso (stock insuficiente)', resultado['faltantes_catalogo'])
+        self.assertIn('No presento el presupuesto como completo', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_bano_normaliza_alcance_y_no_inventa_sanitarios(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'baño',
+            'alcance_bano': 'completo',
+            'superficie': 5,
+            'superficie_muros': 0,
+            'incluir_sanitario': True,
+            'incluir_lavamanos': True,
+            'incluir_ducha': True,
+            'presupuesto': 0,
+            'terminacion': 'cualquiera',
+            'color': '',
+        }
+
+        resultado = procesar_consulta('Quiero cambiar solo el piso del baño, son 5 m²', [])
+
+        skus = {item['sku'] for item in resultado['productos']}
+        self.assertIn('BAN-POR-144', skus)
+        self.assertNotIn('BAN-WC-DD', skus)
+        self.assertNotIn('BAN-MUE-60', skus)
+        self.assertNotIn('BAN-DUC-CRO', skus)
+
     def test_calculo_pintura_compara_presupuesto(self):
         resultado = resolver_interpretacion({
             'intencion': 'calcular_pintura', 'superficie': 50,
@@ -570,4 +710,245 @@ class AsistenteSfiTests(TestCase):
         self.assertIn('Cinta métrica Stanley 5m', nombres_productos_con)
         self.assertIn('Excluir herramientas', res_con['sugerencias'])
         self.assertIn('herramientas recomendadas', res_con['mensaje'])
+
+    def consultar_maestro(self, mensaje, historial=None, **cambios):
+        interpretacion = {
+            'intencion': 'orientacion_general',
+            'respuesta': 'Cuéntame más sobre el trabajo.',
+            'consulta_producto': '',
+            'terminacion': 'cualquiera',
+            'color': '',
+            'presupuesto': 0,
+            'incluir_herramientas': False,
+            'especialidad_maestro': '',
+            'comuna_maestro': '',
+            'descripcion_trabajo': '',
+        }
+        interpretacion.update(cambios)
+        with patch(
+            'asistente.services.asistente_sfi.interpretar_con_gemini',
+            return_value=interpretacion,
+        ):
+            return procesar_consulta(mensaje, historial or [])
+
+    def test_repisa_diy_no_muestra_maestros_antes_de_aceptar(self):
+        resultado = self.consultar_maestro(
+            'Quiero instalar una repisa',
+            intencion='planificar_proyecto',
+            proyecto='repisa',
+            ancho_cm=0,
+            fondo_cm=0,
+            tipo_muro='',
+        )
+        self.assertNotEqual(resultado['tipo'], 'maestros')
+        self.assertFalse(resultado.get('maestros', []))
+
+    def test_repisa_completa_ofrece_carpintero_sin_buscarlo(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'repisa',
+            'ancho_cm': 100,
+            'fondo_cm': 25,
+            'cantidad': 1,
+            'tipo_muro': 'hormigon',
+            'presupuesto': 0,
+        })
+        self.assertEqual(resultado['tipo'], 'plan_proyecto')
+        self.assertTrue(resultado['productos'])
+        self.assertIn('buscar un maestro carpintero', resultado['mensaje'])
+        self.assertIn('Buscar maestro carpintero', resultado['sugerencias'])
+        self.assertFalse(resultado.get('maestros', []))
+
+    def test_aceptacion_contextual_conserva_carpinteria_y_pregunta_comuna(self):
+        historial = [{
+            'role': 'assistant',
+            'content': 'Si prefieres, puedo buscar un maestro carpintero para realizar el trabajo.',
+        }]
+        resultado = self.consultar_maestro('Sí', historial)
+        self.assertEqual(resultado['tipo'], 'aclaracion_maestro')
+        self.assertIn('comuna', resultado['mensaje'])
+        self.assertFalse(resultado['maestros'])
+
+    def test_comuna_contextual_encuentra_a_pedro_gonzalez(self):
+        historial = [
+            {
+                'role': 'assistant',
+                'content': 'Si prefieres, puedo buscar un maestro carpintero para realizar el trabajo.',
+            },
+            {'role': 'user', 'content': 'Sí'},
+            {'role': 'assistant', 'content': 'Claro. ¿En qué comuna necesitas el trabajo?'},
+        ]
+        resultado = self.consultar_maestro('Maipú', historial)
+        self.assertEqual(resultado['tipo'], 'maestros')
+        self.assertIn('Pedro González', [item['nombre'] for item in resultado['maestros']])
+
+    def test_solicitud_directa_carpintero_en_maipu(self):
+        resultado = self.consultar_maestro('Necesito un carpintero en Maipú')
+        self.assertEqual(resultado['tipo'], 'maestros')
+        self.assertIn('Pedro González', [item['nombre'] for item in resultado['maestros']])
+
+    def test_pintura_diy_no_muestra_pintores_automaticamente(self):
+        resultado = self.consultar_maestro(
+            'Quiero pintar mi dormitorio',
+            intencion='calcular_pintura',
+            superficie=0,
+            ambiente='interior',
+            tipo_superficie='',
+            estado_superficie='',
+        )
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertFalse(resultado.get('maestros', []))
+
+    def test_calculo_pintura_ofrece_pintor_sin_buscarlo(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'calcular_pintura',
+            'superficie': 20,
+            'ambiente': 'interior',
+            'tipo_superficie': 'hormigon',
+            'estado_superficie': 'nueva',
+            'terminacion': 'mate',
+            'color': 'Blanco',
+            'capas': 0,
+            'desperdicio': -1,
+            'presupuesto': 0,
+        })
+        self.assertEqual(resultado['tipo'], 'calculo_pintura')
+        self.assertIn('buscar un maestro pintor', resultado['mensaje'])
+        self.assertIn('Buscar maestro pintor', resultado['sugerencias'])
+        self.assertFalse(resultado.get('maestros', []))
+
+    def test_aceptacion_de_pintor_y_comuna_encuentra_a_maria_soto(self):
+        historial = [
+            {
+                'role': 'assistant',
+                'content': 'También puedo buscar un maestro pintor para realizar el trabajo.',
+            },
+            {'role': 'user', 'content': 'Sí por favor'},
+            {'role': 'assistant', 'content': 'Claro. ¿En qué comuna necesitas el trabajo?'},
+        ]
+        resultado = self.consultar_maestro('Maipú', historial)
+        self.assertIn('María Soto', [item['nombre'] for item in resultado['maestros']])
+
+    def test_solicitud_directa_pintor_en_providencia(self):
+        resultado = self.consultar_maestro('Necesito un pintor en Providencia')
+        self.assertIn('Jorge Rojas', [item['nombre'] for item in resultado['maestros']])
+
+    def test_solicitud_directa_gasfiter_en_pudahuel(self):
+        resultado = self.consultar_maestro('Necesito un gasfiter en Pudahuel')
+        self.assertIn('Luis Pérez', [item['nombre'] for item in resultado['maestros']])
+
+    def test_solicitud_directa_electricista_en_nunoa(self):
+        resultado = self.consultar_maestro('Necesito un electricista en Ñuñoa')
+        self.assertIn('Andrea Torres', [item['nombre'] for item in resultado['maestros']])
+
+    def test_solicitud_directa_ceramista_en_puente_alto(self):
+        resultado = self.consultar_maestro(
+            'Necesito alguien que instale cerámica en Puente Alto'
+        )
+        self.assertIn('Miguel Castro', [item['nombre'] for item in resultado['maestros']])
+
+    def test_perfiles_pendientes_y_no_disponibles_nunca_aparecen(self):
+        pintores = self.consultar_maestro('Necesito un pintor en Maipú')['maestros']
+        carpinteros = self.consultar_maestro('Necesito un carpintero en Maipú')['maestros']
+        nombres = {item['nombre'] for item in pintores + carpinteros}
+        self.assertNotIn('Fernando Demo', nombres)
+        self.assertNotIn('Mario Demo', nombres)
+
+    def test_si_aislado_no_activa_busqueda_de_maestro(self):
+        resultado = self.consultar_maestro('Sí')
+        self.assertEqual(resultado['tipo'], 'orientacion')
+        self.assertFalse(resultado.get('maestros', []))
+
+    def test_necesitar_una_pintura_no_se_confunde_con_buscar_pintor(self):
+        resultado = self.consultar_maestro(
+            'Necesito una pintura para mi dormitorio',
+            intencion='buscar_producto',
+            consulta_producto='pintura dormitorio',
+        )
+        self.assertNotEqual(resultado['tipo'], 'maestros')
+        self.assertFalse(resultado.get('maestros', []))
+
+    def test_listado_de_especialidad_funciona_sin_comuna(self):
+        resultado = self.consultar_maestro(
+            '¿Qué maestros de pintura están disponibles?'
+        )
+        nombres = {item['nombre'] for item in resultado['maestros']}
+
+        self.assertEqual(resultado['tipo'], 'maestros')
+        self.assertIn('María Soto', nombres)
+        self.assertIn('Jorge Rojas', nombres)
+        self.assertIn('Daniela Silva', nombres)
+        self.assertIn('sin filtrar por comuna', resultado['mensaje'])
+
+    def test_cualquier_comuna_reutiliza_especialidad_del_contexto(self):
+        historial = [
+            {'role': 'user', 'content': 'Necesito un pintor en Quilicura'},
+            {
+                'role': 'assistant',
+                'content': (
+                    'No encontré maestros verificados disponibles para Pintura '
+                    'en Quilicura en este momento.'
+                ),
+            },
+        ]
+        resultado = self.consultar_maestro('De cualquier comuna', historial)
+        nombres = {item['nombre'] for item in resultado['maestros']}
+
+        self.assertEqual(resultado['tipo'], 'maestros')
+        self.assertIn('María Soto', nombres)
+        self.assertIn('Jorge Rojas', nombres)
+
+    def test_respuesta_de_cualquiera_mientras_pregunta_comuna_muestra_todos(self):
+        historial = [
+            {'role': 'user', 'content': 'Necesito maestros pintores'},
+            {'role': 'assistant', 'content': 'Claro. ¿En qué comuna necesitas el trabajo?'},
+        ]
+        resultado = self.consultar_maestro('De cualquiera', historial)
+
+        self.assertEqual(resultado['tipo'], 'maestros')
+        self.assertIn('sin filtrar por comuna', resultado['mensaje'])
+        self.assertIn('María Soto', [item['nombre'] for item in resultado['maestros']])
+
+    def test_muestrame_todos_mientras_pregunta_comuna_muestra_categoria(self):
+        historial = [
+            {'role': 'user', 'content': 'Necesito maestros pintores'},
+            {'role': 'assistant', 'content': 'Claro. ¿En qué comuna necesitas el trabajo?'},
+        ]
+        resultado = self.consultar_maestro('Muéstrame todos', historial)
+
+        self.assertEqual(resultado['tipo'], 'maestros')
+        nombres = {item['nombre'] for item in resultado['maestros']}
+        self.assertTrue({'María Soto', 'Jorge Rojas', 'Daniela Silva'}.issubset(nombres))
+
+    def test_buscar_en_otra_comuna_pregunta_cual(self):
+        historial = [{
+            'role': 'assistant',
+            'content': 'No encontré maestros de Pintura en Quilicura.',
+        }]
+        resultado = self.consultar_maestro('Buscar en otra comuna', historial)
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_maestro')
+        self.assertIn('qué comuna', resultado['mensaje'].lower())
+        self.assertFalse(resultado['maestros'])
+
+    def test_cambio_de_especialidad_conserva_comuna_en_el_mismo_flujo(self):
+        historial = [{
+            'role': 'assistant',
+            'content': 'No encontré maestros de Carpintería en Quilicura.',
+        }]
+        resultado = self.consultar_maestro('¿Y maestros pintores?', historial)
+
+        self.assertEqual(resultado['tipo'], 'sin_resultados_maestros')
+        self.assertIn('Pintura en Quilicura', resultado['mensaje'])
+
+    def test_maestro_generico_con_comuna_pregunta_el_trabajo(self):
+        resultado = self.consultar_maestro(
+            'Necesito un maestro de Quilicura',
+            especialidad_maestro='Carpintería',
+            comuna_maestro='Quilicura',
+        )
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_maestro')
+        self.assertIn('Qué trabajo', resultado['mensaje'])
+        self.assertFalse(resultado['maestros'])
 

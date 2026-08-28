@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-labelledby="t d">
+  <title id="t">Proyecto profesional SFI</title><desc id="d">Ilustración genérica de herramientas para un proyecto de construcción.</desc>
+  <rect width="800" height="500" fill="#edf4f7"/><path d="M0 0h800v84H0z" fill="#0a3452"/><circle cx="70" cy="42" r="18" fill="#ffbd00"/>
+  <path d="M110 42h210" stroke="#fff" stroke-width="12" stroke-linecap="round"/><path d="M80 410h640" stroke="#23865d" stroke-width="18" stroke-linecap="round"/>
+  <path d="M250 318l170-170 55 55-170 170z" fill="#ffbd00" stroke="#0a3452" stroke-width="12"/><path d="M420 148l50-50 56 56-51 49z" fill="#91a9b8" stroke="#0a3452" stroke-width="12"/>
+  <path d="M470 300l95-95 50 50-95 95z" fill="#fff" stroke="#0a3452" stroke-width="12"/><circle cx="507" cy="313" r="20" fill="#23865d"/>
+  <text x="400" y="465" text-anchor="middle" fill="#0a3452" font-family="Arial, sans-serif" font-size="26" font-weight="700">PROYECTO SFI · IMAGEN REFERENCIAL</text>
+</svg>

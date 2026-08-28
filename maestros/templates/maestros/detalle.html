@@ -6,7 +6,7 @@
   <div class="container">
     <a class="master-back" href="{% url 'maestros:lista' %}"><i class="fa-solid fa-arrow-left"></i> Volver a maestros</a>
     <div class="master-profile-summary">
-      <div class="master-profile-photo">{% if perfil.foto %}<img src="{{ perfil.foto.url }}" alt="Foto de {{ perfil.usuario.get_full_name|default:perfil.usuario.username }}">{% else %}<i class="fa-solid fa-user-helmet-safety"></i>{% endif %}</div>
+      <div class="master-profile-photo"><img src="{{ perfil.foto_publica_url }}" alt="Foto de {{ perfil.usuario.get_full_name|default:perfil.usuario.username }}" onerror="this.onerror=null;this.src='{{ perfil.foto_fallback_url }}';"></div>
       <div class="master-profile-copy">
         <span class="master-approved"><i class="fa-solid fa-circle-check"></i> Perfil aprobado por SFI</span>
         <h1>{{ perfil.usuario.get_full_name|default:perfil.usuario.username }}</h1>
@@ -22,7 +22,17 @@
   <div class="container">
     <div class="master-detail-layout">
       <article class="master-about"><span>Presentación</span><h2>Acerca de su trabajo</h2><p>{{ perfil.descripcion_profesional|linebreaksbr }}</p></article>
-      <aside class="master-trust"><i class="fa-solid fa-shield-halved"></i><div><strong>Perfil revisado</strong><p>SFI verificó y aprobó la publicación de este perfil profesional.</p></div></aside>
+      <aside class="master-contact-card">
+        <span>Contacto profesional</span>
+        <h2>Habla con este maestro</h2>
+        <p>Consulta disponibilidad y detalles del trabajo directamente con el profesional.</p>
+        <div class="master-contact-actions">
+          <a href="tel:{{ telefono_contacto }}"><i class="fa-solid fa-phone"></i><span><small>Teléfono</small>{{ telefono_contacto }}</span></a>
+          {% if telefono_whatsapp %}<a class="whatsapp" href="https://wa.me/{{ telefono_whatsapp }}" target="_blank" rel="noopener noreferrer"><i class="fa-brands fa-whatsapp"></i><span><small>WhatsApp</small>Enviar mensaje</span></a>{% endif %}
+          <a href="mailto:{{ perfil.usuario.email }}"><i class="fa-regular fa-envelope"></i><span><small>Correo</small>{{ perfil.usuario.email }}</span></a>
+        </div>
+        <div class="master-contact-note"><i class="fa-solid fa-shield-halved"></i><span>Perfil aprobado por SFI. No compartas claves ni códigos de pago.</span></div>
+      </aside>
     </div>
     <div class="master-section-heading master-portfolio-heading"><span>Portafolio</span><h2>Trabajos realizados</h2></div>
     <div class="master-work-grid">
@@ -31,10 +41,12 @@
           <div class="master-work-carousel" data-work-carousel aria-label="Fotografías de {{ trabajo.titulo }}" tabindex="0">
             {% for imagen in trabajo.imagenes.all %}
               <figure class="master-work-slide{% if forloop.first %} is-active{% endif %}" data-work-slide aria-hidden="{% if forloop.first %}false{% else %}true{% endif %}">
-                <img src="{{ imagen.imagen.url }}" alt="{{ trabajo.titulo }}, fotografía {{ forloop.counter }}" {% if not forloop.first %}loading="lazy"{% endif %}>
+                <img src="{{ imagen.imagen.url }}" alt="{{ trabajo.titulo }}, fotografía {{ forloop.counter }}" onerror="this.onerror=null;this.src='{{ trabajo.imagen_fallback_url }}';" {% if not forloop.first %}loading="lazy"{% endif %}>
               </figure>
             {% empty %}
-              <div class="master-work-cover master-work-placeholder"><i class="fa-solid fa-hammer"></i></div>
+              <figure class="master-work-slide is-active" data-work-slide aria-hidden="false">
+                <img src="{{ trabajo.imagen_fallback_url }}" alt="Imagen ilustrativa de {{ trabajo.titulo }}">
+              </figure>
             {% endfor %}
             {% if trabajo.imagenes.count > 1 %}
               <button class="master-carousel-control previous" type="button" data-work-previous aria-label="Ver fotografía anterior"><i class="fa-solid fa-chevron-left"></i></button>

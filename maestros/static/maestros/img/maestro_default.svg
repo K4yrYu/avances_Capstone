@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" role="img" aria-labelledby="title desc">
+  <title id="title">Avatar genérico de maestro SFI</title>
+  <desc id="desc">Silueta profesional neutra con casco en los colores institucionales de SFI.</desc>
+  <rect width="480" height="480" rx="56" fill="#edf4f7"/>
+  <path d="M0 350h480v130H0z" fill="#0a3452"/>
+  <circle cx="240" cy="196" r="96" fill="#fff" stroke="#0a3452" stroke-width="12"/>
+  <path d="M145 188a95 95 0 0 1 190 0z" fill="#ffbd00"/>
+  <path d="M180 184v-26c0-38 27-69 60-69s60 31 60 69v26" fill="#ffbd00" stroke="#0a3452" stroke-width="10"/>
+  <path d="M132 188h216" stroke="#0a3452" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="240" cy="220" r="58" fill="#dbe8ef"/>
+  <path d="M160 368c10-70 43-106 80-106s70 36 80 106" fill="#23865d" stroke="#0a3452" stroke-width="12"/>
+  <path d="M240 277v91M206 285l34 36 34-36" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="174" y="390" width="132" height="42" rx="21" fill="#ffbd00"/>
+  <text x="240" y="418" text-anchor="middle" fill="#0a3452" font-family="Arial, sans-serif" font-size="22" font-weight="700">MAESTRO SFI</text>
+</svg>

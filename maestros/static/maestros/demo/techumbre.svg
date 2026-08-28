@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-labelledby="t d">
+  <title id="t">Trabajo de techumbre</title><desc id="d">Ilustración SFI de reparación de una cubierta residencial.</desc>
+  <rect width="800" height="500" fill="#e5f0f5"/><path d="M0 0h800v82H0z" fill="#0a3452"/><text x="45" y="53" fill="#fff" font-family="Arial" font-size="28" font-weight="700">TECHUMBRE · SFI DEMO</text>
+  <path d="M145 285L400 120l255 165v145H145z" fill="#fff" stroke="#0a3452" stroke-width="12"/><path d="M115 290L400 100l285 190" fill="none" stroke="#23865d" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M170 263l230-145 230 145M215 275l185-115 185 115M260 285l140-85 140 85" fill="none" stroke="#ffbd00" stroke-width="10"/>
+  <rect x="350" y="300" width="100" height="130" fill="#dcebf2" stroke="#0a3452" stroke-width="9"/>
+  <text x="400" y="475" text-anchor="middle" fill="#0a3452" font-family="Arial" font-size="26" font-weight="700">CUBIERTA PROTEGIDA</text>
+</svg>

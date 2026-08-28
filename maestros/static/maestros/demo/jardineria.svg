@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-labelledby="t d">
+  <title id="t">Trabajo de jardinería</title><desc id="d">Ilustración SFI de recuperación de un jardín residencial.</desc>
+  <rect width="800" height="500" fill="#dff0ea"/><path d="M0 0h800v82H0z" fill="#0a3452"/><text x="45" y="53" fill="#fff" font-family="Arial" font-size="28" font-weight="700">JARDINERÍA · SFI DEMO</text>
+  <circle cx="650" cy="145" r="54" fill="#ffbd00"/><path d="M80 400h640" stroke="#23865d" stroke-width="65" stroke-linecap="round"/>
+  <path d="M400 390V210" stroke="#79502c" stroke-width="24"/><path d="M400 290c-85 0-120-55-115-105 75-5 120 35 115 105zM400 245c80 0 115-52 110-100-70-5-115 33-110 100z" fill="#23865d" stroke="#0a3452" stroke-width="7"/>
+  <path d="M150 390l45-90 45 90M575 390l35-75 35 75" fill="#ffbd00" stroke="#0a3452" stroke-width="8"/>
+  <text x="400" y="475" text-anchor="middle" fill="#0a3452" font-family="Arial" font-size="26" font-weight="700">JARDÍN RESIDENCIAL</text>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-labelledby="t d">
+  <title id="t">Instalación de repisa</title><desc id="d">Ilustración SFI de una repisa mural de madera.</desc>
+  <rect width="800" height="500" fill="#eaf2f6"/><path d="M0 0h800v82H0z" fill="#0a3452"/><text x="45" y="53" fill="#fff" font-family="Arial" font-size="28" font-weight="700">CARPINTERÍA · SFI DEMO</text>
+  <path d="M120 155h560v250H120z" fill="#fff" stroke="#8da8b8" stroke-width="6"/><path d="M190 285h420" stroke="#9b642e" stroke-width="34" stroke-linecap="round"/>
+  <path d="M230 302l-38 70M570 302l38 70" stroke="#0a3452" stroke-width="18" stroke-linecap="round"/>
+  <rect x="250" y="205" width="55" height="74" rx="6" fill="#ffbd00"/><rect x="315" y="225" width="48" height="54" rx="6" fill="#23865d"/><rect x="475" y="215" width="70" height="64" rx="8" fill="#dce8ee" stroke="#0a3452" stroke-width="5"/>
+  <circle cx="210" cy="285" r="8" fill="#ffbd00"/><circle cx="590" cy="285" r="8" fill="#ffbd00"/>
+  <text x="400" y="455" text-anchor="middle" fill="#0a3452" font-family="Arial" font-size="26" font-weight="700">REPISA MURAL</text>
+</svg>

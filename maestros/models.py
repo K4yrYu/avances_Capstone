@@ -5,6 +5,7 @@ from django.db import models
 from django.utils import timezone
 
 from .chile import REGIONES_CHOICES
+from .presentacion import avatar_maestro_url, imagen_proyecto_url
 
 
 MAX_IMAGENES_POR_TRABAJO = 10
@@ -81,6 +82,19 @@ class PerfilMaestro(models.Model):
     def es_publico(self):
         return self.estado == self.Estado.APROBADO
 
+    @property
+    def foto_fallback_url(self):
+        return avatar_maestro_url()
+
+    @property
+    def foto_publica_url(self):
+        if self.foto and self.foto.name:
+            try:
+                return self.foto.url
+            except ValueError:
+                pass
+        return self.foto_fallback_url
+
     def cambiar_estado(self, nuevo_estado):
         estados_admin = {
             self.Estado.APROBADO,
@@ -136,6 +150,21 @@ class TrabajoRealizado(models.Model):
 
     def __str__(self):
         return self.titulo
+
+    @property
+    def imagen_fallback_url(self):
+        nombres = self.especialidades.values_list("nombre", flat=True)
+        return imagen_proyecto_url(nombres, self.titulo)
+
+    @property
+    def portada_publica_url(self):
+        portada = self.imagenes.first()
+        if portada and portada.imagen and portada.imagen.name:
+            try:
+                return portada.imagen.url
+            except ValueError:
+                pass
+        return self.imagen_fallback_url
 
 
 class ImagenTrabajoRealizado(models.Model):

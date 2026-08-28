@@ -3,6 +3,7 @@ import tempfile
 from decimal import Decimal
 
 from django.core import mail
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.models import Sum
 from django.test import TestCase, override_settings
@@ -12,6 +13,38 @@ from usuarios.models import Usuario
 from .models import HistorialPrecio, Producto, Proveedor, SolicitudReposicion
 from .serializers import ProductoSerializer
 from movimientos.models import MovimientoInventario
+
+
+class CatalogoBanoTests(TestCase):
+    SKUS = {
+        'BAN-POR-144', 'BAN-CER-150', 'BAN-ADH-25', 'BAN-FRA-5',
+        'BAN-IMP-4', 'BAN-SEP-100', 'BAN-SIL-300', 'BAN-WC-DD',
+        'BAN-MUE-60', 'BAN-GRI-LV', 'BAN-KIT-LV', 'BAN-DUC-CRO',
+    }
+
+    def test_catalogo_bano_tiene_fichas_tecnicas_e_imagenes_locales(self):
+        productos = list(Producto.objects.filter(sku__in=self.SKUS))
+
+        self.assertEqual(len(productos), len(self.SKUS))
+        for producto in productos:
+            self.assertTrue(producto.informacion_tecnica_verificada)
+            self.assertTrue(producto.especificaciones)
+            self.assertTrue(producto.uso_recomendado)
+            self.assertTrue(producto.imagen.name.startswith('productos/bano/'))
+            self.assertTrue(default_storage.exists(producto.imagen.name))
+            self.assertGreater(producto.precio, 0)
+            self.assertGreater(producto.stock, 0)
+
+    def test_materiales_por_superficie_tienen_rendimiento_verificado(self):
+        materiales = Producto.objects.filter(
+            sku__in={'BAN-POR-144', 'BAN-CER-150', 'BAN-ADH-25', 'BAN-FRA-5', 'BAN-IMP-4'},
+        )
+
+        self.assertEqual(materiales.count(), 5)
+        for producto in materiales:
+            self.assertEqual(producto.tipo_calculo, 'superficie')
+            self.assertEqual(producto.unidad_rendimiento, 'm2_unidad')
+            self.assertGreater(producto.rendimiento, 0)
 
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])

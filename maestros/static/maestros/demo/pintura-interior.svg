@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-labelledby="t d">
+  <title id="t">Pintura interior</title><desc id="d">Ilustración SFI de un muro interior pintado con rodillo.</desc>
+  <rect width="800" height="500" fill="#f5f8fa"/><path d="M0 0h800v82H0z" fill="#0a3452"/><text x="45" y="53" fill="#fff" font-family="Arial" font-size="28" font-weight="700">PINTURA · SFI DEMO</text>
+  <path d="M115 125h570v280H115z" fill="#fff" stroke="#9fb5c2" stroke-width="7"/><path d="M120 130h350v270H120z" fill="#dcebf2"/><rect x="215" y="180" width="150" height="110" fill="#fff" stroke="#0a3452" stroke-width="8"/>
+  <rect x="490" y="165" width="125" height="48" rx="12" fill="#ffbd00" stroke="#0a3452" stroke-width="8"/><path d="M552 214v60h-45v95" fill="none" stroke="#0a3452" stroke-width="14" stroke-linecap="round"/>
+  <rect x="470" y="365" width="80" height="42" rx="8" fill="#23865d"/><path d="M100 420h600" stroke="#0a3452" stroke-width="12"/>
+  <text x="400" y="470" text-anchor="middle" fill="#0a3452" font-family="Arial" font-size="26" font-weight="700">TERMINACIÓN INTERIOR</text>
+</svg>

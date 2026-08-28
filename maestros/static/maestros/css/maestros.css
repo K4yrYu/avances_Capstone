@@ -120,6 +120,19 @@
 .master-trust { display: flex; gap: 1rem; align-items: flex-start; color: #fff; background: var(--master-navy); border-color: var(--master-navy); }
 .master-trust > i { color: var(--master-yellow); font-size: 1.6rem; }
 .master-trust p { color: #d6e5ef; }
+.master-contact-card { padding: 1.7rem; color: #fff; background: var(--master-navy); border: 1px solid #245579; border-radius: 18px; box-shadow: var(--master-shadow); }
+.master-contact-card > span { color: #72d29f; font-size: .7rem; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+.master-contact-card h2 { margin: .3rem 0 .45rem; color: #fff; font-size: 1.45rem; font-weight: 850; }
+.master-contact-card > p { margin: 0 0 1rem; color: #d6e5ef; font-size: .78rem; line-height: 1.55; }
+.master-contact-actions { display: grid; gap: .55rem; }
+.master-contact-actions a { display: grid; grid-template-columns: 38px minmax(0,1fr); gap: .65rem; align-items: center; min-height: 54px; padding: .55rem .7rem; color: var(--master-navy-dark); background: #fff; border: 1px solid #d7e4eb; border-radius: 11px; font-size: .75rem; font-weight: 800; text-decoration: none; overflow-wrap: anywhere; }
+.master-contact-actions a > i { display: grid; width: 36px; height: 36px; color: var(--master-navy); background: #e9f2f6; border-radius: 10px; place-items: center; }
+.master-contact-actions a.whatsapp > i { color: #fff; background: #218b55; }
+.master-contact-actions a span, .master-contact-actions a small { display: block; }
+.master-contact-actions a small { margin-bottom: .1rem; color: #6b8291; font-size: .58rem; font-weight: 750; text-transform: uppercase; }
+.master-contact-actions a:hover, .master-contact-actions a:focus-visible { border-color: var(--master-yellow); box-shadow: 0 0 0 3px rgba(255,188,0,.18); transform: translateY(-1px); }
+.master-contact-note { display: flex; gap: .5rem; align-items: flex-start; margin-top: .85rem; padding-top: .8rem; color: #cfe1ec; border-top: 1px solid rgba(255,255,255,.16); font-size: .65rem; line-height: 1.45; }
+.master-contact-note i { margin-top: .1rem; color: var(--master-yellow); }
 .master-portfolio-heading { margin-top: 3.5rem; }
 .master-work-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.4rem; }
 .master-work-card { min-width: 0; overflow: hidden; background: #fff; border: 1px solid var(--master-border); border-radius: 20px; box-shadow: 0 14px 36px rgba(9,40,64,.08); }

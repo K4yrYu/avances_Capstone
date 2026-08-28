@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-labelledby="t d">
+  <title id="t">Pintura de fachada</title><desc id="d">Ilustración SFI de una fachada residencial renovada.</desc>
+  <rect width="800" height="500" fill="#dfeef5"/><path d="M0 0h800v82H0z" fill="#0a3452"/><text x="45" y="53" fill="#fff" font-family="Arial" font-size="28" font-weight="700">PINTURA EXTERIOR · SFI DEMO</text>
+  <path d="M130 260L400 110l270 150v170H130z" fill="#fff" stroke="#0a3452" stroke-width="12"/><path d="M112 265L400 95l288 170" fill="none" stroke="#ffbd00" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="190" y="285" width="120" height="90" fill="#cbe2ec" stroke="#0a3452" stroke-width="8"/><rect x="475" y="285" width="120" height="90" fill="#cbe2ec" stroke="#0a3452" stroke-width="8"/><rect x="340" y="270" width="120" height="160" fill="#23865d"/>
+  <path d="M70 430h660" stroke="#23865d" stroke-width="18" stroke-linecap="round"/>
+  <text x="400" y="480" text-anchor="middle" fill="#0a3452" font-family="Arial" font-size="26" font-weight="700">FACHADA RENOVADA</text>
+</svg>

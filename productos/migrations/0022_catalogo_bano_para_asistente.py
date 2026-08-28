@@ -1,0 +1,407 @@
+from decimal import Decimal
+
+from django.db import migrations
+
+
+PRODUCTOS_BANO = [
+    {
+        'sku': 'BAN-POR-144',
+        'nombre': 'Porcelanato piso baño gris antideslizante caja 1,44 m²',
+        'descripcion': (
+            'Porcelanato gris para pisos de baño y zonas húmedas. Su terminación '
+            'texturada ayuda a reducir el deslizamiento y la caja cubre 1,44 m².'
+        ),
+        'precio': 18990,
+        'imagen': 'productos/bano/porcelanato-piso-gris-144m2.png',
+        'stock': 60,
+        'stock_minimo': 15,
+        'categoria': 'Construcción',
+        'marca': 'Genérico SFI',
+        'modelo': 'PBG-60',
+        'unidad_venta': 'caja',
+        'contenido': Decimal('1.440'),
+        'unidad_contenido': 'm2',
+        'tipo_calculo': 'superficie',
+        'rendimiento': Decimal('1.440'),
+        'unidad_rendimiento': 'm2_unidad',
+        'porcentaje_desperdicio': Decimal('10.00'),
+        'ambiente_uso': 'interior',
+        'superficies_compatibles': ['hormigon'],
+        'uso_recomendado': 'Pisos interiores de baños residenciales y zonas húmedas.',
+        'especificaciones': {
+            'Proyecto compatible': 'Renovación de baños y pisos en zonas húmedas',
+            'Cobertura por caja': '1,44 m²',
+            'Formato referencial': '60 x 60 cm',
+            'Terminación': 'Mate texturada antideslizante',
+            'Instalación': 'Usar adhesivo compatible, separadores y fragüe impermeable',
+        },
+    },
+    {
+        'sku': 'BAN-CER-150',
+        'nombre': 'Cerámica muro baño blanca brillante caja 1,5 m²',
+        'descripcion': (
+            'Cerámica blanca brillante para revestir muros interiores de baños. '
+            'Su superficie es lavable y cada caja cubre 1,5 m².'
+        ),
+        'precio': 15990,
+        'imagen': 'productos/bano/ceramica-muro-blanca-15m2.png',
+        'stock': 70,
+        'stock_minimo': 18,
+        'categoria': 'Construcción',
+        'marca': 'Genérico SFI',
+        'modelo': 'CMB-30',
+        'color': 'Blanco brillante',
+        'color_hex': '#F7F7F5',
+        'unidad_venta': 'caja',
+        'contenido': Decimal('1.500'),
+        'unidad_contenido': 'm2',
+        'tipo_calculo': 'superficie',
+        'rendimiento': Decimal('1.500'),
+        'unidad_rendimiento': 'm2_unidad',
+        'porcentaje_desperdicio': Decimal('10.00'),
+        'ambiente_uso': 'interior',
+        'superficies_compatibles': ['hormigon', 'yeso_carton', 'fibrocemento'],
+        'uso_recomendado': 'Muros interiores de baños, lavamanos y zonas de ducha preparadas.',
+        'especificaciones': {
+            'Proyecto compatible': 'Renovación de muros de baños',
+            'Cobertura por caja': '1,5 m²',
+            'Formato referencial': '30 x 60 cm',
+            'Terminación': 'Brillante lavable',
+            'Advertencia': 'No usar como pavimento; impermeabilizar previamente las zonas mojadas',
+        },
+    },
+    {
+        'sku': 'BAN-ADH-25',
+        'nombre': 'Adhesivo cerámico zonas húmedas saco 25 kg',
+        'descripcion': (
+            'Mortero adhesivo cementicio para instalar cerámica y porcelanato en pisos '
+            'y muros interiores de baños sobre superficies firmes y preparadas.'
+        ),
+        'precio': 11990,
+        'imagen': 'productos/bano/adhesivo-ceramico-25kg.png',
+        'stock': 80,
+        'stock_minimo': 20,
+        'categoria': 'Adhesivos',
+        'marca': 'Genérico SFI',
+        'modelo': 'ACZH-25',
+        'unidad_venta': 'saco',
+        'contenido': Decimal('25.000'),
+        'unidad_contenido': 'kg',
+        'tipo_calculo': 'superficie',
+        'rendimiento': Decimal('5.000'),
+        'unidad_rendimiento': 'm2_unidad',
+        'porcentaje_desperdicio': Decimal('10.00'),
+        'ambiente_uso': 'interior',
+        'superficies_compatibles': ['hormigon', 'fibrocemento'],
+        'uso_recomendado': 'Instalación de revestimientos cerámicos en pisos y muros interiores.',
+        'especificaciones': {
+            'Proyecto compatible': 'Cerámica y porcelanato en baños',
+            'Contenido': '25 kg',
+            'Cobertura referencial': '5 m² por saco',
+            'Aplicación': 'Llana dentada sobre una base limpia, firme, nivelada e impermeabilizada',
+            'Advertencia': 'La cobertura cambia según el formato, la llana y la regularidad del soporte',
+        },
+    },
+    {
+        'sku': 'BAN-FRA-5',
+        'nombre': 'Fragüe impermeable gris para baño bolsa 5 kg',
+        'descripcion': (
+            'Fragüe cementicio gris con resistencia a la humedad para rellenar juntas '
+            'de cerámicas y porcelanatos en baños interiores.'
+        ),
+        'precio': 8990,
+        'imagen': 'productos/bano/frague-impermeable-gris-5kg.png',
+        'stock': 65,
+        'stock_minimo': 15,
+        'categoria': 'Adhesivos',
+        'marca': 'Genérico SFI',
+        'modelo': 'FIG-5',
+        'color': 'Gris',
+        'color_hex': '#9B9B98',
+        'unidad_venta': 'paquete',
+        'contenido': Decimal('5.000'),
+        'unidad_contenido': 'kg',
+        'tipo_calculo': 'superficie',
+        'rendimiento': Decimal('12.000'),
+        'unidad_rendimiento': 'm2_unidad',
+        'porcentaje_desperdicio': Decimal('10.00'),
+        'ambiente_uso': 'interior',
+        'uso_recomendado': 'Sellado de juntas de revestimientos en pisos y muros de baños.',
+        'especificaciones': {
+            'Proyecto compatible': 'Juntas de cerámica y porcelanato en baños',
+            'Contenido': '5 kg',
+            'Cobertura referencial': '12 m² por bolsa',
+            'Junta referencial': '2 a 5 mm',
+            'Advertencia': 'El consumo real depende del formato, espesor y ancho de junta',
+        },
+    },
+    {
+        'sku': 'BAN-IMP-4',
+        'nombre': 'Membrana impermeable flexible para baño balde 4 kg',
+        'descripcion': (
+            'Membrana flexible para impermeabilizar pisos, encuentros y muros de zonas '
+            'húmedas antes de instalar los revestimientos.'
+        ),
+        'precio': 24990,
+        'imagen': 'productos/bano/membrana-impermeable-4kg.png',
+        'stock': 45,
+        'stock_minimo': 12,
+        'categoria': 'Adhesivos',
+        'marca': 'Genérico SFI',
+        'modelo': 'MIF-4',
+        'unidad_venta': 'envase',
+        'contenido': Decimal('4.000'),
+        'unidad_contenido': 'kg',
+        'tipo_calculo': 'superficie',
+        'rendimiento': Decimal('6.000'),
+        'unidad_rendimiento': 'm2_unidad',
+        'porcentaje_desperdicio': Decimal('10.00'),
+        'ambiente_uso': 'interior',
+        'superficies_compatibles': ['hormigon', 'fibrocemento', 'yeso_carton'],
+        'uso_recomendado': 'Impermeabilización previa de pisos y muros de baños residenciales.',
+        'especificaciones': {
+            'Proyecto compatible': 'Impermeabilización bajo cerámicas en baños',
+            'Contenido': '4 kg',
+            'Cobertura terminada referencial': '6 m² por balde considerando las capas indicadas',
+            'Aplicación': 'Sobre soporte limpio, seco, firme y con encuentros reforzados',
+            'Advertencia': 'Respetar capas y tiempos del fabricante antes de revestir',
+        },
+    },
+    {
+        'sku': 'BAN-SEP-100',
+        'nombre': 'Separadores para cerámica 3 mm pack 100',
+        'descripcion': 'Separadores plásticos de 3 mm para mantener juntas uniformes durante la instalación.',
+        'precio': 2490,
+        'imagen': 'productos/bano/separadores-ceramica-3mm-pack100.png',
+        'stock': 100,
+        'stock_minimo': 25,
+        'categoria': 'Construcción',
+        'marca': 'Genérico SFI',
+        'modelo': 'SEP-3-100',
+        'unidad_venta': 'paquete',
+        'contenido': Decimal('100.000'),
+        'unidad_contenido': 'unidad',
+        'tipo_calculo': 'superficie',
+        'rendimiento': Decimal('10.000'),
+        'unidad_rendimiento': 'm2_unidad',
+        'porcentaje_desperdicio': Decimal('0.00'),
+        'ambiente_uso': 'interior_exterior',
+        'uso_recomendado': 'Alinear revestimientos cerámicos con junta de 3 mm.',
+        'especificaciones': {
+            'Proyecto compatible': 'Instalación de pisos y muros cerámicos',
+            'Contenido': '100 separadores',
+            'Espesor': '3 mm',
+            'Cobertura estimada': 'Hasta 10 m² según el formato de la cerámica',
+        },
+    },
+    {
+        'sku': 'BAN-SIL-300',
+        'nombre': 'Silicona sanitaria antihongos blanca cartucho 300 ml',
+        'descripcion': (
+            'Sellador flexible blanco para encuentros de lavamanos, sanitario, ducha y '
+            'revestimientos expuestos a humedad.'
+        ),
+        'precio': 5990,
+        'imagen': 'productos/bano/silicona-sanitaria-300ml.png',
+        'stock': 90,
+        'stock_minimo': 20,
+        'categoria': 'Adhesivos',
+        'marca': 'Genérico SFI',
+        'modelo': 'SSA-300',
+        'color': 'Blanco',
+        'color_hex': '#FFFFFF',
+        'unidad_venta': 'envase',
+        'contenido': Decimal('300.000'),
+        'unidad_contenido': 'ml',
+        'tipo_calculo': 'longitud',
+        'rendimiento': Decimal('8.000'),
+        'unidad_rendimiento': 'm_unidad',
+        'porcentaje_desperdicio': Decimal('10.00'),
+        'ambiente_uso': 'interior',
+        'uso_recomendado': 'Sellado sanitario flexible en artefactos y encuentros del baño.',
+        'especificaciones': {
+            'Proyecto compatible': 'Sellos de lavamanos, sanitario, ducha y revestimientos',
+            'Contenido': '300 ml',
+            'Rendimiento referencial': '8 metros lineales con cordón medio',
+            'Propiedad': 'Resistente a humedad y formación de hongos',
+            'Advertencia': 'No reemplaza la impermeabilización bajo revestimientos',
+        },
+    },
+    {
+        'sku': 'BAN-WC-DD',
+        'nombre': 'Sanitario dos piezas doble descarga con kit de instalación',
+        'descripcion': (
+            'Sanitario blanco de dos piezas con estanque de doble descarga, asiento y '
+            'elementos básicos de fijación para renovación de baños.'
+        ),
+        'precio': 89990,
+        'imagen': 'productos/bano/sanitario-doble-descarga.png',
+        'stock': 25,
+        'stock_minimo': 6,
+        'categoria': 'Gasfitería',
+        'marca': 'Genérico SFI',
+        'modelo': 'WC-DD-42',
+        'color': 'Blanco',
+        'color_hex': '#F8F8F6',
+        'unidad_venta': 'unidad',
+        'contenido': Decimal('1.000'),
+        'unidad_contenido': 'unidad',
+        'tipo_calculo': 'unidad',
+        'porcentaje_desperdicio': Decimal('0.00'),
+        'ambiente_uso': 'interior',
+        'uso_recomendado': 'Reemplazo de sanitario en baños residenciales con descarga compatible.',
+        'especificaciones': {
+            'Proyecto compatible': 'Renovación de baños',
+            'Tipo': 'Dos piezas con doble descarga',
+            'Incluye': 'Estanque, taza, asiento, fijaciones y sello sanitario',
+            'Salida referencial': 'Descarga al piso; verificar distancia y diámetro existentes',
+            'Advertencia': 'Confirmar compatibilidad de descarga y llave de paso antes de comprar',
+        },
+    },
+    {
+        'sku': 'BAN-MUE-60',
+        'nombre': 'Mueble lavamanos 60 cm con cubierta de loza',
+        'descripcion': (
+            'Mueble compacto de 60 cm con almacenamiento y lavamanos de loza integrado '
+            'para baños residenciales.'
+        ),
+        'precio': 129990,
+        'imagen': 'productos/bano/mueble-lavamanos-60cm.png',
+        'stock': 18,
+        'stock_minimo': 5,
+        'categoria': 'Gasfitería',
+        'marca': 'Genérico SFI',
+        'modelo': 'ML-60-N',
+        'color': 'Madera clara y blanco',
+        'unidad_venta': 'unidad',
+        'contenido': Decimal('1.000'),
+        'unidad_contenido': 'unidad',
+        'tipo_calculo': 'unidad',
+        'porcentaje_desperdicio': Decimal('0.00'),
+        'ambiente_uso': 'interior',
+        'uso_recomendado': 'Lavamanos con almacenamiento para baños residenciales.',
+        'especificaciones': {
+            'Proyecto compatible': 'Renovación de baños',
+            'Ancho': '60 cm',
+            'Incluye': 'Mueble y cubierta de loza con lavamanos integrado',
+            'No incluye': 'Grifería, sifón ni flexibles',
+            'Advertencia': 'Verificar espacio, puntos de agua, desagüe y fijación al muro',
+        },
+    },
+    {
+        'sku': 'BAN-GRI-LV',
+        'nombre': 'Monomando cromado para lavamanos con flexibles',
+        'descripcion': 'Grifería monomando cromada para lavamanos, con dos flexibles de conexión incluidos.',
+        'precio': 39990,
+        'imagen': 'productos/bano/monomando-lavamanos.png',
+        'stock': 35,
+        'stock_minimo': 8,
+        'categoria': 'Gasfitería',
+        'marca': 'Genérico SFI',
+        'modelo': 'MCL-35',
+        'color': 'Cromado',
+        'unidad_venta': 'unidad',
+        'contenido': Decimal('1.000'),
+        'unidad_contenido': 'unidad',
+        'tipo_calculo': 'unidad',
+        'porcentaje_desperdicio': Decimal('0.00'),
+        'ambiente_uso': 'interior',
+        'uso_recomendado': 'Lavamanos con perforación simple compatible.',
+        'especificaciones': {
+            'Proyecto compatible': 'Instalación de lavamanos',
+            'Tipo': 'Monomando para agua fría y caliente',
+            'Incluye': 'Dos flexibles de conexión',
+            'Terminación': 'Cromado',
+            'Advertencia': 'Verificar diámetro de perforación y presión de la red',
+        },
+    },
+    {
+        'sku': 'BAN-KIT-LV',
+        'nombre': 'Kit conexión lavamanos con sifón y desagüe',
+        'descripcion': (
+            'Kit para completar la conexión de un lavamanos: sifón, desagüe, '
+            'flexibles y sellos básicos.'
+        ),
+        'precio': 15990,
+        'imagen': 'productos/bano/kit-conexion-lavamanos.png',
+        'stock': 50,
+        'stock_minimo': 12,
+        'categoria': 'Gasfitería',
+        'marca': 'Genérico SFI',
+        'modelo': 'KCL-32',
+        'unidad_venta': 'juego',
+        'contenido': Decimal('1.000'),
+        'unidad_contenido': 'unidad',
+        'tipo_calculo': 'unidad',
+        'porcentaje_desperdicio': Decimal('0.00'),
+        'ambiente_uso': 'interior',
+        'uso_recomendado': 'Conexión de lavamanos residencial a agua y desagüe.',
+        'especificaciones': {
+            'Proyecto compatible': 'Instalación de lavamanos',
+            'Incluye': 'Sifón, desagüe, dos flexibles y sellos',
+            'Diámetro referencial': 'Desagüe 1 1/4 pulgadas',
+            'Advertencia': 'Comprobar medidas y compatibilidad con la instalación existente',
+        },
+    },
+    {
+        'sku': 'BAN-DUC-CRO',
+        'nombre': 'Kit ducha cromado con monomando y ducha teléfono',
+        'descripcion': (
+            'Conjunto de ducha cromado con monomando, rociador superior, ducha teléfono '
+            'y flexible para renovar una zona de ducha.'
+        ),
+        'precio': 64990,
+        'imagen': 'productos/bano/kit-ducha-cromado.png',
+        'stock': 22,
+        'stock_minimo': 6,
+        'categoria': 'Gasfitería',
+        'marca': 'Genérico SFI',
+        'modelo': 'KDC-80',
+        'color': 'Cromado',
+        'unidad_venta': 'juego',
+        'contenido': Decimal('1.000'),
+        'unidad_contenido': 'unidad',
+        'tipo_calculo': 'unidad',
+        'porcentaje_desperdicio': Decimal('0.00'),
+        'ambiente_uso': 'interior',
+        'uso_recomendado': 'Renovación de ducha residencial con puntos de agua compatibles.',
+        'especificaciones': {
+            'Proyecto compatible': 'Renovación de duchas',
+            'Incluye': 'Monomando, rociador, ducha teléfono, barra y flexible',
+            'Terminación': 'Cromado',
+            'Advertencia': 'Verificar distancia entre conexiones, presión y sellado profesional',
+        },
+    },
+]
+
+
+def cargar_catalogo_bano(apps, schema_editor):
+    Proveedor = apps.get_model('productos', 'Proveedor')
+    Producto = apps.get_model('productos', 'Producto')
+    proveedor, _ = Proveedor.objects.get_or_create(
+        nombre='Proveedor General SFI',
+        defaults={
+            'nombre_contacto': 'Área comercial',
+            'email': 'compras@sfi.local',
+            'telefono': '',
+            'activo': True,
+        },
+    )
+    for datos in PRODUCTOS_BANO:
+        Producto.objects.update_or_create(
+            sku=datos['sku'],
+            defaults={
+                'activo': True,
+                'proveedor': proveedor,
+                'informacion_tecnica_verificada': True,
+                **datos,
+            },
+        )
+
+
+class Migration(migrations.Migration):
+    dependencies = [('productos', '0021_recepcionreposicion_clave_idempotencia')]
+
+    operations = [
+        migrations.RunPython(cargar_catalogo_bano, migrations.RunPython.noop),
+    ]

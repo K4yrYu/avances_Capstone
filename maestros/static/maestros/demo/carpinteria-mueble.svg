@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-labelledby="t d">
+  <title id="t">Mueble a medida</title><desc id="d">Ilustración SFI de un mueble organizador de madera.</desc>
+  <rect width="800" height="500" fill="#eaf2f6"/><path d="M0 0h800v82H0z" fill="#0a3452"/><text x="45" y="53" fill="#fff" font-family="Arial" font-size="28" font-weight="700">CARPINTERÍA · SFI DEMO</text>
+  <rect x="210" y="125" width="380" height="300" rx="12" fill="#bd7c38" stroke="#0a3452" stroke-width="12"/><path d="M400 130v290M215 250h370" stroke="#0a3452" stroke-width="10"/>
+  <rect x="245" y="155" width="120" height="65" rx="7" fill="#ffbd00"/><rect x="435" y="155" width="120" height="65" rx="7" fill="#23865d"/><circle cx="374" cy="335" r="9" fill="#fff"/><circle cx="426" cy="335" r="9" fill="#fff"/>
+  <path d="M245 420v25M555 420v25" stroke="#0a3452" stroke-width="14"/>
+  <text x="400" y="478" text-anchor="middle" fill="#0a3452" font-family="Arial" font-size="26" font-weight="700">MUEBLE ORGANIZADOR</text>
+</svg>

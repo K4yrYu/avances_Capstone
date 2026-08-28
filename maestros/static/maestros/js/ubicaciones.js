@@ -38,6 +38,7 @@
     const mostrar = (url) => {
       if (url) {
         image.src = url;
+        image.dataset.fallbackApplied = String(url === input.dataset.fallbackUrl);
         image.hidden = false;
         placeholder.hidden = true;
       } else {
@@ -47,16 +48,31 @@
       }
     };
 
-    mostrar(input.dataset.currentUrl || "");
+    image.addEventListener("error", () => {
+      if (image.dataset.fallbackApplied === "true") {
+        image.hidden = true;
+        placeholder.hidden = false;
+        return;
+      }
+      mostrar(input.dataset.fallbackUrl || "");
+    });
+
+    mostrar(input.dataset.currentUrl || input.dataset.fallbackUrl || "");
     input.addEventListener("change", () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       const file = input.files?.[0];
       objectUrl = file ? URL.createObjectURL(file) : null;
-      mostrar(objectUrl || input.dataset.currentUrl || "");
+      mostrar(objectUrl || input.dataset.currentUrl || input.dataset.fallbackUrl || "");
     });
 
     const clear = document.getElementById("foto-clear_id");
-    clear?.addEventListener("change", () => mostrar(clear.checked ? "" : input.dataset.currentUrl || ""));
+    clear?.addEventListener("change", () =>
+      mostrar(
+        clear.checked
+          ? input.dataset.fallbackUrl || ""
+          : input.dataset.currentUrl || input.dataset.fallbackUrl || ""
+      )
+    );
   };
 
   const configurarComunasMultiples = () => {
