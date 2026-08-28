@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout
@@ -24,6 +25,7 @@ from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.conf import settings
 from django.db import transaction
+from .services import limpiar_cuentas_no_verificadas
 
 signer = TimestampSigner()
 logger = logging.getLogger(__name__)
@@ -48,13 +50,22 @@ def vista_registro_pendiente(request):
 
 def activar_cuenta(request, token):
     try:
-        email = signer.unsign(token, max_age=60 * 60 * 24)  # 24 horas
-        user = Usuario.objects.get(email=email)
-        if user.email_confirmado:
-            return render(request, 'usuarios/activacion_fallida.html')
-        user.is_active = True
-        user.email_confirmado = True
-        user.save(update_fields=['is_active', 'email_confirmado'])
+        max_age = settings.ACCOUNT_ACTIVATION_HOURS * 60 * 60
+        email = signer.unsign(token, max_age=max_age)
+        with transaction.atomic():
+            user = Usuario.objects.select_for_update().get(email=email)
+            if (
+                user.email_confirmado
+                or not user.activacion_expira_en
+                or user.activacion_expira_en <= timezone.now()
+            ):
+                return render(request, 'usuarios/activacion_fallida.html')
+            user.is_active = True
+            user.email_confirmado = True
+            user.activacion_expira_en = None
+            user.save(update_fields=[
+                'is_active', 'email_confirmado', 'activacion_expira_en',
+            ])
         return render(request, 'usuarios/activacion_exitosa.html')
     except (BadSignature, SignatureExpired, Usuario.DoesNotExist):
         return render(request, 'usuarios/activacion_fallida.html')
@@ -81,6 +92,11 @@ class RegistroAPIView(APIView):
     throttle_scope = 'register'
 
     def post(self, request):
+        limpiar_cuentas_no_verificadas(
+            email=str(request.data.get('email', '')).strip(),
+            rut=str(request.data.get('rut', '')).strip(),
+            username=str(request.data.get('username', '')).strip(),
+        )
         serializer = RegistroUsuarioSerializer(data=request.data)
         if serializer.is_valid():
             try:
@@ -97,18 +113,29 @@ class RegistroAPIView(APIView):
                             'activation_url': activation_url,
                         },
                     )
-                    send_mail(
+                    enviados = send_mail(
                         subject='Confirma tu correo y activa tu cuenta | SFI',
                         message=(
                             f'Hola {user.first_name},\n\n'
                             'Confirma tu correo para activar tu cuenta SFI usando este enlace:\n'
                             f'{activation_url}\n\n'
-                            'El enlace vence en 24 horas. Si no creaste esta cuenta, ignora el mensaje.'
+                            'El enlace vence en 24 horas. Si no activas la cuenta dentro de ese plazo, '
+                            'el registro pendiente será eliminado. Si no creaste esta cuenta, ignora el mensaje.'
                         ),
                         from_email=settings.DEFAULT_FROM_EMAIL,
                         recipient_list=[user.email],
                         html_message=activation_html,
                     )
+                    if enviados != 1:
+                        raise RuntimeError('El servidor de correo no confirmó el envío de activación.')
+                    enviado_en = timezone.now()
+                    user.correo_activacion_enviado_en = enviado_en
+                    user.activacion_expira_en = enviado_en + timedelta(
+                        hours=settings.ACCOUNT_ACTIVATION_HOURS
+                    )
+                    user.save(update_fields=[
+                        'correo_activacion_enviado_en', 'activacion_expira_en',
+                    ])
             except Exception:
                 logger.exception('No se pudo enviar el correo de activación')
                 return Response(
@@ -118,7 +145,7 @@ class RegistroAPIView(APIView):
 
             return Response({
                 'status': 'success',
-                'message': 'Usuario registrado. Revisa tu correo para activarlo.',
+                'message': 'Usuario registrado. Tienes 24 horas para activar la cuenta antes de que sea eliminada.',
                 'redirect_url': '/usuarios/registro/pendiente/'
             }, status=201)
 

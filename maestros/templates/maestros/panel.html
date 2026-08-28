@@ -16,12 +16,39 @@
 <section class="master-section master-private-section">
   <div class="container">
     <div class="master-status-card state-{{ perfil.estado|lower }}">
-      <div><span>Estado del perfil</span><h2>{{ perfil.get_estado_display }}</h2><p>{% if perfil.estado == 'BORRADOR' %}Completa tu información y envíala cuando esté lista.{% elif perfil.estado == 'PENDIENTE' %}SFI está revisando tus antecedentes profesionales.{% elif perfil.estado == 'APROBADO' %}Tu perfil ya está visible para todos los clientes.{% elif perfil.estado == 'RECHAZADO' %}Revisa la observación, corrige tu perfil y vuelve a enviarlo.{% else %}Tu perfil no es público mientras permanezca suspendido.{% endif %}</p>{% if perfil.observacion_admin %}<div class="master-admin-note"><strong>Observación de administración:</strong> {{ perfil.observacion_admin }}</div>{% endif %}</div>
+      <div><span>Estado del perfil</span><h2>{{ perfil.get_estado_display }}</h2><p>{% if perfil.estado == 'BORRADOR' %}Completa tu información y envíala cuando esté lista.{% elif perfil.estado == 'PENDIENTE' %}SFI está revisando tus antecedentes profesionales.{% elif perfil.estado == 'APROBADO' %}Tu perfil ya está visible para todos los clientes.{% elif perfil.estado == 'RECHAZADO' %}Revisa la observación, corrige tu perfil y vuelve a enviarlo.{% else %}Tu perfil no es público mientras permanezca suspendido.{% endif %}</p>{% if perfil.observacion_admin and perfil.estado != 'APROBADO' %}<div class="master-admin-note"><strong>Observación de administración:</strong> {{ perfil.observacion_admin }}</div>{% endif %}</div>
       <div class="master-status-actions">
         {% if perfil.estado != 'PENDIENTE' and perfil.estado != 'SUSPENDIDO' %}<form method="post" action="{% url 'maestros:enviar_revision' %}">{% csrf_token %}<button class="btn-master-primary" type="submit"><i class="fa-solid fa-paper-plane"></i> Enviar a revisión</button></form>{% endif %}
         {% if perfil.estado == 'APROBADO' %}<a class="btn-master-secondary" href="{% url 'maestros:detalle' perfil.id %}">Ver perfil público</a>{% endif %}
+        {% if perfil.apelacion.estado == 'ACEPTADA' %}<div class="master-appeal-sent"><i class="fa-solid fa-circle-check"></i><div><strong>Apelación aceptada</strong><small>{{ perfil.apelacion.observacion_admin }}</small></div></div>{% endif %}
+        {% if perfil.estado == 'SUSPENDIDO' %}
+          {% if perfil.apelacion %}
+            <div class="master-appeal-sent"><i class="fa-solid fa-file-circle-check"></i><div><strong>Apelación {{ perfil.apelacion.get_estado_display|lower }}</strong><small>Enviada el {{ perfil.apelacion.enviada_en|date:'d/m/Y H:i' }}. La apelación única de este perfil ya fue utilizada.{% if perfil.apelacion.observacion_admin %} Resolución: {{ perfil.apelacion.observacion_admin }}{% endif %}</small></div></div>
+          {% else %}
+            <button class="btn-master-primary master-appeal-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#masterAppealForm" aria-expanded="false" aria-controls="masterAppealForm"><i class="fa-solid fa-scale-balanced"></i> Solicitar reactivación</button>
+          {% endif %}
+        {% endif %}
       </div>
+      {% if perfil.estado == 'SUSPENDIDO' and not perfil.apelacion %}
+        <div class="collapse master-appeal-form" id="masterAppealForm">
+          <form method="post" action="{% url 'maestros:solicitar_apelacion' %}">
+            {% csrf_token %}
+            <div class="master-appeal-warning"><i class="fa-solid fa-circle-info"></i><span><strong>Esta apelación solo puede enviarse una vez.</strong> Explica claramente por qué administración debería reactivar tu perfil.</span></div>
+            <label for="id_mensaje">Motivo de la apelación <small>Entre 30 y 2.000 caracteres</small></label>
+            {{ apelacion_form.mensaje }}
+            <button class="btn-master-primary" type="submit"><i class="fa-solid fa-paper-plane"></i> Enviar apelación</button>
+          </form>
+        </div>
+      {% endif %}
     </div>
+    {% if perfil.observaciones.all %}
+      <section class="master-observations-card" aria-labelledby="master-observations-title">
+        <div class="master-observations-heading"><span class="master-icon"><i class="fa-solid fa-clipboard-list"></i></span><div><small>Historial administrativo</small><h2 id="master-observations-title">Observaciones</h2><p>Consulta las decisiones y comentarios asociados a tu perfil profesional.</p></div></div>
+        <div class="master-observations-list">
+          {% for observacion in perfil.observaciones.all %}<article><div><strong>{{ observacion.get_tipo_display }}</strong><time datetime="{{ observacion.creada_en|date:'c' }}">{{ observacion.creada_en|date:'d/m/Y H:i' }}</time></div><p>{{ observacion.texto }}</p></article>{% endfor %}
+        </div>
+      </section>
+    {% endif %}
     <div class="master-dashboard-grid">
       <article class="master-panel-card">
         <div class="master-panel-title"><span class="master-icon"><i class="fa-solid fa-id-card"></i></span><div><small>Perfil profesional</small><h2>{{ perfil.usuario.get_full_name|default:perfil.usuario.username }}</h2></div></div>

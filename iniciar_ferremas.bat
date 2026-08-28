@@ -33,6 +33,15 @@ echo Iniciando FERREMAS en %FERREMAS_URL%
 echo Para detener el servidor, cierra esta ventana o presiona Ctrl+C.
 echo.
 
+echo Limpiando cuentas de clientes no verificadas y vencidas...
+"%FERREMAS_PYTHON%" manage.py limpiar_cuentas_no_verificadas
+if errorlevel 1 (
+    echo.
+    echo No se pudo comprobar la expiracion de cuentas pendientes.
+    pause
+    exit /b 1
+)
+
 start "" powershell.exe -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process '%FERREMAS_URL%'"
 "%FERREMAS_PYTHON%" manage.py runserver 127.0.0.1:8000
 

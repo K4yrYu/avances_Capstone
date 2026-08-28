@@ -76,7 +76,31 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 - Las pruebas del asistente ahora crean sus propios maestros temporales y ya no dependen de datos demostrativos instalados en la base local.
 - `python manage.py check` finalizó correctamente.
 - Se ejecutaron 42 pruebas de `maestros` y 87 pruebas de `asistente`; todas finalizaron correctamente.
+### Expiración de registros públicos sin verificar - 24 de agosto de 2026, 04:38 (UTC-04:00)
 
+#### Agregado
+
+- Las cuentas creadas mediante el registro público disponen de 24 horas para confirmar su correo.
+- Se guarda en la base de datos la fecha y hora de envío del correo y la fecha exacta de expiración.
+- El correo, la pantalla de registro pendiente y la respuesta de la API informan que una cuenta no activada será eliminada al vencer el plazo.
+- Se agregó el comando `python manage.py limpiar_cuentas_no_verificadas` para ejecutar la limpieza manualmente o durante el arranque.
+- `iniciar_ferremas.bat` comprueba y elimina cuentas vencidas antes de iniciar Django.
+- Mientras el sistema está funcionando, la limpieza diaria se activa con el primer acceso desde las 04:00 en la zona horaria `America/Santiago`.
+- Antes de un nuevo registro se libera cualquier correo, RUT o nombre de usuario perteneciente a una cuenta pública ya vencida.
+
+#### Seguridad y compatibilidad
+
+- La limpieza exige simultáneamente que la cuenta siga inactiva, no tenga el correo confirmado y posea una expiración vencida.
+- Al confirmar el correo se elimina la fecha de expiración, impidiendo que una cuenta activada pueda ser borrada por este proceso.
+- Las cuentas creadas por administración, administradores y cuentas verificadas quedan fuera de la limpieza.
+- Las cuentas pendientes anteriores reciben una expiración compatible basada en su fecha original de registro.
+- La activación y la limpieza utilizan comprobaciones persistentes para continuar funcionando después de apagar y volver a iniciar el sistema.
+
+#### Verificación
+
+- Se comprobó la configuración de 24 horas y las 04:00 bajo la hora oficial de Chile.
+- Las 9 pruebas específicas de seguridad de usuarios finalizaron correctamente.
+- La batería completa alcanzó 119 pruebas aprobadas sin errores.
 ### Módulo Movimientos y Reposición 2.0 - 24 de agosto de 2026, 04:07 (UTC-04:00)
 
 #### Reposición y recepción

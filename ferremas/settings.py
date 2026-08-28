@@ -53,11 +53,15 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',  # Middleware de sesiones
     'corsheaders.middleware.CorsMiddleware',  # Para que no bloquee peticiones API
     'django.middleware.common.CommonMiddleware',  # Middleware de funcionalidades comunes
+    'usuarios.middleware.LimpiezaCuentasPendientesMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',  # Middleware de protección CSRF
     'django.contrib.auth.middleware.AuthenticationMiddleware',  # Middleware de autenticación
     'django.contrib.messages.middleware.MessageMiddleware',  # Middleware de mensajes
     'django.middleware.clickjacking.XFrameOptionsMiddleware',  # Middleware de protección contra clickjacking
 ]
+
+ACCOUNT_ACTIVATION_HOURS = int(os.getenv('ACCOUNT_ACTIVATION_HOURS', '24'))
+ACCOUNT_CLEANUP_HOUR = int(os.getenv('ACCOUNT_CLEANUP_HOUR', '4'))
 
 # Configuración CORS (permite solicitudes desde otros dominios)
 CORS_ALLOWED_ORIGINS = [

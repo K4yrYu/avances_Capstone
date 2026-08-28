@@ -8,8 +8,15 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from .chile import COMUNA_REGION, COMUNAS_CHOICES, REGIONES_CHOICES
-from .forms import EspecialidadForm, PerfilMaestroForm, TrabajoRealizadoForm
-from .models import Especialidad, ImagenTrabajoRealizado, PerfilMaestro, TrabajoRealizado
+from .forms import ApelacionMaestroForm, EspecialidadForm, PerfilMaestroForm, TrabajoRealizadoForm
+from .models import (
+    ApelacionMaestro,
+    Especialidad,
+    ImagenTrabajoRealizado,
+    ObservacionMaestro,
+    PerfilMaestro,
+    TrabajoRealizado,
+)
 
 
 def _puede_ser_maestro(user):
@@ -26,6 +33,16 @@ def _perfil_del_usuario(request):
 def _exigir_admin(request):
     if not request.user.is_authenticated or not request.user.is_staff:
         raise PermissionDenied
+
+
+def _registrar_observacion(perfil, tipo, texto, administrador):
+    if texto:
+        ObservacionMaestro.objects.create(
+            perfil=perfil,
+            tipo=tipo,
+            texto=texto,
+            registrada_por=administrador,
+        )
 
 
 def trabaja_con_nosotros(request):
@@ -59,11 +76,24 @@ def crear_perfil(request):
 
 @login_required
 def panel_maestro(request):
-    perfil = PerfilMaestro.objects.filter(usuario=request.user).prefetch_related("especialidades").first()
+    perfil = (
+        PerfilMaestro.objects.filter(usuario=request.user)
+        .select_related("apelacion")
+        .prefetch_related("especialidades", "observaciones__registrada_por")
+        .first()
+    )
     if perfil is None:
         return redirect("maestros:trabaja_con_nosotros")
     trabajos = perfil.trabajos.prefetch_related("especialidades", "imagenes")
-    return render(request, "maestros/panel.html", {"perfil": perfil, "trabajos": trabajos})
+    return render(
+        request,
+        "maestros/panel.html",
+        {
+            "perfil": perfil,
+            "trabajos": trabajos,
+            "apelacion_form": ApelacionMaestroForm(),
+        },
+    )
 
 
 @login_required
@@ -108,6 +138,34 @@ def enviar_revision(request):
     perfil.fecha_aprobacion = None
     perfil.save(update_fields=["estado", "observacion_admin", "fecha_aprobacion", "actualizado_en"])
     messages.success(request, "Tu perfil fue enviado a revisión.")
+    return redirect("maestros:panel")
+
+
+@require_POST
+@login_required
+@transaction.atomic
+def solicitar_apelacion(request):
+    perfil = get_object_or_404(
+        PerfilMaestro.objects.select_for_update(),
+        usuario=request.user,
+    )
+    if perfil.estado != PerfilMaestro.Estado.SUSPENDIDO:
+        messages.error(request, "Solo puedes apelar cuando tu perfil está suspendido.")
+        return redirect("maestros:panel")
+    if ApelacionMaestro.objects.filter(perfil=perfil).exists():
+        messages.error(request, "Este perfil ya utilizó su única apelación.")
+        return redirect("maestros:panel")
+
+    form = ApelacionMaestroForm(request.POST)
+    if not form.is_valid():
+        detalle = " ".join(error for errores in form.errors.values() for error in errores)
+        messages.error(request, detalle or "Revisa el motivo de la apelación.")
+        return redirect("maestros:panel")
+
+    apelacion = form.save(commit=False)
+    apelacion.perfil = perfil
+    apelacion.save()
+    messages.success(request, "Tu apelación fue enviada y quedó pendiente de revisión.")
     return redirect("maestros:panel")
 
 
@@ -248,7 +306,10 @@ def detalle_maestro(request, pk):
 def revision_maestros(request):
     _exigir_admin(request)
     estado = request.GET.get("estado", "").strip().upper()
-    perfiles_base = PerfilMaestro.objects.select_related("usuario").prefetch_related("especialidades")
+    perfiles_base = PerfilMaestro.objects.select_related("usuario", "apelacion").prefetch_related(
+        "especialidades",
+        "observaciones__registrada_por",
+    )
     conteos = {
         "total": perfiles_base.count(),
         "pendientes": perfiles_base.filter(estado=PerfilMaestro.Estado.PENDIENTE).count(),
@@ -273,12 +334,55 @@ def revision_maestros(request):
 
 @require_POST
 @login_required
+@transaction.atomic
 def cambiar_estado_maestro(request, pk):
     _exigir_admin(request)
-    perfil = get_object_or_404(PerfilMaestro, pk=pk)
+    perfil = get_object_or_404(PerfilMaestro.objects.select_for_update(), pk=pk)
     if perfil.usuario_id == request.user.id:
         raise PermissionDenied("No puedes revisar tu propio perfil profesional.")
     nuevo_estado = request.POST.get("estado", "").upper()
+    if nuevo_estado in {"REACTIVAR", "RECHAZAR_APELACION"}:
+        if perfil.estado != PerfilMaestro.Estado.SUSPENDIDO:
+            messages.error(request, "Esta acción solo está disponible para perfiles suspendidos.")
+            return redirect("maestros:admin_revision")
+        observacion = request.POST.get("observacion_admin", "").strip()
+        if len(observacion) < 10:
+            messages.error(
+                request,
+                "Debes escribir una observación de al menos 10 caracteres para resolver la apelación o reactivar el perfil.",
+            )
+            return redirect("maestros:admin_revision")
+        apelacion = ApelacionMaestro.objects.filter(
+            perfil=perfil,
+            estado=ApelacionMaestro.Estado.PENDIENTE,
+        ).first()
+        if nuevo_estado == "RECHAZAR_APELACION":
+            if apelacion is None:
+                messages.error(request, "Este perfil no tiene una apelación pendiente.")
+                return redirect("maestros:admin_revision")
+            apelacion.resolver(ApelacionMaestro.Estado.RECHAZADA, request.user, observacion)
+            _registrar_observacion(
+                perfil,
+                ObservacionMaestro.Tipo.APELACION_RECHAZADA,
+                observacion,
+                request.user,
+            )
+            messages.success(request, "La apelación fue rechazada y el perfil continúa suspendido.")
+            return redirect("maestros:admin_revision")
+
+        perfil.cambiar_estado(PerfilMaestro.Estado.APROBADO)
+        if apelacion is not None:
+            apelacion.resolver(ApelacionMaestro.Estado.ACEPTADA, request.user, observacion)
+        _registrar_observacion(
+            perfil,
+            ObservacionMaestro.Tipo.REACTIVACION,
+            observacion,
+            request.user,
+        )
+        perfil.observacion_admin = ""
+        perfil.save(update_fields=["observacion_admin", "actualizado_en"])
+        messages.success(request, "El perfil fue reactivado y vuelve a estar visible públicamente.")
+        return redirect("maestros:admin_revision")
     if nuevo_estado not in {
         PerfilMaestro.Estado.APROBADO,
         PerfilMaestro.Estado.RECHAZADO,
@@ -314,6 +418,17 @@ def cambiar_estado_maestro(request, pk):
     perfil.observacion_admin = observacion
     perfil.save(update_fields=["observacion_admin", "actualizado_en"])
     perfil.cambiar_estado(nuevo_estado)
+    tipos_observacion = {
+        PerfilMaestro.Estado.APROBADO: ObservacionMaestro.Tipo.APROBACION,
+        PerfilMaestro.Estado.RECHAZADO: ObservacionMaestro.Tipo.RECHAZO,
+        PerfilMaestro.Estado.SUSPENDIDO: ObservacionMaestro.Tipo.SUSPENSION,
+    }
+    _registrar_observacion(
+        perfil,
+        tipos_observacion[nuevo_estado],
+        observacion,
+        request.user,
+    )
     messages.success(request, f"El perfil quedó {perfil.get_estado_display().lower()}.")
     return redirect("maestros:admin_revision")
 

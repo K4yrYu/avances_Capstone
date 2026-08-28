@@ -159,7 +159,7 @@
 .master-thumbs img { width: 72px; height: 55px; object-fit: cover; border-radius: 8px; }
 .master-dashboard-heading { display: flex; align-items: center; justify-content: space-between; gap: 2rem; }
 .master-private-section { padding-top: 2.5rem; }
-.master-status-card { display: flex; align-items: center; justify-content: space-between; gap: 2rem; padding: 1.5rem; margin-bottom: 1.2rem; background: #fff; border: 1px solid var(--master-border); border-left: 5px solid #8da4b5; border-radius: 16px; box-shadow: var(--master-shadow); }
+.master-status-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2rem; padding: 1.5rem; margin-bottom: 1.2rem; background: #fff; border: 1px solid var(--master-border); border-left: 5px solid #8da4b5; border-radius: 16px; box-shadow: var(--master-shadow); }
 .master-status-card.state-pendiente { border-left-color: var(--master-yellow); }
 .master-status-card.state-aprobado { border-left-color: var(--master-green); }
 .master-status-card.state-rechazado, .master-status-card.state-suspendido { border-left-color: #b64250; }
@@ -168,6 +168,32 @@
 .master-status-card p { margin: 0; color: var(--master-muted); }
 .master-admin-note { margin-top: .75rem; padding: .7rem; background: #fff3d1; border-radius: 8px; }
 .master-status-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.master-appeal-toggle { min-width: 235px; }
+.master-appeal-form { flex: 0 0 100%; }
+.master-appeal-form form { display: grid; gap: .75rem; padding-top: 1.2rem; border-top: 1px solid var(--master-border); }
+.master-appeal-form label { display: flex; justify-content: space-between; gap: 1rem; color: var(--master-navy-dark); font-size: .82rem; font-weight: 800; }
+.master-appeal-form label small { color: var(--master-muted); font-weight: 600; }
+.master-appeal-form textarea { min-height: 130px; resize: vertical; }
+.master-appeal-form .btn-master-primary { justify-self: end; }
+.master-appeal-warning { display: flex; gap: .7rem; align-items: flex-start; padding: .8rem 1rem; color: #664d00; background: #fff1bd; border: 1px solid #f0cf59; border-radius: 10px; }
+.master-appeal-warning i { margin-top: .15rem; }
+.master-appeal-warning span, .master-appeal-warning strong { display: block; color: inherit; font-size: .78rem; letter-spacing: normal; text-transform: none; }
+.master-appeal-sent { display: flex; max-width: 390px; gap: .75rem; align-items: center; padding: .8rem 1rem; color: var(--master-navy); background: #e8f2f7; border: 1px solid var(--master-border); border-radius: 11px; }
+.master-appeal-sent > i { font-size: 1.35rem; }
+.master-appeal-sent strong, .master-appeal-sent small { display: block; color: inherit; letter-spacing: normal; text-transform: none; }
+.master-appeal-sent strong { font-size: .82rem; }
+.master-appeal-sent small { margin-top: .15rem; color: var(--master-muted); font-size: .68rem; line-height: 1.4; }
+.master-observations-card { padding: 1.25rem; margin-bottom: 1.2rem; background: #fff; border: 1px solid var(--master-border); border-radius: 16px; box-shadow: var(--master-shadow); }
+.master-observations-heading { display: flex; gap: .8rem; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid var(--master-border); }
+.master-observations-heading small { color: var(--master-green); font-size: .68rem; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.master-observations-heading h2 { margin: .1rem 0; color: var(--master-navy-dark); font-size: 1.25rem; font-weight: 850; }
+.master-observations-heading p { margin: 0; color: var(--master-muted); font-size: .78rem; }
+.master-observations-list { display: grid; gap: .65rem; padding-top: 1rem; }
+.master-observations-list article { padding: .8rem 1rem; background: var(--master-bg); border-left: 3px solid var(--master-blue); border-radius: 9px; }
+.master-observations-list article > div { display: flex; justify-content: space-between; gap: 1rem; }
+.master-observations-list strong { color: var(--master-navy-dark); font-size: .8rem; }
+.master-observations-list time { color: var(--master-muted); font-size: .68rem; }
+.master-observations-list p { margin: .35rem 0 0; color: var(--master-muted); font-size: .8rem; line-height: 1.5; }
 .master-dashboard-grid { grid-template-columns: repeat(2, 1fr); }
 .master-panel-title { display: flex; gap: .8rem; align-items: center; margin-bottom: 1rem; }
 .master-panel-title h2 { margin: .15rem 0 0; color: var(--master-navy-dark); font-size: 1.25rem; font-weight: 850; }
@@ -299,6 +325,19 @@
 .master-review-person small, .master-review-data > span, .master-review-description > span { color: var(--master-muted); font-size: .67rem; font-weight: 750; text-transform: uppercase; }
 .master-review-person h3 { margin: .1rem 0; color: var(--master-navy-dark); font-size: .92rem; font-weight: 800; }
 .master-review-person p, .master-review-description p { margin: 0; color: var(--master-muted); font-size: .75rem; }
+.master-admin-appeal { display: grid; gap: .3rem; padding: .7rem; margin-top: .65rem; color: var(--master-navy-dark); background: #fff8dd; border-left: 3px solid var(--master-yellow); border-radius: 8px; }
+.master-admin-appeal strong { font-size: .75rem; }
+.master-admin-appeal p { color: var(--master-navy-dark); line-height: 1.45; }
+.master-admin-appeal small { display: block; color: var(--master-muted); font-size: .67rem; }
+.master-admin-appeal.state-aceptada { background: #e3f4ea; border-left-color: var(--master-green); }
+.master-admin-appeal.state-rechazada { background: #f9e5e8; border-left-color: #aa3948; }
+.master-admin-observations { margin-top: .65rem; color: var(--master-navy-dark); font-size: .72rem; }
+.master-admin-observations summary { cursor: pointer; font-weight: 800; }
+.master-admin-observations > div { padding: .6rem 0; border-bottom: 1px solid var(--master-border); }
+.master-admin-observations > div:last-child { border-bottom: 0; }
+.master-admin-observations strong, .master-admin-observations small { display: block; }
+.master-admin-observations small { color: var(--master-muted); font-size: .65rem; }
+.master-admin-observations p { margin-top: .25rem; color: var(--master-navy-dark); line-height: 1.45; }
 .master-review-data b { display: block; font-size: .82rem; }
 .master-review-actions { display: flex; gap: .4rem; align-items: center; }
 .master-state { padding: .35rem .55rem; color: #465d6e; background: #e8eef2; border-radius: 99px; font-size: .67rem; font-weight: 800; }

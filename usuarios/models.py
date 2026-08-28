@@ -31,6 +31,8 @@ class Usuario(AbstractUser):
     )
 
     email_confirmado = models.BooleanField(default=False)  # 👈 Campo nuevo para verificación de correo
+    correo_activacion_enviado_en = models.DateTimeField(null=True, blank=True)
+    activacion_expira_en = models.DateTimeField(null=True, blank=True)
     
     # Campos requeridos
     REQUIRED_FIELDS = ['rut', 'email', 'telefono']

@@ -48,6 +48,7 @@ urlpatterns = [
     path("maestros/perfil/crear/", views.crear_perfil, name="crear_perfil"),
     path("maestros/perfil/editar/", views.editar_perfil, name="editar_perfil"),
     path("maestros/perfil/enviar-revision/", views.enviar_revision, name="enviar_revision"),
+    path("maestros/perfil/apelar/", views.solicitar_apelacion, name="solicitar_apelacion"),
     path("maestros/trabajos/", views.gestion_trabajos, name="trabajos"),
     path("maestros/trabajos/nuevo/", views.crear_trabajo, name="crear_trabajo"),
     path("maestros/trabajos/<int:pk>/editar/", views.editar_trabajo, name="editar_trabajo"),

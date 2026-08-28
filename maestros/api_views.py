@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import ImagenTrabajoRealizado, PerfilMaestro, TrabajoRealizado
+from .models import ImagenTrabajoRealizado, ObservacionMaestro, PerfilMaestro, TrabajoRealizado
 from .permissions import IsActiveVerifiedUser
 from .serializers import (
     CambioEstadoMaestroSerializer,
@@ -194,7 +194,20 @@ class EstadoMaestroAdminAPIView(APIView):
             "observacion_admin", perfil.observacion_admin
         ).strip()
         perfil.save(update_fields=["observacion_admin", "actualizado_en"])
-        perfil.cambiar_estado(serializer.validated_data["estado"])
+        nuevo_estado = serializer.validated_data["estado"]
+        perfil.cambiar_estado(nuevo_estado)
+        if perfil.observacion_admin:
+            tipos = {
+                PerfilMaestro.Estado.APROBADO: ObservacionMaestro.Tipo.APROBACION,
+                PerfilMaestro.Estado.RECHAZADO: ObservacionMaestro.Tipo.RECHAZO,
+                PerfilMaestro.Estado.SUSPENDIDO: ObservacionMaestro.Tipo.SUSPENSION,
+            }
+            ObservacionMaestro.objects.create(
+                perfil=perfil,
+                tipo=tipos[nuevo_estado],
+                texto=perfil.observacion_admin,
+                registrada_por=request.user,
+            )
         return Response(PerfilMaestroSerializer(perfil, context={"request": request}).data)
 
 

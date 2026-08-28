@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator
+from django.core.validators import MaxValueValidator, MinLengthValidator
 from django.db import models
 from django.utils import timezone
 
@@ -123,6 +123,99 @@ class PerfilMaestro(models.Model):
             ]
         )
         return True
+
+
+class ApelacionMaestro(models.Model):
+    class Estado(models.TextChoices):
+        PENDIENTE = "PENDIENTE", "Pendiente"
+        ACEPTADA = "ACEPTADA", "Aceptada"
+        RECHAZADA = "RECHAZADA", "Rechazada"
+
+    perfil = models.OneToOneField(
+        PerfilMaestro,
+        on_delete=models.CASCADE,
+        related_name="apelacion",
+    )
+    mensaje = models.TextField(
+        max_length=2000,
+        validators=[MinLengthValidator(30)],
+    )
+    estado = models.CharField(
+        max_length=10,
+        choices=Estado.choices,
+        default=Estado.PENDIENTE,
+        db_index=True,
+    )
+    enviada_en = models.DateTimeField(auto_now_add=True)
+    resuelta_en = models.DateTimeField(blank=True, null=True)
+    revisada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="apelaciones_maestro_revisadas",
+    )
+    observacion_admin = models.TextField(blank=True, max_length=2000)
+
+    class Meta:
+        ordering = ("-enviada_en",)
+        verbose_name = "Apelación de maestro"
+        verbose_name_plural = "Apelaciones de maestros"
+
+    def __str__(self):
+        return f"Apelación de {self.perfil.usuario.username} - {self.get_estado_display()}"
+
+    def resolver(self, estado, administrador, observacion):
+        if self.estado != self.Estado.PENDIENTE:
+            raise ValueError("La apelación ya fue resuelta.")
+        if estado not in {self.Estado.ACEPTADA, self.Estado.RECHAZADA}:
+            raise ValueError("La resolución de la apelación no es válida.")
+        self.estado = estado
+        self.revisada_por = administrador
+        self.observacion_admin = observacion
+        self.resuelta_en = timezone.now()
+        self.save(
+            update_fields=[
+                "estado",
+                "revisada_por",
+                "observacion_admin",
+                "resuelta_en",
+            ]
+        )
+
+
+class ObservacionMaestro(models.Model):
+    class Tipo(models.TextChoices):
+        HISTORICA = "HISTORICA", "Observación anterior"
+        APROBACION = "APROBACION", "Aprobación"
+        RECHAZO = "RECHAZO", "Rechazo"
+        SUSPENSION = "SUSPENSION", "Suspensión"
+        REACTIVACION = "REACTIVACION", "Reactivación"
+        APELACION_RECHAZADA = "APELACION_RECHAZADA", "Apelación rechazada"
+
+    perfil = models.ForeignKey(
+        PerfilMaestro,
+        on_delete=models.CASCADE,
+        related_name="observaciones",
+    )
+    tipo = models.CharField(max_length=20, choices=Tipo.choices)
+    texto = models.TextField(max_length=2000, validators=[MinLengthValidator(10)])
+    registrada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="observaciones_maestro_registradas",
+    )
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-creada_en", "-id")
+        verbose_name = "Observación de maestro"
+        verbose_name_plural = "Observaciones de maestros"
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} - {self.perfil.usuario.username}"
 
 
 class TrabajoRealizado(models.Model):

@@ -4,11 +4,36 @@ from django.utils import timezone
 from .chile import COMUNA_REGION, COMUNAS_CHOICES, comunas_de_region
 from .models import (
     MAX_IMAGENES_POR_TRABAJO,
+    ApelacionMaestro,
     Especialidad,
     PerfilMaestro,
     TrabajoRealizado,
 )
 from .presentacion import avatar_maestro_url
+
+
+class ApelacionMaestroForm(forms.ModelForm):
+    class Meta:
+        model = ApelacionMaestro
+        fields = ("mensaje",)
+        widgets = {
+            "mensaje": forms.Textarea(
+                attrs={
+                    "rows": 5,
+                    "minlength": 30,
+                    "maxlength": 2000,
+                    "placeholder": "Explica por qué consideras que tu perfil debería ser reactivado.",
+                    "class": "form-control",
+                }
+            )
+        }
+        labels = {"mensaje": "Motivo de la apelación"}
+
+    def clean_mensaje(self):
+        mensaje = self.cleaned_data["mensaje"].strip()
+        if len(mensaje) < 30:
+            raise forms.ValidationError("La apelación debe tener al menos 30 caracteres.")
+        return mensaje
 
 
 class MultipleFileInput(forms.ClearableFileInput):

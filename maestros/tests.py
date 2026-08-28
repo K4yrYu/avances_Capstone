@@ -12,8 +12,10 @@ from django.utils import timezone
 
 from .models import (
     MAX_IMAGENES_POR_TRABAJO,
+    ApelacionMaestro,
     Especialidad,
     ImagenTrabajoRealizado,
+    ObservacionMaestro,
     PerfilMaestro,
     TrabajoRealizado,
 )
@@ -124,6 +126,9 @@ class MaestrosFaseUnoTests(TestCase):
         perfil.refresh_from_db()
         self.assertEqual(perfil.estado, PerfilMaestro.Estado.APROBADO)
         self.assertIsNotNone(perfil.fecha_aprobacion)
+        self.assertTrue(
+            perfil.observaciones.filter(tipo=ObservacionMaestro.Tipo.APROBACION).exists()
+        )
 
     def test_maestro_solo_edita_su_perfil_y_trabajos(self):
         propietario = self.crear_usuario("propietario")
@@ -266,6 +271,100 @@ class MaestrosFaseUnoTests(TestCase):
         self.assertRedirects(respuesta_valida, reverse("maestros:trabajos"))
         trabajo = TrabajoRealizado.objects.get(titulo="Instalación y terminaciones")
         self.assertEqual(trabajo.especialidades.count(), 2)
+
+    def test_maestro_suspendido_puede_enviar_una_unica_apelacion(self):
+        usuario = self.crear_usuario("maestro_apelante")
+        perfil = self.crear_perfil(usuario, PerfilMaestro.Estado.SUSPENDIDO)
+        self.client.force_login(usuario)
+        url = reverse("maestros:solicitar_apelacion")
+        mensaje = "Solicito revisar nuevamente mi suspensión porque corregí la situación informada."
+
+        respuesta = self.client.post(url, {"mensaje": mensaje})
+
+        self.assertRedirects(respuesta, reverse("maestros:panel"))
+        apelacion = ApelacionMaestro.objects.get(perfil=perfil)
+        self.assertEqual(apelacion.mensaje, mensaje)
+        self.assertEqual(apelacion.estado, ApelacionMaestro.Estado.PENDIENTE)
+
+        self.client.post(url, {"mensaje": "Intento duplicado con suficientes caracteres para validar."})
+        self.assertEqual(ApelacionMaestro.objects.filter(perfil=perfil).count(), 1)
+
+    def test_perfil_no_suspendido_no_puede_apelar(self):
+        usuario = self.crear_usuario("maestro_no_suspendido")
+        perfil = self.crear_perfil(usuario, PerfilMaestro.Estado.APROBADO)
+        self.client.force_login(usuario)
+
+        self.client.post(
+            reverse("maestros:solicitar_apelacion"),
+            {"mensaje": "Este perfil no está suspendido y no debería crear una apelación."},
+        )
+
+        self.assertFalse(ApelacionMaestro.objects.filter(perfil=perfil).exists())
+
+    def test_reactivar_exige_observacion_y_restaura_visibilidad_publica(self):
+        usuario = self.crear_usuario("maestro_reactivable")
+        perfil = self.crear_perfil(usuario, PerfilMaestro.Estado.SUSPENDIDO)
+        apelacion = ApelacionMaestro.objects.create(
+            perfil=perfil,
+            mensaje="Solicito una nueva revisión porque solucioné los antecedentes de la suspensión.",
+        )
+        admin = self.crear_usuario("admin_reactivacion", staff=True)
+        self.client.force_login(admin)
+        url = reverse("maestros:admin_estado", args=[perfil.id])
+
+        self.client.post(url, {"estado": "REACTIVAR", "observacion_admin": "Corto"})
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.SUSPENDIDO)
+
+        self.client.post(
+            url,
+            {
+                "estado": "REACTIVAR",
+                "observacion_admin": "Antecedentes revisados; corresponde reactivar el perfil.",
+            },
+        )
+        perfil.refresh_from_db()
+        apelacion.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.APROBADO)
+        self.assertEqual(perfil.observacion_admin, "")
+        self.assertEqual(apelacion.estado, ApelacionMaestro.Estado.ACEPTADA)
+        self.assertEqual(apelacion.revisada_por, admin)
+        observacion = perfil.observaciones.get(tipo=ObservacionMaestro.Tipo.REACTIVACION)
+        self.assertEqual(observacion.registrada_por, admin)
+        self.client.force_login(usuario)
+        self.assertContains(self.client.get(reverse("maestros:panel")), "Observaciones")
+        self.assertEqual(
+            self.client.get(reverse("maestros:detalle", args=[perfil.id])).status_code,
+            200,
+        )
+
+    def test_rechazar_apelacion_mantiene_perfil_suspendido(self):
+        usuario = self.crear_usuario("maestro_apelacion_rechazada")
+        perfil = self.crear_perfil(usuario, PerfilMaestro.Estado.SUSPENDIDO)
+        apelacion = ApelacionMaestro.objects.create(
+            perfil=perfil,
+            mensaje="Solicito reactivar el perfil y revisar nuevamente todos mis antecedentes.",
+        )
+        admin = self.crear_usuario("admin_rechaza_apelacion", staff=True)
+        self.client.force_login(admin)
+
+        self.client.post(
+            reverse("maestros:admin_estado", args=[perfil.id]),
+            {
+                "estado": "RECHAZAR_APELACION",
+                "observacion_admin": "Los antecedentes presentados todavía no permiten reactivar el perfil.",
+            },
+        )
+
+        perfil.refresh_from_db()
+        apelacion.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.SUSPENDIDO)
+        self.assertEqual(apelacion.estado, ApelacionMaestro.Estado.RECHAZADA)
+        self.assertTrue(
+            perfil.observaciones.filter(
+                tipo=ObservacionMaestro.Tipo.APELACION_RECHAZADA
+            ).exists()
+        )
 
 
 @override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
@@ -477,6 +576,9 @@ class MaestrosAPITests(TestCase):
         self.assertRedirects(respuesta, reverse("maestros:admin_revision"))
         perfil.refresh_from_db()
         self.assertEqual(perfil.estado, PerfilMaestro.Estado.SUSPENDIDO)
+        self.assertTrue(
+            perfil.observaciones.filter(tipo=ObservacionMaestro.Tipo.SUSPENSION).exists()
+        )
 
     def test_api_tambien_bloquea_rechazo_sin_observacion_suficiente(self):
         postulante = self.crear_usuario("api_rechazo_vacio")

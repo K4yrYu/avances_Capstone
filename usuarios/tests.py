@@ -1,12 +1,20 @@
+from datetime import datetime, timedelta
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
+
 from django.core import mail
 from django.core.cache import cache
 from django.core.signing import TimestampSigner
-from django.test import TestCase, override_settings
+from django.http import HttpResponse
+from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 
 from .models import Usuario
+from .middleware import LimpiezaCuentasPendientesMiddleware
 from .serializers import RegistroUsuarioSerializer
+from .services import limpiar_cuentas_no_verificadas
 
 
 @override_settings(
@@ -40,7 +48,15 @@ class SeguridadUsuariosTests(TestCase):
         self.assertFalse(usuario.is_superuser)
         self.assertFalse(usuario.is_active)
         self.assertFalse(usuario.email_confirmado)
+        self.assertIsNotNone(usuario.correo_activacion_enviado_en)
+        self.assertIsNotNone(usuario.activacion_expira_en)
+        self.assertAlmostEqual(
+            (usuario.activacion_expira_en - usuario.correo_activacion_enviado_en).total_seconds(),
+            24 * 60 * 60,
+            delta=2,
+        )
         self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('será eliminado', mail.outbox[0].body)
 
     def test_registro_rechaza_contrasena_debil(self):
         payload = {**self.payload, 'password': '1', 'password2': '1'}
@@ -92,4 +108,95 @@ class SeguridadUsuariosTests(TestCase):
         self.assertEqual(response.status_code, 200)
         usuario.refresh_from_db()
         self.assertFalse(usuario.is_active)
+
+    def test_activacion_valida_protege_la_cuenta_de_la_limpieza(self):
+        usuario = Usuario.objects.create_user(
+            rut='44444444-4', username='por_activar', email='activar@example.com',
+            telefono='+56944444444', password=self.password,
+            is_active=False, email_confirmado=False,
+            correo_activacion_enviado_en=timezone.now(),
+            activacion_expira_en=timezone.now() + timedelta(hours=24),
+        )
+        token = TimestampSigner().sign(usuario.email)
+
+        response = self.client.get(reverse('activar_cuenta', args=[token]))
+
+        self.assertEqual(response.status_code, 200)
+        usuario.refresh_from_db()
+        self.assertTrue(usuario.is_active)
+        self.assertTrue(usuario.email_confirmado)
+        self.assertIsNone(usuario.activacion_expira_en)
+        self.assertEqual(limpiar_cuentas_no_verificadas(), 0)
+        self.assertTrue(Usuario.objects.filter(pk=usuario.pk).exists())
+
+    def test_limpieza_elimina_solo_cuenta_publica_vencida(self):
+        vencida = Usuario.objects.create_user(
+            rut='55555555-5', username='vencida', email='vencida@example.com',
+            telefono='+56955555555', password=self.password,
+            is_active=False, email_confirmado=False,
+            correo_activacion_enviado_en=timezone.now() - timedelta(hours=25),
+            activacion_expira_en=timezone.now() - timedelta(hours=1),
+        )
+        activada = Usuario.objects.create_user(
+            rut='66666666-6', username='activada', email='activada@example.com',
+            telefono='+56966666666', password=self.password,
+            is_active=True, email_confirmado=True,
+            correo_activacion_enviado_en=timezone.now() - timedelta(days=2),
+            activacion_expira_en=timezone.now() - timedelta(days=1),
+        )
+        creada_por_admin = Usuario.objects.create_user(
+            rut='77777777-7', username='administrativa', email='admin-creada@example.com',
+            telefono='+56977777777', password=self.password,
+            is_active=False, email_confirmado=False,
+        )
+
+        eliminadas = limpiar_cuentas_no_verificadas()
+
+        self.assertEqual(eliminadas, 1)
+        self.assertFalse(Usuario.objects.filter(pk=vencida.pk).exists())
+        self.assertTrue(Usuario.objects.filter(pk=activada.pk).exists())
+        self.assertTrue(Usuario.objects.filter(pk=creada_por_admin.pk).exists())
+
+    def test_enlace_con_expiracion_persistida_no_activa_usuario(self):
+        usuario = Usuario.objects.create_user(
+            rut='88888888-8', username='expirado', email='expirado@example.com',
+            telefono='+56988888888', password=self.password,
+            is_active=False, email_confirmado=False,
+            correo_activacion_enviado_en=timezone.now() - timedelta(hours=25),
+            activacion_expira_en=timezone.now() - timedelta(seconds=1),
+        )
+        token = TimestampSigner().sign(usuario.email)
+
+        response = self.client.get(reverse('activar_cuenta', args=[token]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Usuario.objects.filter(pk=usuario.pk).exists())
+
+    def test_limpieza_diaria_usa_las_cuatro_de_la_madrugada_en_chile(self):
+        request = RequestFactory().get('/')
+        middleware = LimpiezaCuentasPendientesMiddleware(
+            lambda _request: HttpResponse('ok')
+        )
+        hora_chile = ZoneInfo('America/Santiago')
+
+        with patch(
+            'usuarios.middleware.timezone.localtime',
+            return_value=datetime(2026, 8, 24, 3, 59, tzinfo=hora_chile),
+        ), patch(
+            'usuarios.middleware.limpiar_cuentas_no_verificadas'
+        ) as limpiar:
+            middleware(request)
+            limpiar.assert_not_called()
+
+        cache.clear()
+        with patch(
+            'usuarios.middleware.timezone.localtime',
+            return_value=datetime(2026, 8, 24, 4, 0, tzinfo=hora_chile),
+        ), patch(
+            'usuarios.middleware.limpiar_cuentas_no_verificadas',
+            return_value=0,
+        ) as limpiar:
+            middleware(request)
+            middleware(request)
+            limpiar.assert_called_once_with()
 
