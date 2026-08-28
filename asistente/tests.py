@@ -919,6 +919,45 @@ class AsistenteSfiTests(TestCase):
         self.assertIn('Daniela Silva', nombres)
         self.assertIn('sin filtrar por comuna', resultado['mensaje'])
 
+    def test_solicitud_generica_reutiliza_el_oficio_sin_confundir_retiro_en_tienda(self):
+        historial = [
+            {
+                'role': 'user',
+                'content': 'Necesito baldosas de cerámica con retiro en tienda.',
+            },
+            {
+                'role': 'assistant',
+                'content': (
+                    'Encontré materiales para cerámica. También puedo buscar '
+                    'un maestro de Cerámica y revestimientos.'
+                ),
+            },
+        ]
+
+        resultado = self.consultar_maestro(
+            '¿Algún maestro que me ayude?',
+            historial,
+        )
+
+        self.assertEqual(resultado['tipo'], 'maestros')
+        self.assertIn('Miguel Castro', [item['nombre'] for item in resultado['maestros']])
+        self.assertIn('sin filtrar por comuna', resultado['mensaje'])
+        self.assertNotIn('en Retiro', resultado['mensaje'])
+
+    def test_retiro_explicito_se_mantiene_como_comuna(self):
+        historial = [{
+            'role': 'assistant',
+            'content': 'Puedo buscar un maestro de Cerámica y revestimientos.',
+        }]
+
+        resultado = self.consultar_maestro(
+            'Necesito un maestro en Retiro',
+            historial,
+        )
+
+        self.assertEqual(resultado['tipo'], 'sin_resultados_maestros')
+        self.assertIn('en Retiro', resultado['mensaje'])
+
     def test_cualquier_comuna_reutiliza_especialidad_del_contexto(self):
         historial = [
             {'role': 'user', 'content': 'Necesito un pintor en Quilicura'},

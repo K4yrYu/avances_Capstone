@@ -70,10 +70,16 @@ def _especialidad_desde_texto(texto):
 
 
 def _comuna_desde_texto(texto):
-    normalizado = f' {_texto_normalizado(texto)} '
+    normalizado_limpio = ' '.join(_texto_normalizado(texto).split())
+    normalizado = f' {normalizado_limpio} '
     coincidencias = []
     for comuna, _ in COMUNAS_CHOICES:
         clave = _texto_normalizado(comuna)
+        if clave == 'retiro' and not (
+            normalizado_limpio == 'retiro'
+            or re.search(r'\b(?:en|de|comuna(?:\s+de)?)\s+retiro\b', normalizado_limpio)
+        ):
+            continue
         if re.search(rf'(?<!\w){re.escape(clave)}(?!\w)', normalizado):
             coincidencias.append((len(clave), comuna))
     return max(coincidencias, default=(0, ''))[1]
@@ -93,6 +99,8 @@ def _es_solicitud_directa_maestro(mensaje):
     )
     solicitud_persona = any(indicador in texto for indicador in (
         'necesito alguien', 'busco alguien', 'que lo haga alguien',
+        'algun maestro', 'alguna maestra', 'un maestro que me ayude',
+        'una maestra que me ayude', 'profesional que me ayude',
     ))
     accion_con_profesional = any(indicador in texto for indicador in (
         'necesito un ', 'necesito una ', 'busco un ', 'busco una ',
@@ -149,10 +157,25 @@ def _contexto_maestro(historial):
         (
             encontrada
             for item in reversed(recientes)
+            if item.get('role') == 'user'
             if (encontrada := _comuna_desde_texto(item.get('content')))
         ),
         '',
     )
+    if not comuna:
+        comuna = next(
+            (
+                encontrada
+                for item in reversed(recientes)
+                if item.get('role') == 'assistant'
+                if any(
+                    referencia in _texto_normalizado(item.get('content'))
+                    for referencia in ('maestro', 'maestra', 'profesional')
+                )
+                if (encontrada := _comuna_desde_texto(item.get('content')))
+            ),
+            '',
+        )
     ultima_respuesta = next(
         (
             _texto_normalizado(item.get('content'))
@@ -194,6 +217,10 @@ def _completar_intencion_maestro(datos, mensaje, historial):
     comuna_mensaje = _comuna_desde_texto(mensaje)
     aceptacion = mensaje_normalizado in ACEPTACIONES_MAESTRO
     solicitud_directa = _es_solicitud_directa_maestro(mensaje)
+    solicitud_contextual_generica = any(frase in mensaje_normalizado for frase in (
+        'algun maestro', 'alguna maestra', 'un maestro que me ayude',
+        'una maestra que me ayude', 'profesional que me ayude',
+    ))
     todas_las_comunas = _pide_todas_las_comunas(mensaje)
     otra_comuna = _pide_otra_comuna(mensaje)
     listado_especialidad = _pide_listado_especialidad(mensaje)
@@ -225,7 +252,7 @@ def _completar_intencion_maestro(datos, mensaje, historial):
         otra_comuna,
     ))
     if solicitud_directa and not especialidad_mensaje:
-        datos['especialidad_maestro'] = ''
+        datos['especialidad_maestro'] = especialidad_contexto
     else:
         datos['especialidad_maestro'] = especialidad_mensaje or (
             especialidad_contexto if permite_contexto else especialidad_interpretada
@@ -237,6 +264,8 @@ def _completar_intencion_maestro(datos, mensaje, historial):
         datos['comuna_maestro'] = ''
     elif comuna_mensaje:
         datos['comuna_maestro'] = comuna_mensaje
+    elif solicitud_contextual_generica and especialidad_contexto:
+        datos['comuna_maestro'] = comuna_contexto or TODAS_LAS_COMUNAS
     elif aceptacion or cambio_especialidad_contextual or pidio_especialidad:
         datos['comuna_maestro'] = comuna_contexto
     elif solicitud_directa:
