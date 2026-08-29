@@ -1,3 +1,5 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
@@ -6,14 +8,24 @@ from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import ImagenTrabajoRealizado, ObservacionMaestro, PerfilMaestro, TrabajoRealizado
+from .models import (
+    DocumentoMaestro,
+    ImagenTrabajoRealizado,
+    LicenciaMaestro,
+    ObservacionMaestro,
+    PerfilMaestro,
+    TrabajoRealizado,
+)
 from .permissions import IsActiveVerifiedUser
 from .serializers import (
     CambioEstadoMaestroSerializer,
     CargaImagenesTrabajoSerializer,
+    DocumentoMaestroSerializer,
     ImagenTrabajoSerializer,
+    LicenciaMaestroSerializer,
     PerfilMaestroPublicoSerializer,
     PerfilMaestroSerializer,
+    RevisionDocumentalSerializer,
     TrabajoRealizadoSerializer,
 )
 
@@ -64,23 +76,104 @@ class MiPerfilAPIView(APIPrivadaMaestros):
 class EnviarRevisionAPIView(APIPrivadaMaestros):
     def post(self, request):
         perfil = self.perfil_propio(request)
-        if perfil.estado == PerfilMaestro.Estado.SUSPENDIDO:
+        try:
+            perfil.enviar_a_revision()
+        except DjangoValidationError as error:
             return Response(
-                {"detail": "Un perfil suspendido debe ser habilitado por administración."},
+                {"detail": " ".join(error.messages)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        perfil.estado = PerfilMaestro.Estado.PENDIENTE
-        perfil.observacion_admin = ""
-        perfil.fecha_aprobacion = None
-        perfil.save(
-            update_fields=[
-                "estado",
-                "observacion_admin",
-                "fecha_aprobacion",
-                "actualizado_en",
-            ]
-        )
         return Response(PerfilMaestroSerializer(perfil, context={"request": request}).data)
+
+
+class DocumentosPropiosAPIView(APIPrivadaMaestros):
+    def get(self, request):
+        perfil = self.perfil_propio(request)
+        return Response(
+            DocumentoMaestroSerializer(
+                perfil.documentos.all(),
+                many=True,
+                context={"request": request},
+            ).data
+        )
+
+    @transaction.atomic
+    def post(self, request):
+        perfil = self.perfil_propio(request)
+        serializer = DocumentoMaestroSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        tipo = serializer.validated_data["tipo"]
+        archivo = serializer.validated_data["archivo"]
+        documento, creado = DocumentoMaestro.objects.get_or_create(
+            perfil=perfil,
+            tipo=tipo,
+            defaults={"archivo": archivo},
+        )
+        if creado:
+            documento.full_clean()
+            documento.save()
+            perfil.volver_a_revision_por_edicion()
+        else:
+            documento.preparar_reemplazo(archivo)
+        return Response(
+            DocumentoMaestroSerializer(
+                documento,
+                context={"request": request},
+            ).data,
+            status=status.HTTP_201_CREATED if creado else status.HTTP_200_OK,
+        )
+
+
+class LicenciasPropiasAPIView(APIPrivadaMaestros):
+    def get(self, request):
+        perfil = self.perfil_propio(request)
+        return Response(
+            LicenciaMaestroSerializer(
+                perfil.licencias.all(),
+                many=True,
+                context={"request": request, "perfil": perfil},
+            ).data
+        )
+
+    @transaction.atomic
+    def post(self, request):
+        perfil = self.perfil_propio(request)
+        serializer = LicenciaMaestroSerializer(
+            data=request.data,
+            context={"request": request, "perfil": perfil},
+        )
+        serializer.is_valid(raise_exception=True)
+        datos = serializer.validated_data
+        tipo = datos["tipo_licencia"]
+        licencia, creado = LicenciaMaestro.objects.get_or_create(
+            perfil=perfil,
+            tipo_licencia=tipo,
+            defaults={
+                "clase": datos["clase"],
+                "numero_licencia": datos["numero_licencia"],
+                "archivo": datos["archivo"],
+            },
+        )
+        if creado:
+            licencia.full_clean()
+            licencia.save()
+            perfil.volver_a_revision_por_edicion()
+        else:
+            licencia.preparar_reemplazo(
+                datos["archivo"],
+                datos["clase"],
+                datos["numero_licencia"],
+            )
+        return Response(
+            LicenciaMaestroSerializer(
+                licencia,
+                context={"request": request, "perfil": perfil},
+            ).data,
+            status=status.HTTP_201_CREATED if creado else status.HTTP_200_OK,
+        )
 
 
 class TrabajosAPIView(APIPrivadaMaestros):
@@ -195,7 +288,13 @@ class EstadoMaestroAdminAPIView(APIView):
         ).strip()
         perfil.save(update_fields=["observacion_admin", "actualizado_en"])
         nuevo_estado = serializer.validated_data["estado"]
-        perfil.cambiar_estado(nuevo_estado)
+        try:
+            perfil.cambiar_estado(nuevo_estado)
+        except DjangoValidationError as error:
+            return Response(
+                {"detail": " ".join(error.messages)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if perfil.observacion_admin:
             tipos = {
                 PerfilMaestro.Estado.APROBADO: ObservacionMaestro.Tipo.APROBACION,
@@ -209,6 +308,48 @@ class EstadoMaestroAdminAPIView(APIView):
                 registrada_por=request.user,
             )
         return Response(PerfilMaestroSerializer(perfil, context={"request": request}).data)
+
+
+class RevisionDocumentoAdminAPIView(APIView):
+    authentication_classes = (SessionAuthentication,)
+    permission_classes = (IsAdminUser,)
+
+    def patch(self, request, pk):
+        documento = get_object_or_404(DocumentoMaestro, pk=pk)
+        serializer = RevisionDocumentalSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        documento.revisar(
+            serializer.validated_data["estado_revision"],
+            request.user,
+            serializer.validated_data.get("observacion_admin", ""),
+        )
+        return Response(
+            DocumentoMaestroSerializer(
+                documento,
+                context={"request": request},
+            ).data
+        )
+
+
+class RevisionLicenciaAdminAPIView(APIView):
+    authentication_classes = (SessionAuthentication,)
+    permission_classes = (IsAdminUser,)
+
+    def patch(self, request, pk):
+        licencia = get_object_or_404(LicenciaMaestro, pk=pk)
+        serializer = RevisionDocumentalSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        licencia.revisar(
+            serializer.validated_data["estado_revision"],
+            request.user,
+            serializer.validated_data.get("observacion_admin", ""),
+        )
+        return Response(
+            LicenciaMaestroSerializer(
+                licencia,
+                context={"request": request, "perfil": licencia.perfil},
+            ).data
+        )
 
 
 class MaestrosPublicosAPIView(ListAPIView):

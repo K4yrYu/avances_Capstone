@@ -11,6 +11,7 @@ from .serializers import RegistroUsuarioSerializer, AdminUsuarioSerializer, Logi
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.throttling import ScopedRateThrottle
+from .throttles import RegistroRateThrottle
 from .models import Usuario
 from django.contrib.auth.decorators import user_passes_test
 from carro_compras.models import Venta
@@ -88,7 +89,7 @@ def vista_editar_usuario(request, id):
 
 class RegistroAPIView(APIView):
     permission_classes = [AllowAny]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [RegistroRateThrottle]
     throttle_scope = 'register'
 
     def post(self, request):

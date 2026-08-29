@@ -168,6 +168,7 @@ SECURE_HSTS_PRELOAD = IS_PRODUCTION
 # Configuración de los archivos multimedia (si es necesario para manejar archivos de imagen, etc.)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+PRIVATE_DOCUMENTS_ROOT = BASE_DIR / 'private_uploads'
 DATA_UPLOAD_MAX_MEMORY_SIZE = 6 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
@@ -193,7 +194,7 @@ REST_FRAMEWORK = {
         'anon': '60/minute',
         'user': '120/minute',
         'login': '5/minute',
-        'register': '3/hour',
+        'register': '10/3minutes',
         'asistente': '12/minute',
     },
 }
@@ -220,6 +221,7 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER")
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", EMAIL_HOST_USER or "soporte@sfi.cl")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = os.getenv(
     'DEFAULT_FROM_EMAIL',

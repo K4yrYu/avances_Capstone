@@ -25,7 +25,7 @@
           <div class="master-card-photo"><img src="{{ perfil.foto_publica_url }}" alt="Foto de {{ perfil.usuario.get_full_name|default:perfil.usuario.username }}" onerror="this.onerror=null;this.src='{{ perfil.foto_fallback_url }}';"></div>
           <div class="master-card-body">
             <div class="master-card-status">
-              <span class="master-approved-badge"><i class="fa-solid fa-circle-check"></i> Aprobado</span>
+              <span class="master-approved-badge"><i class="fa-solid fa-circle-check"></i> Maestro verificado</span>
               <span class="master-availability {% if perfil.disponible %}available{% endif %}"><i class="fa-solid fa-circle"></i> {{ perfil.disponible|yesno:'Disponible,No disponible' }}</span>
             </div>
             <p class="master-location"><i class="fa-solid fa-location-dot"></i> {{ perfil.get_region_display }} · {{ perfil.comuna }}</p>

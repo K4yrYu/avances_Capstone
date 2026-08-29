@@ -8,13 +8,19 @@
     <div class="master-profile-summary">
       <div class="master-profile-photo"><img src="{{ perfil.foto_publica_url }}" alt="Foto de {{ perfil.usuario.get_full_name|default:perfil.usuario.username }}" onerror="this.onerror=null;this.src='{{ perfil.foto_fallback_url }}';"></div>
       <div class="master-profile-copy">
-        <span class="master-approved"><i class="fa-solid fa-circle-check"></i> Perfil aprobado por SFI</span>
+        <div class="master-verification-badges"><span class="master-approved"><i class="fa-solid fa-circle-check"></i> Maestro verificado</span>{% if perfil.tiene_licencia_sec_verificada %}<span class="master-approved sec"><i class="fa-solid fa-certificate"></i> Instalador SEC verificado</span>{% endif %}</div>
         <h1>{{ perfil.usuario.get_full_name|default:perfil.usuario.username }}</h1>
-        <p><i class="fa-solid fa-location-dot"></i> Región {{ perfil.get_region_display }}</p>
-        <p><i class="fa-solid fa-map-location-dot"></i> {{ perfil.zonas_trabajo }}</p>
-        <div class="master-tags">{% for especialidad in perfil.especialidades.all %}<span>{{ especialidad.nombre }}</span>{% endfor %}</div>
+        <div class="master-profile-meta">
+          <div><span><i class="fa-solid fa-location-dot"></i> Región</span><strong>{{ perfil.get_region_display }}</strong></div>
+          <div><span><i class="fa-solid fa-map-location-dot"></i> Comunas donde trabaja</span><strong>{{ perfil.zonas_trabajo }}</strong></div>
+        </div>
+        <div class="master-profile-specialties"><span>Especialidades profesionales</span><div class="master-tags">{% for especialidad in perfil.especialidades.all %}<em>{{ especialidad.nombre }}</em>{% endfor %}</div></div>
       </div>
-      <div class="master-profile-facts"><strong>{{ perfil.anos_experiencia }}</strong><span>años de experiencia</span><em class="{% if perfil.disponible %}available{% endif %}">{{ perfil.disponible|yesno:'Disponible,No disponible' }}</em></div>
+      <div class="master-profile-facts">
+        <span class="master-fact-label"><i class="fa-solid fa-medal"></i> Experiencia</span>
+        <div><strong>{{ perfil.anos_experiencia }}</strong><span>años</span></div>
+        <em class="{% if perfil.disponible %}available{% endif %}"><i class="fa-solid fa-circle"></i> {{ perfil.disponible|yesno:'Disponible,No disponible' }}</em>
+      </div>
     </div>
   </div>
 </section>
@@ -24,14 +30,18 @@
       <article class="master-about"><span>Presentación</span><h2>Acerca de su trabajo</h2><p>{{ perfil.descripcion_profesional|linebreaksbr }}</p></article>
       <aside class="master-contact-card">
         <span>Contacto profesional</span>
-        <h2>Habla con este maestro</h2>
-        <p>Consulta disponibilidad y detalles del trabajo directamente con el profesional.</p>
+        <h2>Contacta directamente al maestro</h2>
+        <p>SFI publica y verifica el perfil. Cualquier acuerdo posterior se realiza directamente entre el cliente y el maestro.</p>
         <div class="master-contact-actions">
-          <a href="tel:{{ telefono_contacto }}"><i class="fa-solid fa-phone"></i><span><small>Teléfono</small>{{ telefono_contacto }}</span></a>
-          {% if telefono_whatsapp %}<a class="whatsapp" href="https://wa.me/{{ telefono_whatsapp }}" target="_blank" rel="noopener noreferrer"><i class="fa-brands fa-whatsapp"></i><span><small>WhatsApp</small>Enviar mensaje</span></a>{% endif %}
-          <a href="mailto:{{ perfil.usuario.email }}"><i class="fa-regular fa-envelope"></i><span><small>Correo</small>{{ perfil.usuario.email }}</span></a>
+          {% if contacto_maestro_url %}
+            <button class="master-contact-button" type="button" data-bs-toggle="modal" data-bs-target="#contactarMaestroModal"><i class="fa-brands fa-whatsapp"></i><span>Contactar maestro</span></button>
+          {% else %}
+            <p class="master-contact-unavailable">Este maestro todavía no tiene un teléfono de contacto disponible.</p>
+          {% endif %}
         </div>
-        <div class="master-contact-note"><i class="fa-solid fa-shield-halved"></i><span>Perfil aprobado por SFI. No compartas claves ni códigos de pago.</span></div>
+        <div class="master-contact-note"><i class="fa-solid fa-address-book"></i><span>SFI funciona únicamente como directorio de maestros independientes.</span></div>
+        <a class="master-report-link" href="{{ reporte_perfil_url }}"><i class="fa-regular fa-flag"></i> Reportar perfil</a>
+        <small class="master-report-help">Solo para identidad o documentación posiblemente falsa, licencia dudosa, información engañosa o contenido inapropiado.</small>
       </aside>
     </div>
     <div class="master-section-heading master-portfolio-heading"><span>Portafolio</span><h2>Trabajos realizados</h2></div>
@@ -70,5 +80,26 @@
     </div>
   </div>
 </section>
+{% if contacto_maestro_url %}
+<div class="modal fade master-contact-modal" id="contactarMaestroModal" tabindex="-1" aria-labelledby="contactarMaestroTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div><span>Contacto externo</span><h2 class="modal-title" id="contactarMaestroTitulo">Antes de continuar</h2></div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <p>SFI funciona como un directorio de maestros independientes.</p>
+        <p>La cotización, contratación, precio, pago, ejecución y garantía de cualquier trabajo se acuerdan directamente entre el cliente y el maestro, fuera de SFI.</p>
+        <p>La indicación “Maestro verificado” significa que SFI realizó una revisión administrativa de la documentación presentada y no constituye una garantía sobre la calidad o resultado de futuros trabajos.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-sfi" data-bs-dismiss="modal">Cancelar</button>
+        <a class="btn btn-sfi master-confirm-contact" href="{{ contacto_maestro_url }}" target="_blank" rel="noopener noreferrer"><i class="fa-brands fa-whatsapp"></i> Entendido, contactar maestro</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 {% block extra_js %}<script src="{% static 'maestros/js/detalle.js' %}?v=20260822-carrusel"></script>{% endblock %}

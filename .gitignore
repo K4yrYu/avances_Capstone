@@ -25,6 +25,7 @@ Thumbs.db
 # Django generated
 staticfiles/
 backups/
+private_uploads/
 db.sqlite3
 
 # Logs

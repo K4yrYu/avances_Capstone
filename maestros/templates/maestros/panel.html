@@ -18,7 +18,7 @@
     <div class="master-status-card state-{{ perfil.estado|lower }}">
       <div><span>Estado del perfil</span><h2>{{ perfil.get_estado_display }}</h2><p>{% if perfil.estado == 'BORRADOR' %}Completa tu información y envíala cuando esté lista.{% elif perfil.estado == 'PENDIENTE' %}SFI está revisando tus antecedentes profesionales.{% elif perfil.estado == 'APROBADO' %}Tu perfil ya está visible para todos los clientes.{% elif perfil.estado == 'RECHAZADO' %}Revisa la observación, corrige tu perfil y vuelve a enviarlo.{% else %}Tu perfil no es público mientras permanezca suspendido.{% endif %}</p>{% if perfil.observacion_admin and perfil.estado != 'APROBADO' %}<div class="master-admin-note"><strong>Observación de administración:</strong> {{ perfil.observacion_admin }}</div>{% endif %}</div>
       <div class="master-status-actions">
-        {% if perfil.estado != 'PENDIENTE' and perfil.estado != 'SUSPENDIDO' %}<form method="post" action="{% url 'maestros:enviar_revision' %}">{% csrf_token %}<button class="btn-master-primary" type="submit"><i class="fa-solid fa-paper-plane"></i> Enviar a revisión</button></form>{% endif %}
+        {% if perfil.estado == 'BORRADOR' or perfil.estado == 'RECHAZADO' %}<form method="post" action="{% url 'maestros:enviar_revision' %}">{% csrf_token %}<button class="btn-master-primary" type="submit"><i class="fa-solid fa-paper-plane"></i> Enviar a revisión</button></form>{% endif %}
         {% if perfil.estado == 'APROBADO' %}<a class="btn-master-secondary" href="{% url 'maestros:detalle' perfil.id %}">Ver perfil público</a>{% endif %}
         {% if perfil.apelacion.estado == 'ACEPTADA' %}<div class="master-appeal-sent"><i class="fa-solid fa-circle-check"></i><div><strong>Apelación aceptada</strong><small>{{ perfil.apelacion.observacion_admin }}</small></div></div>{% endif %}
         {% if perfil.estado == 'SUSPENDIDO' %}
@@ -41,6 +41,63 @@
         </div>
       {% endif %}
     </div>
+    <section class="master-documentation-card" aria-labelledby="master-documentation-title">
+      <div class="master-documentation-heading">
+        <span class="master-icon"><i class="fa-solid fa-shield-halved"></i></span>
+        <div>
+          <small>Verificación manual SFI</small>
+          <h2 id="master-documentation-title">Documentación de verificación</h2>
+          <p>Estos archivos son privados. Solo tú y administración pueden consultarlos.</p>
+        </div>
+      </div>
+      {% if faltantes_envio %}
+        <div class="master-documentation-warning">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <div><strong>Completa los archivos antes de enviar tu perfil.</strong><ul>{% for faltante in faltantes_envio %}<li>{{ faltante }}</li>{% endfor %}</ul></div>
+        </div>
+      {% endif %}
+      <div class="master-document-grid">
+        {% for item in documentos_panel %}
+          <article class="master-document-item state-{% if item.documento %}{{ item.documento.estado_revision|lower }}{% else %}missing{% endif %}">
+            <div class="master-document-summary">
+              <i class="fa-solid {% if item.tipo == 'CEDULA' %}fa-id-card{% else %}fa-file-shield{% endif %}"></i>
+              <div><strong>{{ item.etiqueta }}</strong><span>{% if item.documento %}{{ item.documento.get_estado_revision_display }}{% else %}Sin documento{% endif %}</span></div>
+            </div>
+            {% if item.documento.observacion_admin %}<p class="master-document-rejection"><strong>Observación:</strong> {{ item.documento.observacion_admin }}</p>{% endif %}
+            <div class="master-document-actions">
+              {% if item.documento %}<a class="btn-master-secondary" href="{% url 'maestros:descargar_documento' item.documento.id %}" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i> Ver</a>{% endif %}
+              <form method="post" enctype="multipart/form-data" action="{% url 'maestros:subir_documento' item.tipo %}">
+                {% csrf_token %}{{ item.form.archivo }}
+                <button class="btn-master-primary" type="submit"><i class="fa-solid fa-upload"></i> {% if item.documento %}Reemplazar{% else %}Subir{% endif %}</button>
+              </form>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+      <div class="master-license-heading"><small>Requisitos por especialidad</small><h3>Licencias profesionales</h3></div>
+      {% if licencias_panel %}
+        <div class="master-document-grid">
+          {% for item in licencias_panel %}
+            <article class="master-document-item state-{% if item.licencia %}{{ item.licencia.estado_revision|lower }}{% else %}missing{% endif %}">
+              <div class="master-document-summary"><i class="fa-solid fa-certificate"></i><div><strong>Licencia {{ item.etiqueta }}</strong><span>{% if item.licencia %}{{ item.licencia.get_estado_revision_display }}{% else %}Sin licencia{% endif %}</span></div></div>
+              {% if item.licencia %}<p class="master-license-data">Clase {{ item.licencia.clase }} · N.º {{ item.licencia.numero_licencia }}</p>{% endif %}
+              {% if item.licencia.observacion_admin %}<p class="master-document-rejection"><strong>Observación:</strong> {{ item.licencia.observacion_admin }}</p>{% endif %}
+              <div class="master-document-actions">
+                {% if item.licencia %}<a class="btn-master-secondary" href="{% url 'maestros:descargar_licencia' item.licencia.id %}" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i> Ver</a>{% endif %}
+                <form method="post" enctype="multipart/form-data" action="{% url 'maestros:subir_licencia' item.tipo %}">
+                  {% csrf_token %}
+                  <div class="master-license-fields"><label>Clase{{ item.form.clase }}</label><label>Número{{ item.form.numero_licencia }}</label></div>
+                  {{ item.form.archivo }}
+                  <button class="btn-master-primary" type="submit"><i class="fa-solid fa-upload"></i> {% if item.licencia %}Reemplazar{% else %}Subir licencia{% endif %}</button>
+                </form>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="master-no-license"><i class="fa-solid fa-circle-check"></i> No necesitas presentar licencias adicionales para tus especialidades actuales.</p>
+      {% endif %}
+    </section>
     {% if perfil.observaciones.all %}
       <section class="master-observations-card" aria-labelledby="master-observations-title">
         <div class="master-observations-heading"><span class="master-icon"><i class="fa-solid fa-clipboard-list"></i></span><div><small>Historial administrativo</small><h2 id="master-observations-title">Observaciones</h2><p>Consulta las decisiones y comentarios asociados a tu perfil profesional.</p></div></div>

@@ -1,11 +1,14 @@
 from django import forms
+from django.core.validators import RegexValidator
 from django.utils import timezone
 
 from .chile import COMUNA_REGION, COMUNAS_CHOICES, comunas_de_region
 from .models import (
     MAX_IMAGENES_POR_TRABAJO,
     ApelacionMaestro,
+    DocumentoMaestro,
     Especialidad,
+    LicenciaMaestro,
     PerfilMaestro,
     TrabajoRealizado,
 )
@@ -63,6 +66,24 @@ class ComunaMultipleSelect(forms.SelectMultiple):
 
 
 class PerfilMaestroForm(forms.ModelForm):
+    telefono = forms.CharField(
+        label="Teléfono de contacto",
+        max_length=15,
+        validators=[
+            RegexValidator(
+                regex=r"^\+?\d{9,15}$",
+                message="El teléfono debe tener entre 9 y 15 dígitos y puede comenzar con +.",
+            )
+        ],
+        widget=forms.TextInput(
+            attrs={
+                "type": "tel",
+                "autocomplete": "tel",
+                "placeholder": "+56912345678",
+            }
+        ),
+        help_text="Se usará para que los clientes puedan contactarte por WhatsApp.",
+    )
     comunas_trabajo = forms.MultipleChoiceField(
         choices=COMUNAS_CHOICES,
         widget=ComunaMultipleSelect(attrs={"size": 8}),
@@ -74,6 +95,7 @@ class PerfilMaestroForm(forms.ModelForm):
         model = PerfilMaestro
         fields = (
             "foto",
+            "telefono",
             "descripcion_profesional",
             "anos_experiencia",
             "especialidades",
@@ -82,6 +104,7 @@ class PerfilMaestroForm(forms.ModelForm):
             "disponible",
         )
         widgets = {
+            "foto": forms.FileInput,
             "descripcion_profesional": forms.Textarea(attrs={"rows": 5}),
             "especialidades": forms.CheckboxSelectMultiple,
         }
@@ -91,8 +114,13 @@ class PerfilMaestroForm(forms.ModelForm):
             "region": "Región donde trabajas",
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, usuario=None, **kwargs):
+        self.usuario = usuario
         super().__init__(*args, **kwargs)
+        if self.usuario is None and self.instance and self.instance.pk:
+            self.usuario = self.instance.usuario
+        if self.usuario is not None:
+            self.initial["telefono"] = self.usuario.telefono
         self.fields["especialidades"].queryset = Especialidad.objects.filter(activa=True)
         self.fields["especialidades"].required = True
         self.fields["foto"].help_text = "JPG, PNG o WebP. Máximo 5 MB."
@@ -132,6 +160,12 @@ class PerfilMaestroForm(forms.ModelForm):
             self.save_m2m()
         return perfil
 
+    def guardar_telefono(self):
+        telefono = self.cleaned_data["telefono"]
+        if self.usuario is not None and self.usuario.telefono != telefono:
+            self.usuario.telefono = telefono
+            self.usuario.save(update_fields=["telefono"])
+
 
 class EspecialidadForm(forms.ModelForm):
     class Meta:
@@ -145,8 +179,60 @@ class EspecialidadForm(forms.ModelForm):
             field.widget.attrs.setdefault("class", "form-control")
 
 
+class DocumentoMaestroForm(forms.ModelForm):
+    class Meta:
+        model = DocumentoMaestro
+        fields = ("archivo",)
+        widgets = {
+            "archivo": forms.ClearableFileInput(
+                attrs={"accept": "application/pdf,image/jpeg,image/png"}
+            )
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["archivo"].required = True
+        self.fields["archivo"].label = "Documento"
+        self.fields["archivo"].help_text = "PDF, JPG, JPEG o PNG. Máximo 5 MB."
+        self.fields["archivo"].widget.attrs.setdefault("class", "form-control")
+
+
+class LicenciaMaestroForm(forms.ModelForm):
+    class Meta:
+        model = LicenciaMaestro
+        fields = ("clase", "numero_licencia", "archivo")
+        labels = {
+            "clase": "Clase",
+            "numero_licencia": "Número de licencia",
+            "archivo": "Documento de la licencia",
+        }
+        widgets = {
+            "archivo": forms.ClearableFileInput(
+                attrs={"accept": "application/pdf,image/jpeg,image/png"}
+            )
+        }
+
+    def __init__(self, *args, tipo_licencia=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        tipo = tipo_licencia or getattr(self.instance, "tipo_licencia", None)
+        if tipo == Especialidad.TipoLicencia.SEC_ELECTRICA:
+            self.fields["clase"].choices = LicenciaMaestro.CLASES_ELECTRICAS
+        elif tipo == Especialidad.TipoLicencia.SEC_GAS:
+            self.fields["clase"].choices = LicenciaMaestro.CLASES_GAS
+        else:
+            self.fields["clase"].choices = ()
+        self.fields["archivo"].required = True
+        self.fields["archivo"].help_text = "PDF, JPG, JPEG o PNG. Máximo 5 MB."
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "form-control")
+
+
 class TrabajoRealizadoForm(forms.ModelForm):
     imagenes = MultipleImageField(required=False, label="Nuevas imágenes")
+    comuna = forms.ChoiceField(
+        choices=COMUNAS_CHOICES,
+        label="Comuna del trabajo",
+    )
 
     class Meta:
         model = TrabajoRealizado
@@ -165,6 +251,8 @@ class TrabajoRealizadoForm(forms.ModelForm):
             especialidades = especialidades.filter(maestros=self.maestro)
         self.fields["especialidades"].queryset = especialidades.distinct()
         self.fields["especialidades"].required = True
+        if not self.is_bound and not self.instance.pk and self.maestro:
+            self.initial["comuna"] = self.maestro.comuna
         hoy = timezone.localdate()
         anos = max(1, self.maestro.anos_experiencia if self.maestro else 60)
         fecha_minima = hoy.replace(year=hoy.year - min(anos, 60), month=1, day=1)

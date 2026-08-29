@@ -15,6 +15,7 @@ from .models import Usuario
 from .middleware import LimpiezaCuentasPendientesMiddleware
 from .serializers import RegistroUsuarioSerializer
 from .services import limpiar_cuentas_no_verificadas
+from .throttles import RegistroRateThrottle
 
 
 @override_settings(
@@ -65,6 +66,15 @@ class SeguridadUsuariosTests(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn('password', serializer.errors)
+
+    def test_registro_permite_diez_solicitudes_en_ventana_de_tres_minutos(self):
+        throttle = RegistroRateThrottle()
+        throttle.scope = 'register'
+
+        solicitudes, duracion = throttle.parse_rate('10/3minutes')
+
+        self.assertEqual(solicitudes, 10)
+        self.assertEqual(duracion, 180)
 
     def test_email_es_unico_sin_importar_mayusculas_en_api(self):
         Usuario.objects.create_user(

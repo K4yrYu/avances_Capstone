@@ -3,14 +3,37 @@
 {% block title %}{% if trabajo %}Editar trabajo{% else %}Agregar trabajo{% endif %}{% endblock %}
 {% block content %}
 <section class="master-mini-hero master-private-hero"><div class="container"><span class="master-eyebrow"><i class="fa-solid fa-hammer"></i> Portafolio profesional</span><h1>{% if trabajo %}Edita este proyecto.{% else %}Agrega un trabajo realizado.{% endif %}</h1><p>Cuenta qué hiciste y acompaña el resultado con varias imágenes.</p></div></section>
-<section class="master-section master-private-section"><div class="container"><form class="master-form-card master-form-wide" method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
-  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
-  <div class="master-form-heading"><span class="master-icon"><i class="fa-solid fa-screwdriver-wrench"></i></span><div><small>Detalle del proyecto</small><h2>Trabajo realizado</h2></div></div>
-  <div class="master-form-grid">{% for field in form %}{% if field.name == 'publicado' %}<label class="master-check master-full">{{ field }}<span><strong>{{ field.label }}</strong><small>Solo será público si tu perfil está aprobado.</small></span></label>{% else %}<div class="master-field {% if field.name == 'descripcion' or field.name == 'imagenes' %}master-full{% endif %}"><label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<b>*</b>{% endif %}</label>{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<em>{{ error }}</em>{% endfor %}</div>{% endif %}{% endfor %}</div>
-  {% if trabajo.imagenes.exists %}<div class="master-current-images"><h3>Imágenes actuales</h3><div>{% for imagen in trabajo.imagenes.all %}<figure><img src="{{ imagen.imagen.url }}" alt="Imagen de {{ trabajo.titulo }}" onerror="this.onerror=null;this.src='{{ trabajo.imagen_fallback_url }}';"><button type="submit" form="delete-image-{{ imagen.id }}" title="Eliminar imagen"><i class="fa-solid fa-trash"></i></button></figure>{% endfor %}</div></div>{% endif %}
-  <div class="master-form-actions"><a class="btn-master-secondary" href="{% url 'maestros:trabajos' %}">Cancelar</a><button class="btn-master-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Guardar trabajo</button></div>
-</form>
-{% if trabajo %}{% for imagen in trabajo.imagenes.all %}<form id="delete-image-{{ imagen.id }}" method="post" action="{% url 'maestros:eliminar_imagen' imagen.id %}">{% csrf_token %}</form>{% endfor %}{% endif %}
-</div></section>
+<section class="master-section master-private-section">
+  <div class="container">
+    <form class="master-form-card master-form-wide master-work-form" method="post" enctype="multipart/form-data" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="master-form-heading"><span class="master-icon"><i class="fa-solid fa-screwdriver-wrench"></i></span><div><small>Detalle del proyecto</small><h2>Trabajo realizado</h2></div></div>
+      <div class="master-work-form-sections">
+        <section class="master-work-form-section">
+          <div class="master-work-section-title"><span><i class="fa-solid fa-clipboard-list"></i></span><div><small>Paso 1</small><h3>Información del trabajo</h3><p>Describe claramente el proyecto que realizaste.</p></div></div>
+          <div class="master-form-grid">
+            <div class="master-field"><label for="{{ form.titulo.id_for_label }}">{{ form.titulo.label }}<b>*</b></label>{{ form.titulo }}{% for error in form.titulo.errors %}<em>{{ error }}</em>{% endfor %}</div>
+            <div class="master-field"><label for="{{ form.fecha.id_for_label }}">{{ form.fecha.label }}</label>{{ form.fecha }}{% if form.fecha.help_text %}<small>{{ form.fecha.help_text }}</small>{% endif %}{% for error in form.fecha.errors %}<em>{{ error }}</em>{% endfor %}</div>
+            <div class="master-field master-full"><label for="{{ form.descripcion.id_for_label }}">{{ form.descripcion.label }}<b>*</b></label>{{ form.descripcion }}{% for error in form.descripcion.errors %}<em>{{ error }}</em>{% endfor %}</div>
+            <div class="master-field"><label for="{{ form.comuna.id_for_label }}">{{ form.comuna.label }}<b>*</b></label>{{ form.comuna }}<small>Selecciona la comuna chilena donde se realizó.</small>{% for error in form.comuna.errors %}<em>{{ error }}</em>{% endfor %}</div>
+            <label class="master-check master-work-publish">{{ form.publicado }}<span><strong>{{ form.publicado.label }}</strong><small>Solo será público si tu perfil está aprobado.</small></span></label>
+          </div>
+        </section>
+        <section class="master-work-form-section">
+          <div class="master-work-section-title"><span><i class="fa-solid fa-layer-group"></i></span><div><small>Paso 2</small><h3>Especialidades aplicadas</h3><p>Marca uno o más oficios utilizados en este trabajo.</p></div></div>
+          <div class="master-field master-full">{{ form.especialidades }}{% for error in form.especialidades.errors %}<em>{{ error }}</em>{% endfor %}</div>
+        </section>
+        <section class="master-work-form-section">
+          <div class="master-work-section-title"><span><i class="fa-solid fa-images"></i></span><div><small>Paso 3</small><h3>Imágenes del resultado</h3><p>Agrega fotografías claras que representen la calidad del trabajo.</p></div></div>
+          <div class="master-field master-full"><label for="{{ form.imagenes.id_for_label }}">{{ form.imagenes.label }}</label>{{ form.imagenes }}{% if form.imagenes.help_text %}<small>{{ form.imagenes.help_text }}</small>{% endif %}{% for error in form.imagenes.errors %}<em>{{ error }}</em>{% endfor %}</div>
+          {% if trabajo.imagenes.exists %}<div class="master-current-images"><h3>Imágenes actuales</h3><div>{% for imagen in trabajo.imagenes.all %}<figure><img src="{{ imagen.imagen.url }}" alt="Imagen de {{ trabajo.titulo }}" onerror="this.onerror=null;this.src='{{ trabajo.imagen_fallback_url }}';"><button type="submit" form="delete-image-{{ imagen.id }}" title="Eliminar imagen"><i class="fa-solid fa-trash"></i></button></figure>{% endfor %}</div></div>{% endif %}
+        </section>
+      </div>
+      <div class="master-form-actions"><a class="btn-master-secondary" href="{% url 'maestros:trabajos' %}">Cancelar</a><button class="btn-master-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Guardar trabajo</button></div>
+    </form>
+    {% if trabajo %}{% for imagen in trabajo.imagenes.all %}<form id="delete-image-{{ imagen.id }}" method="post" action="{% url 'maestros:eliminar_imagen' imagen.id %}">{% csrf_token %}</form>{% endfor %}{% endif %}
+  </div>
+</section>
 {% endblock %}
 {% block extra_js %}<script src="{% static 'maestros/js/trabajos.js' %}?v=20260821-preview"></script>{% endblock %}

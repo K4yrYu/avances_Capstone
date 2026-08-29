@@ -2,30 +2,70 @@ import shutil
 import tempfile
 import base64
 from datetime import timedelta
+from unittest.mock import Mock
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.templatetags.static import static
 from django.test import TestCase, override_settings
+from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 from django.urls import reverse
 from django.utils import timezone
 
 from .models import (
     MAX_IMAGENES_POR_TRABAJO,
     ApelacionMaestro,
+    DocumentoMaestro,
     Especialidad,
     ImagenTrabajoRealizado,
+    LicenciaMaestro,
     ObservacionMaestro,
     PerfilMaestro,
     TrabajoRealizado,
 )
 from .services import buscar_maestros
+from .admin import aprobar_perfiles
 
 
 TEST_MEDIA_ROOT = tempfile.mkdtemp()
+TEST_PRIVATE_ROOT = tempfile.mkdtemp()
 
 
-@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
+def archivo_pdf(nombre="documento.pdf"):
+    return SimpleUploadedFile(
+        nombre,
+        b"%PDF-1.4\n% documento de prueba\n",
+        content_type="application/pdf",
+    )
+
+
+def cargar_documentos_generales(
+    perfil,
+    estado=DocumentoMaestro.EstadoRevision.VERIFICADO,
+):
+    for tipo, _ in DocumentoMaestro.Tipo.choices:
+        DocumentoMaestro.objects.create(
+            perfil=perfil,
+            tipo=tipo,
+            archivo=archivo_pdf(f"{tipo.lower()}.pdf"),
+            estado_revision=estado,
+        )
+
+
+def completar_documentacion(perfil, estado=DocumentoMaestro.EstadoRevision.VERIFICADO):
+    cargar_documentos_generales(perfil, estado)
+    for tipo in perfil.tipos_licencia_requeridos():
+        LicenciaMaestro.objects.create(
+            perfil=perfil,
+            tipo_licencia=tipo,
+            clase="D" if tipo == Especialidad.TipoLicencia.SEC_ELECTRICA else "3",
+            numero_licencia=f"TEST-{tipo}",
+            archivo=archivo_pdf(f"{tipo.lower()}.pdf"),
+            estado_revision=estado,
+        )
+
+
+@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT, PRIVATE_DOCUMENTS_ROOT=TEST_PRIVATE_ROOT)
 class MaestrosFaseUnoTests(TestCase):
     contador_usuarios = 0
     @classmethod
@@ -116,6 +156,7 @@ class MaestrosFaseUnoTests(TestCase):
     def test_admin_puede_aprobar_y_guarda_fecha(self):
         usuario = self.crear_usuario("solicitante")
         perfil = self.crear_perfil(usuario, PerfilMaestro.Estado.PENDIENTE)
+        completar_documentacion(perfil)
         admin = self.crear_usuario("administrador", staff=True)
         self.client.force_login(admin)
         respuesta = self.client.post(
@@ -160,6 +201,7 @@ class MaestrosFaseUnoTests(TestCase):
         self.client.post(
             reverse("maestros:editar_perfil"),
             {
+                "telefono": intruso.telefono,
                 "descripcion_profesional": "Actualización del perfil propio.",
                 "anos_experiencia": 5,
                 "especialidades": [self.especialidad.id],
@@ -181,6 +223,7 @@ class MaestrosFaseUnoTests(TestCase):
         respuesta = self.client.post(
             reverse("maestros:crear_perfil"),
             {
+                "telefono": usuario.telefono,
                 "descripcion_profesional": "Experiencia en terminaciones e instalaciones.",
                 "anos_experiencia": 7,
                 "especialidades": [self.especialidad.id, electricidad.id],
@@ -193,6 +236,73 @@ class MaestrosFaseUnoTests(TestCase):
         perfil = PerfilMaestro.objects.get(usuario=usuario)
         self.assertEqual(perfil.especialidades.count(), 2)
         self.assertEqual(perfil.zonas_trabajo, "Maipú, Cerrillos")
+
+    def test_cambiar_solo_foto_mantiene_perfil_aprobado(self):
+        usuario = self.crear_usuario("foto_aprobada")
+        perfil = self.crear_perfil(usuario, PerfilMaestro.Estado.APROBADO)
+        self.client.force_login(usuario)
+        contenido = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+
+        respuesta = self.client.post(
+            reverse("maestros:editar_perfil"),
+            {
+                "foto": SimpleUploadedFile("perfil.png", contenido, content_type="image/png"),
+                "telefono": usuario.telefono,
+                "descripcion_profesional": perfil.descripcion_profesional,
+                "anos_experiencia": perfil.anos_experiencia,
+                "especialidades": [self.especialidad.id],
+                "region": perfil.region,
+                "comunas_trabajo": [perfil.comuna],
+                "disponible": "on",
+            },
+        )
+
+        self.assertRedirects(respuesta, reverse("maestros:panel"))
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.APROBADO)
+        self.assertTrue(perfil.foto)
+
+    def test_cambiar_telefono_actualiza_whatsapp_y_mantiene_aprobado(self):
+        usuario = self.crear_usuario("telefono_actualizado")
+        perfil = self.crear_perfil(usuario, PerfilMaestro.Estado.APROBADO)
+        telefono_nuevo = "+56987654321"
+        self.client.force_login(usuario)
+
+        respuesta = self.client.post(
+            reverse("maestros:editar_perfil"),
+            {
+                "telefono": telefono_nuevo,
+                "descripcion_profesional": perfil.descripcion_profesional,
+                "anos_experiencia": perfil.anos_experiencia,
+                "especialidades": [self.especialidad.id],
+                "region": perfil.region,
+                "comunas_trabajo": [perfil.comuna],
+                "disponible": "on",
+            },
+        )
+
+        self.assertRedirects(respuesta, reverse("maestros:panel"))
+        usuario.refresh_from_db()
+        perfil.refresh_from_db()
+        self.assertEqual(usuario.telefono, telefono_nuevo)
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.APROBADO)
+        detalle = self.client.get(reverse("maestros:detalle", args=[perfil.pk]))
+        self.assertContains(detalle, "https://wa.me/56987654321?")
+
+    def test_aprobado_no_muestra_ni_acepta_envio_manual_a_revision(self):
+        usuario = self.crear_usuario("aprobado_sin_reenvio")
+        perfil = self.crear_perfil(usuario, PerfilMaestro.Estado.APROBADO)
+        self.client.force_login(usuario)
+
+        panel = self.client.get(reverse("maestros:panel"))
+        respuesta = self.client.post(reverse("maestros:enviar_revision"), follow=True)
+
+        self.assertNotContains(panel, "Enviar a revisión")
+        self.assertContains(respuesta, "no necesita ser enviado nuevamente")
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.APROBADO)
 
     def test_trabajos_no_publicados_no_aparecen(self):
         usuario = self.crear_usuario("publico")
@@ -304,6 +414,7 @@ class MaestrosFaseUnoTests(TestCase):
     def test_reactivar_exige_observacion_y_restaura_visibilidad_publica(self):
         usuario = self.crear_usuario("maestro_reactivable")
         perfil = self.crear_perfil(usuario, PerfilMaestro.Estado.SUSPENDIDO)
+        completar_documentacion(perfil)
         apelacion = ApelacionMaestro.objects.create(
             perfil=perfil,
             mensaje="Solicito una nueva revisión porque solucioné los antecedentes de la suspensión.",
@@ -367,7 +478,7 @@ class MaestrosFaseUnoTests(TestCase):
         )
 
 
-@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
+@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT, PRIVATE_DOCUMENTS_ROOT=TEST_PRIVATE_ROOT)
 class MaestrosAPITests(TestCase):
     contador_usuarios = 100
 
@@ -511,6 +622,7 @@ class MaestrosAPITests(TestCase):
     def test_admin_puede_cambiar_estado_y_usuario_normal_no(self):
         postulante = self.crear_usuario("api_postulante")
         perfil = self.crear_perfil(postulante, PerfilMaestro.Estado.PENDIENTE)
+        completar_documentacion(perfil)
         usuario_normal = self.crear_usuario("api_cliente")
         admin = self.crear_usuario("api_admin", staff=True)
         url = reverse("maestros:api_admin_estado", args=[perfil.id])
@@ -640,6 +752,26 @@ class MaestrosAPITests(TestCase):
         self.assertEqual(perfil.estado, PerfilMaestro.Estado.PENDIENTE)
         self.assertIsNone(perfil.fecha_aprobacion)
         self.assertEqual(perfil.observacion_admin, "")
+
+    def test_api_cambiar_solo_foto_mantiene_perfil_aprobado(self):
+        usuario = self.crear_usuario("api_foto_aprobada")
+        perfil = self.crear_perfil(usuario, PerfilMaestro.Estado.APROBADO)
+        self.client.force_login(usuario)
+        contenido = encode_multipart(
+            BOUNDARY,
+            {"foto": self.imagen_valida("perfil-api.png")},
+        )
+
+        respuesta = self.client.patch(
+            reverse("maestros:api_mi_perfil"),
+            contenido,
+            content_type=MULTIPART_CONTENT,
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.APROBADO)
+        self.assertTrue(perfil.foto)
 
     def test_api_publica_solo_expone_aprobados_y_datos_publicos(self):
         aprobado = self.crear_perfil(
@@ -937,14 +1069,363 @@ class BuscadorMaestrosTests(TestCase):
         for privado in ("rut", "telefono", "email", "observacion_admin", "fecha_aprobacion"):
             self.assertNotIn(privado, resultado)
 
-    def test_perfil_publico_aprobado_muestra_canales_de_contacto(self):
+    @override_settings(SUPPORT_EMAIL="soporte@example.com")
+    def test_perfil_publico_aprobado_exige_aviso_antes_del_contacto(self):
         perfil = self.crear_perfil(nombre="Contacto Profesional")
+        perfil.observacion_admin = "Observación administrativa privada"
+        perfil.save(update_fields=["observacion_admin"])
 
         respuesta = self.client.get(reverse("maestros:detalle", args=[perfil.id]))
 
         self.assertEqual(respuesta.status_code, 200)
-        self.assertContains(respuesta, f'mailto:{perfil.usuario.email}')
-        self.assertContains(respuesta, f'tel:{perfil.usuario.telefono}')
+        self.assertContains(respuesta, "Contactar maestro")
+        self.assertContains(respuesta, "Antes de continuar")
+        self.assertContains(respuesta, "SFI funciona como un directorio de maestros independientes")
+        self.assertContains(respuesta, "Entendido, contactar maestro")
         telefono_whatsapp = perfil.usuario.telefono.replace("+", "")
-        self.assertContains(respuesta, f'https://wa.me/{telefono_whatsapp}')
-        self.assertContains(respuesta, "No compartas claves ni códigos de pago")
+        self.assertContains(respuesta, f"https://wa.me/{telefono_whatsapp}?")
+        self.assertContains(respuesta, "Hola%2C+encontr%C3%A9+tu+perfil+de+maestro+en+SFI")
+        self.assertNotContains(respuesta, f'href="tel:{perfil.usuario.telefono}"')
+        self.assertNotContains(respuesta, f'mailto:{perfil.usuario.email}')
+        self.assertNotContains(respuesta, perfil.usuario.rut)
+        self.assertNotContains(respuesta, perfil.observacion_admin)
+
+    @override_settings(SUPPORT_EMAIL="soporte@example.com")
+    def test_perfil_publico_permite_reporte_simple_por_correo(self):
+        perfil = self.crear_perfil(nombre="Perfil Reportable")
+
+        respuesta = self.client.get(reverse("maestros:detalle", args=[perfil.id]))
+
+        self.assertContains(respuesta, "Reportar perfil")
+        self.assertContains(respuesta, "mailto:soporte@example.com?")
+        self.assertContains(respuesta, "Identidad+posiblemente+falsa")
+        self.assertContains(respuesta, "Licencia+dudosa")
+
+
+@override_settings(PRIVATE_DOCUMENTS_ROOT=TEST_PRIVATE_ROOT)
+class VerificacionDocumentalMaestrosTests(TestCase):
+    contador = 800
+
+    def setUp(self):
+        self.User = get_user_model()
+        self.sin_licencia = Especialidad.objects.create(
+            nombre="Terminaciones documentales",
+            activa=True,
+            tipo_licencia=Especialidad.TipoLicencia.NINGUNA,
+        )
+        self.electricidad, _ = Especialidad.objects.get_or_create(nombre="Electricidad")
+        self.electricidad.tipo_licencia = Especialidad.TipoLicencia.SEC_ELECTRICA
+        self.electricidad.save(update_fields=["tipo_licencia"])
+        self.gas, _ = Especialidad.objects.get_or_create(nombre="Instalaciones de gas")
+        self.gas.tipo_licencia = Especialidad.TipoLicencia.SEC_GAS
+        self.gas.save(update_fields=["tipo_licencia"])
+
+    def crear_usuario(self, prefijo="documental", staff=False):
+        type(self).contador += 1
+        return self.User.objects.create_user(
+            username=f"{prefijo}_{type(self).contador}",
+            password="ClaveSegura2398!",
+            email=f"{prefijo}_{type(self).contador}@example.com",
+            rut=f"19{type(self).contador:06d}-{type(self).contador % 9}",
+            telefono="+56911112222",
+            email_confirmado=True,
+            is_active=True,
+            is_staff=staff,
+        )
+
+    def crear_perfil(self, especialidades=None, estado=PerfilMaestro.Estado.BORRADOR):
+        usuario = self.crear_usuario()
+        perfil = PerfilMaestro.objects.create(
+            usuario=usuario,
+            descripcion_profesional="Profesional con documentación para revisión manual.",
+            anos_experiencia=5,
+            region="RM",
+            comuna="Santiago",
+            zonas_trabajo="Santiago",
+            estado=estado,
+        )
+        perfil.especialidades.set(especialidades or [self.sin_licencia])
+        return perfil
+
+    def crear_licencia(self, perfil, tipo, estado=LicenciaMaestro.EstadoRevision.PENDIENTE):
+        return LicenciaMaestro.objects.create(
+            perfil=perfil,
+            tipo_licencia=tipo,
+            clase="D" if tipo == Especialidad.TipoLicencia.SEC_ELECTRICA else "3",
+            numero_licencia=f"SEC-{perfil.pk}-{tipo}",
+            archivo=archivo_pdf(f"licencia-{tipo}.pdf"),
+            estado_revision=estado,
+        )
+
+    def test_maestro_sin_documentos_no_puede_enviar_a_revision(self):
+        perfil = self.crear_perfil()
+        self.client.force_login(perfil.usuario)
+        respuesta = self.client.post(reverse("maestros:enviar_revision"), follow=True)
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.BORRADOR)
+        self.assertContains(respuesta, "Falta subir")
+        self.assertContains(respuesta, "Cédula de identidad")
+
+    def test_documentos_generales_cargados_permiten_enviar_a_revision(self):
+        perfil = self.crear_perfil()
+        completar_documentacion(perfil, DocumentoMaestro.EstadoRevision.PENDIENTE)
+        perfil.enviar_a_revision()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.PENDIENTE)
+
+    def test_especialidad_sin_licencia_no_exige_licencia(self):
+        perfil = self.crear_perfil()
+        self.assertEqual(perfil.tipos_licencia_requeridos(), set())
+        completar_documentacion(perfil)
+        self.assertTrue(perfil.puede_ser_aprobado())
+
+    def test_electricista_necesita_licencia_sec_electrica(self):
+        perfil = self.crear_perfil([self.electricidad])
+        cargar_documentos_generales(perfil)
+        self.assertIn("Licencia SEC eléctrica", perfil.faltantes_para_envio())
+
+    def test_instalador_de_gas_necesita_licencia_sec_gas(self):
+        perfil = self.crear_perfil([self.gas])
+        cargar_documentos_generales(perfil)
+        self.assertIn("Licencia SEC gas", perfil.faltantes_para_envio())
+
+    def test_electricidad_y_gas_exigen_ambas_licencias(self):
+        perfil = self.crear_perfil([self.electricidad, self.gas])
+        self.assertEqual(
+            perfil.tipos_licencia_requeridos(),
+            {
+                Especialidad.TipoLicencia.SEC_ELECTRICA,
+                Especialidad.TipoLicencia.SEC_GAS,
+            },
+        )
+
+    def test_documentos_pendientes_bloquean_aprobacion(self):
+        perfil = self.crear_perfil(estado=PerfilMaestro.Estado.PENDIENTE)
+        completar_documentacion(perfil, DocumentoMaestro.EstadoRevision.PENDIENTE)
+        with self.assertRaisesMessage(Exception, "pendiente de verificación"):
+            perfil.cambiar_estado(PerfilMaestro.Estado.APROBADO)
+
+    def test_documentos_verificados_permiten_aprobacion(self):
+        perfil = self.crear_perfil(estado=PerfilMaestro.Estado.PENDIENTE)
+        completar_documentacion(perfil)
+        perfil.cambiar_estado(PerfilMaestro.Estado.APROBADO)
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.APROBADO)
+
+    def test_licencia_obligatoria_pendiente_bloquea_aprobacion(self):
+        perfil = self.crear_perfil([self.electricidad], PerfilMaestro.Estado.PENDIENTE)
+        cargar_documentos_generales(perfil)
+        self.crear_licencia(
+            perfil,
+            Especialidad.TipoLicencia.SEC_ELECTRICA,
+            LicenciaMaestro.EstadoRevision.PENDIENTE,
+        )
+        self.assertFalse(perfil.puede_ser_aprobado())
+
+    def test_licencia_obligatoria_verificada_permite_aprobacion(self):
+        perfil = self.crear_perfil([self.electricidad], PerfilMaestro.Estado.PENDIENTE)
+        cargar_documentos_generales(perfil)
+        self.crear_licencia(
+            perfil,
+            Especialidad.TipoLicencia.SEC_ELECTRICA,
+            LicenciaMaestro.EstadoRevision.VERIFICADO,
+        )
+        perfil.cambiar_estado(PerfilMaestro.Estado.APROBADO)
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.APROBADO)
+
+    def test_accion_masiva_admin_no_salta_validacion(self):
+        perfil = self.crear_perfil(estado=PerfilMaestro.Estado.PENDIENTE)
+        admin = self.crear_usuario("admin_documental", staff=True)
+        modeladmin = Mock()
+        aprobar_perfiles(modeladmin, Mock(user=admin), PerfilMaestro.objects.filter(pk=perfil.pk))
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.PENDIENTE)
+        modeladmin.message_user.assert_called()
+
+    def test_api_admin_no_salta_validacion(self):
+        perfil = self.crear_perfil(estado=PerfilMaestro.Estado.PENDIENTE)
+        admin = self.crear_usuario("admin_api_documental", staff=True)
+        self.client.force_login(admin)
+        respuesta = self.client.patch(
+            reverse("maestros:api_admin_estado", args=[perfil.pk]),
+            {"estado": PerfilMaestro.Estado.APROBADO},
+            content_type="application/json",
+        )
+        self.assertEqual(respuesta.status_code, 400)
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.PENDIENTE)
+
+    def test_agregar_especialidad_regulada_devuelve_aprobado_a_revision(self):
+        perfil = self.crear_perfil(estado=PerfilMaestro.Estado.APROBADO)
+        completar_documentacion(perfil)
+        self.client.force_login(perfil.usuario)
+        respuesta = self.client.patch(
+            reverse("maestros:api_mi_perfil"),
+            {"especialidades": [self.sin_licencia.pk, self.electricidad.pk]},
+            content_type="application/json",
+        )
+        self.assertEqual(respuesta.status_code, 200)
+        perfil.refresh_from_db()
+        self.assertEqual(perfil.estado, PerfilMaestro.Estado.PENDIENTE)
+        self.assertIn("Licencia SEC eléctrica", perfil.faltantes_para_envio())
+
+    def test_maestro_no_puede_gestionar_documentos_ajenos(self):
+        propietario = self.crear_perfil()
+        intruso = self.crear_perfil()
+        documento = DocumentoMaestro.objects.create(
+            perfil=propietario,
+            tipo=DocumentoMaestro.Tipo.CEDULA,
+            archivo=archivo_pdf("cedula-ajena.pdf"),
+        )
+        self.client.force_login(intruso.usuario)
+        self.assertEqual(
+            self.client.get(
+                reverse("maestros:descargar_documento", args=[documento.pk])
+            ).status_code,
+            403,
+        )
+        respuesta = self.client.post(
+            reverse("maestros:api_documentos"),
+            {
+                "perfil": propietario.pk,
+                "tipo": DocumentoMaestro.Tipo.ANTECEDENTES,
+                "archivo": archivo_pdf("antecedentes-intruso.pdf"),
+            },
+        )
+        self.assertEqual(respuesta.status_code, 201)
+        creado = DocumentoMaestro.objects.get(
+            perfil=intruso,
+            tipo=DocumentoMaestro.Tipo.ANTECEDENTES,
+        )
+        self.assertEqual(creado.perfil, intruso)
+
+    def test_serializer_publico_no_expone_documentos_privados(self):
+        perfil = self.crear_perfil(estado=PerfilMaestro.Estado.APROBADO)
+        completar_documentacion(perfil)
+        respuesta = self.client.get(reverse("maestros:api_publico_detalle", args=[perfil.pk]))
+        self.assertEqual(respuesta.status_code, 200)
+        contenido = str(respuesta.json()).lower()
+        for privado in ("documentos", "licencias", "antecedentes", "cedula", "archivo"):
+            self.assertNotIn(privado, contenido)
+
+    def test_no_autenticado_no_accede_a_documentacion(self):
+        perfil = self.crear_perfil()
+        documento = DocumentoMaestro.objects.create(
+            perfil=perfil,
+            tipo=DocumentoMaestro.Tipo.CEDULA,
+            archivo=archivo_pdf("cedula-privada.pdf"),
+        )
+        self.assertIn(
+            self.client.get(reverse("maestros:api_documentos")).status_code,
+            (401, 403),
+        )
+        respuesta = self.client.get(
+            reverse("maestros:descargar_documento", args=[documento.pk])
+        )
+        self.assertEqual(respuesta.status_code, 302)
+
+    def test_reemplazar_documento_rechazado_lo_deja_pendiente(self):
+        perfil = self.crear_perfil()
+        documento = DocumentoMaestro.objects.create(
+            perfil=perfil,
+            tipo=DocumentoMaestro.Tipo.CEDULA,
+            archivo=archivo_pdf("cedula-rechazada.pdf"),
+            estado_revision=DocumentoMaestro.EstadoRevision.RECHAZADO,
+            observacion_admin="La imagen anterior no era legible.",
+            revisado_en=timezone.now(),
+        )
+        self.client.force_login(perfil.usuario)
+        self.client.post(
+            reverse("maestros:subir_documento", args=[DocumentoMaestro.Tipo.CEDULA]),
+            {"archivo": archivo_pdf("cedula-nueva.pdf")},
+        )
+        documento.refresh_from_db()
+        self.assertEqual(
+            documento.estado_revision,
+            DocumentoMaestro.EstadoRevision.PENDIENTE,
+        )
+        self.assertEqual(documento.observacion_admin, "")
+        self.assertIsNone(documento.revisado_en)
+
+    def test_perfil_aprobado_existente_sigue_visible_publicamente(self):
+        perfil = self.crear_perfil(estado=PerfilMaestro.Estado.APROBADO)
+        self.assertEqual(
+            self.client.get(reverse("maestros:detalle", args=[perfil.pk])).status_code,
+            200,
+        )
+
+    def test_paneles_web_renderizan_estado_documental(self):
+        perfil = self.crear_perfil([self.electricidad])
+        cargar_documentos_generales(perfil)
+        self.client.force_login(perfil.usuario)
+        panel = self.client.get(reverse("maestros:panel"))
+        self.assertEqual(panel.status_code, 200)
+        self.assertContains(panel, "Documentación de verificación")
+        self.assertContains(panel, "Licencia SEC eléctrica")
+
+        admin = self.crear_usuario("admin_panel_documental", staff=True)
+        self.client.force_login(admin)
+        revision = self.client.get(reverse("maestros:admin_revision"))
+        self.assertEqual(revision.status_code, 200)
+        self.assertContains(revision, "Documentación pendiente")
+        self.assertContains(revision, perfil.usuario.rut)
+
+    def test_api_revision_documental_exige_administrador(self):
+        perfil = self.crear_perfil()
+        documento = DocumentoMaestro.objects.create(
+            perfil=perfil,
+            tipo=DocumentoMaestro.Tipo.CEDULA,
+            archivo=archivo_pdf("cedula-api-revision.pdf"),
+        )
+        usuario_normal = self.crear_usuario("revisor_no_admin")
+        self.client.force_login(usuario_normal)
+        url = reverse("maestros:api_admin_documento_estado", args=[documento.pk])
+        respuesta = self.client.patch(
+            url,
+            {"estado_revision": DocumentoMaestro.EstadoRevision.VERIFICADO},
+            content_type="application/json",
+        )
+        self.assertEqual(respuesta.status_code, 403)
+
+        admin = self.crear_usuario("revisor_admin", staff=True)
+        self.client.force_login(admin)
+        respuesta = self.client.patch(
+            url,
+            {"estado_revision": DocumentoMaestro.EstadoRevision.VERIFICADO},
+            content_type="application/json",
+        )
+        self.assertEqual(respuesta.status_code, 200)
+        documento.refresh_from_db()
+        self.assertEqual(
+            documento.estado_revision,
+            DocumentoMaestro.EstadoRevision.VERIFICADO,
+        )
+        self.assertEqual(documento.revisado_por, admin)
+
+    def test_rechaza_archivos_documentales_no_permitidos_y_muy_grandes(self):
+        perfil = self.crear_perfil()
+        self.client.force_login(perfil.usuario)
+        url = reverse("maestros:api_documentos")
+        extension_invalida = self.client.post(
+            url,
+            {
+                "tipo": DocumentoMaestro.Tipo.CEDULA,
+                "archivo": SimpleUploadedFile(
+                    "documento.exe",
+                    b"contenido",
+                    content_type="application/octet-stream",
+                ),
+            },
+        )
+        self.assertEqual(extension_invalida.status_code, 400)
+
+        demasiado_grande = self.client.post(
+            url,
+            {
+                "tipo": DocumentoMaestro.Tipo.CEDULA,
+                "archivo": SimpleUploadedFile(
+                    "documento.pdf",
+                    b"%PDF" + (b"0" * (5 * 1024 * 1024)),
+                    content_type="application/pdf",
+                ),
+            },
+        )
+        self.assertEqual(demasiado_grande.status_code, 400)

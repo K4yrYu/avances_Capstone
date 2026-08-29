@@ -9,7 +9,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}?v=20260823-topbar-actions">
-  <link rel="stylesheet" href="{% static 'maestros/css/maestros.css' %}">
+  <link rel="stylesheet" href="{% static 'maestros/css/maestros.css' %}?v=20260829-especialidades-simples">
 </head>
 <body>
   <a class="skip-link" href="#revision-maestros">Saltar al contenido</a>
@@ -36,7 +36,7 @@
           <div>
             <span>ESPECIALIDADES DISPONIBLES</span>
             <h2>Oficios configurados</h2>
-            <div class="master-tags">{% for especialidad in especialidades %}<em>{{ especialidad.nombre }}{% if not especialidad.activa %} · Inactiva{% endif %}</em>{% empty %}<small>Aún no existen especialidades.</small>{% endfor %}</div>
+            <div class="master-tags">{% for especialidad in especialidades %}<em>{{ especialidad.nombre }}{% if especialidad.tipo_licencia != 'NINGUNA' %} · {{ especialidad.get_tipo_licencia_display }}{% endif %}{% if not especialidad.activa %} · Inactiva{% endif %}</em>{% empty %}<small>Aún no existen especialidades.</small>{% endfor %}</div>
           </div>
           <form method="post" action="{% url 'maestros:admin_crear_especialidad' %}">
             {% csrf_token %}
@@ -50,11 +50,60 @@
           <div class="master-admin-list">
             {% for perfil in perfiles %}
               <article class="master-review-row">
-                <div class="master-review-person"><img src="{{ perfil.foto_publica_url }}" alt="Foto de {{ perfil.usuario.get_full_name|default:perfil.usuario.username }}" onerror="this.onerror=null;this.src='{{ perfil.foto_fallback_url }}';"><div><small>#{{ perfil.id }} · {{ perfil.get_region_display }}</small><h3>{{ perfil.usuario.get_full_name|default:perfil.usuario.username }}</h3><p>{{ perfil.usuario.email }}</p></div></div>
+                <div class="master-review-person"><img src="{{ perfil.foto_publica_url }}" alt="Foto de {{ perfil.usuario.get_full_name|default:perfil.usuario.username }}" onerror="this.onerror=null;this.src='{{ perfil.foto_fallback_url }}';"><div><small>#{{ perfil.id }} · {{ perfil.get_region_display }}</small><h3>{{ perfil.usuario.get_full_name|default:perfil.usuario.username }}</h3><p>{{ perfil.usuario.email }}<br><b>RUT:</b> {{ perfil.usuario.rut }}</p></div></div>
                 <div class="master-review-data"><span>Experiencia</span><b>{{ perfil.anos_experiencia }} años</b><div class="master-tags">{% for especialidad in perfil.especialidades.all %}<em>{{ especialidad.nombre }}</em>{% endfor %}</div></div>
                 <div class="master-review-description"><span>Presentación</span><p>{{ perfil.descripcion_profesional|truncatechars:190 }}</p>{% if perfil.observacion_admin and perfil.estado != 'APROBADO' %}<small><b>Observación vigente:</b> {{ perfil.observacion_admin }}</small>{% endif %}{% if perfil.apelacion %}<div class="master-admin-appeal state-{{ perfil.apelacion.estado|lower }}"><strong><i class="fa-solid fa-scale-balanced"></i> Apelación {{ perfil.apelacion.get_estado_display|lower }}</strong><p>{{ perfil.apelacion.mensaje }}</p><small>Enviada: {{ perfil.apelacion.enviada_en|date:'d/m/Y H:i' }}{% if perfil.apelacion.resuelta_en %} · Resuelta: {{ perfil.apelacion.resuelta_en|date:'d/m/Y H:i' }}{% endif %}</small>{% if perfil.apelacion.observacion_admin %}<small><b>Resolución:</b> {{ perfil.apelacion.observacion_admin }}</small>{% endif %}</div>{% endif %}{% if perfil.observaciones.all %}<details class="master-admin-observations"><summary><i class="fa-solid fa-clock-rotate-left"></i> Ver observaciones ({{ perfil.observaciones.all|length }})</summary>{% for observacion in perfil.observaciones.all %}<div><strong>{{ observacion.get_tipo_display }}</strong><small>{{ observacion.creada_en|date:'d/m/Y H:i' }}{% if observacion.registrada_por %} · {{ observacion.registrada_por.get_full_name|default:observacion.registrada_por.username }}{% endif %}</small><p>{{ observacion.texto }}</p></div>{% endfor %}</details>{% endif %}</div>
-                <div class="master-review-actions"><span class="master-state state-{{ perfil.estado|lower }}">{{ perfil.get_estado_display }}</span><button class="btn-master-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#acciones-{{ perfil.id }}">Revisar <i class="fa-solid fa-chevron-down"></i></button></div>
-                <div class="collapse master-review-form" id="acciones-{{ perfil.id }}"><form class="master-review-state-form" method="post" action="{% url 'maestros:admin_estado' perfil.id %}">{% csrf_token %}<label>Observación para el maestro <small>Obligatoria al rechazar, suspender, reactivar o resolver una apelación (mínimo 10 caracteres)</small><textarea class="form-control" name="observacion_admin" maxlength="2000" rows="3"></textarea></label><div>{% if perfil.estado == 'PENDIENTE' %}<button class="btn-master-approve" name="estado" value="APROBADO" type="submit"><i class="fa-solid fa-check"></i> Aprobar</button><button class="btn-master-reject" name="estado" value="RECHAZADO" type="submit"><i class="fa-solid fa-xmark"></i> Rechazar</button>{% elif perfil.estado == 'APROBADO' %}<button class="btn-master-suspend" name="estado" value="SUSPENDIDO" type="submit"><i class="fa-solid fa-ban"></i> Suspender</button>{% elif perfil.estado == 'SUSPENDIDO' %}<button class="btn-master-approve" name="estado" value="REACTIVAR" type="submit"><i class="fa-solid fa-rotate-left"></i> Reactivar maestro</button>{% if perfil.apelacion.estado == 'PENDIENTE' %}<button class="btn-master-reject" name="estado" value="RECHAZAR_APELACION" type="submit"><i class="fa-solid fa-xmark"></i> Rechazar apelación</button>{% endif %}{% else %}<span class="master-review-waiting">Esperando que el maestro actualice y reenvíe su perfil.</span>{% endif %}</div></form></div>
+                <div class="master-review-actions">
+                  <span class="master-state state-{{ perfil.estado|lower }}">{{ perfil.get_estado_display }}</span>
+                  {% if perfil.documentacion_aprobable %}
+                    <span class="master-review-requirements complete"><i class="fa-solid fa-circle-check"></i> Documentos completos</span>
+                  {% else %}
+                    <span class="master-review-requirements pending"><i class="fa-solid fa-triangle-exclamation"></i> {{ perfil.motivos_documentales|length }} pendiente{{ perfil.motivos_documentales|length|pluralize }}</span>
+                  {% endif %}
+                  <button class="btn-master-secondary master-review-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#detalle-perfil-{{ perfil.id }}" aria-expanded="false" aria-controls="detalle-perfil-{{ perfil.id }}"><span>Ver detalles</span> <i class="fa-solid fa-chevron-down"></i></button>
+                </div>
+                <div class="collapse master-review-details" id="detalle-perfil-{{ perfil.id }}">
+                <div class="master-review-documents">
+                  <div class="master-document-status {% if perfil.documentacion_aprobable %}complete{% else %}pending{% endif %}"><i class="fa-solid {% if perfil.documentacion_aprobable %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i><div><strong>{% if perfil.documentacion_aprobable %}Documentación completa{% else %}Documentación pendiente{% endif %}</strong>{% if perfil.motivos_documentales %}<ul>{% for motivo in perfil.motivos_documentales %}<li>{{ motivo }}</li>{% endfor %}</ul>{% endif %}</div></div>
+                  <h4>Documentos obligatorios</h4>
+                  {% for item in perfil.documentos_revision %}
+                    <div class="master-admin-document-row">
+                      <div><strong>{{ item.etiqueta }}</strong><span class="master-document-badge state-{% if item.documento %}{{ item.documento.estado_revision|lower }}{% else %}missing{% endif %}">{% if item.documento %}{{ item.documento.get_estado_revision_display }}{% else %}No subido{% endif %}</span></div>
+                      {% if item.documento %}
+                        <a href="{% url 'maestros:descargar_documento' item.documento.id %}" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i> Ver</a>
+                        <form method="post" action="{% url 'maestros:admin_documento_estado' item.documento.id %}">{% csrf_token %}<textarea name="observacion_admin" rows="2" maxlength="2000" placeholder="Observación obligatoria al rechazar"></textarea><div><button name="estado_revision" value="VERIFICADO" class="btn-master-approve" type="submit">Verificar</button><button name="estado_revision" value="RECHAZADO" class="btn-master-reject" type="submit">Rechazar</button><button name="estado_revision" value="PENDIENTE" class="btn-master-secondary" type="submit">Pendiente</button></div></form>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+                  {% if perfil.licencias_revision %}<h4>Licencias profesionales</h4>{% endif %}
+                  {% for item in perfil.licencias_revision %}
+                    <div class="master-admin-document-row">
+                      <div><strong>Licencia {{ item.etiqueta }}</strong><span>{% if item.licencia %}Clase {{ item.licencia.clase }} · N.º {{ item.licencia.numero_licencia }}{% endif %}</span><span class="master-document-badge state-{% if item.licencia %}{{ item.licencia.estado_revision|lower }}{% else %}missing{% endif %}">{% if item.licencia %}{{ item.licencia.get_estado_revision_display }}{% else %}No subida{% endif %}</span></div>
+                      {% if item.licencia %}
+                        <a href="{% url 'maestros:descargar_licencia' item.licencia.id %}" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i> Ver</a>
+                        <form method="post" action="{% url 'maestros:admin_licencia_estado' item.licencia.id %}">{% csrf_token %}<textarea name="observacion_admin" rows="2" maxlength="2000" placeholder="Observación obligatoria al rechazar"></textarea><div><button name="estado_revision" value="VERIFICADO" class="btn-master-approve" type="submit">Verificar</button><button name="estado_revision" value="RECHAZADO" class="btn-master-reject" type="submit">Rechazar</button><button name="estado_revision" value="PENDIENTE" class="btn-master-secondary" type="submit">Pendiente</button></div></form>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+                </div>
+                <div class="master-review-form">
+                  <form class="master-review-state-form" method="post" action="{% url 'maestros:admin_estado' perfil.id %}">
+                    {% csrf_token %}
+                    <label>Observación para el maestro <small>Obligatoria al rechazar, suspender, reactivar o resolver una apelación (mínimo 10 caracteres)</small><textarea class="form-control" name="observacion_admin" maxlength="2000" rows="3"></textarea></label>
+                    <div>
+                      {% if perfil.estado == 'PENDIENTE' %}
+                        {% if perfil.documentacion_aprobable %}<button class="btn-master-approve" name="estado" value="APROBADO" type="submit"><i class="fa-solid fa-check"></i> Aprobar</button>{% else %}<button class="btn-master-approve" type="button" disabled title="Verifica toda la documentación obligatoria antes de aprobar"><i class="fa-solid fa-lock"></i> Aprobar</button>{% endif %}
+                        <button class="btn-master-reject" name="estado" value="RECHAZADO" type="submit"><i class="fa-solid fa-xmark"></i> Rechazar</button>
+                      {% elif perfil.estado == 'APROBADO' %}
+                        <button class="btn-master-suspend" name="estado" value="SUSPENDIDO" type="submit"><i class="fa-solid fa-ban"></i> Suspender</button>
+                      {% elif perfil.estado == 'SUSPENDIDO' %}
+                        {% if perfil.documentacion_aprobable %}<button class="btn-master-approve" name="estado" value="REACTIVAR" type="submit"><i class="fa-solid fa-rotate-left"></i> Reactivar maestro</button>{% else %}<button class="btn-master-approve" type="button" disabled title="La documentación obligatoria debe estar verificada"><i class="fa-solid fa-lock"></i> Reactivar maestro</button>{% endif %}
+                        {% if perfil.apelacion.estado == 'PENDIENTE' %}<button class="btn-master-reject" name="estado" value="RECHAZAR_APELACION" type="submit"><i class="fa-solid fa-xmark"></i> Rechazar apelación</button>{% endif %}
+                      {% else %}<span class="master-review-waiting">Esperando que el maestro actualice y reenvíe su perfil.</span>{% endif %}
+                    </div>
+                  </form>
+                </div>
+                </div>
               </article>
             {% empty %}<div class="master-empty"><i class="fa-solid fa-inbox"></i><h2>No hay perfiles en este estado.</h2></div>{% endfor %}
           </div>
@@ -81,6 +130,20 @@
         }
       });
       observation.addEventListener('input', () => observation.setCustomValidity(''));
+    });
+    document.querySelectorAll('.master-review-details').forEach((panel) => {
+      const card = panel.closest('.master-review-row');
+      const button = card?.querySelector(`[aria-controls="${panel.id}"]`);
+      const label = button?.querySelector('span');
+      if (!button || !label) return;
+      panel.addEventListener('show.bs.collapse', () => {
+        label.textContent = 'Minimizar';
+        button.classList.add('is-open');
+      });
+      panel.addEventListener('hide.bs.collapse', () => {
+        label.textContent = 'Ver detalles';
+        button.classList.remove('is-open');
+      });
     });
   </script>
 </body>

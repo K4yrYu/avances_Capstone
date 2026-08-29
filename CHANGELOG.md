@@ -19,6 +19,47 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ## [Sin publicar]
 
+### Verificación documental y directorio definitivo de maestros - 29 de agosto de 2026 (UTC-04:00)
+
+#### Documentación y aprobación
+
+- Se incorporó la carga privada de cédula de identidad y certificado de antecedentes para todos los maestros.
+- Electricidad exige una licencia SEC eléctrica e Instalaciones de gas exige una licencia SEC gas; si el maestro selecciona ambas especialidades debe presentar ambas licencias.
+- Los documentos y licencias admiten los estados pendiente, verificado y rechazado, con revisión exclusiva de administración y observación obligatoria al rechazar.
+- El perfil solo puede enviarse a revisión cuando contiene toda la documentación requerida y solo puede quedar aprobado cuando cada documento y licencia obligatoria está verificado.
+- Los archivos documentales se almacenan fuera de `media`, se descargan mediante vistas protegidas y nunca se publican en el perfil ni en la API pública.
+- Se agregaron paneles ordenados para cargar, reemplazar y revisar documentación, junto con tarjetas administrativas plegables e indicadores de requisitos pendientes.
+
+#### Directorio, contacto y privacidad
+
+- SFI quedó definido como directorio de maestros independientes: no crea solicitudes, contrataciones, cotizaciones, pagos, garantías ni seguimiento de servicios.
+- El perfil público muestra únicamente maestros aprobados, sus especialidades, experiencia, región, comunas, disponibilidad y portafolio publicado.
+- Se muestran las insignias `Maestro verificado` e `Instalador SEC verificado` cuando corresponde.
+- El botón `Contactar maestro` presenta primero un aviso obligatorio sobre el alcance de SFI y solo después abre WhatsApp con un mensaje inicial prellenado.
+- Se agregó `Reportar perfil` mediante un correo simple prellenado para identidad o documentación posiblemente falsa, licencia dudosa, información engañosa o contenido inapropiado.
+- Se evita exponer públicamente el RUT, documentos, licencias, archivos privados y observaciones administrativas.
+
+#### Formularios y presentación visual
+
+- El maestro puede actualizar su teléfono de contacto desde la edición profesional; el nuevo número actualiza WhatsApp sin devolver un perfil aprobado a revisión.
+- Cambiar solamente la fotografía o disponibilidad mantiene la aprobación; modificar descripción, experiencia, especialidades o cobertura requiere una nueva revisión.
+- El formulario profesional se reorganizó en secciones para fotografía, contacto, trayectoria, especialidades, cobertura y disponibilidad, con vista previa limpia y diseño adaptable.
+- Se mejoró el formulario de trabajos realizados con varias especialidades, previsualización de imágenes y validación de fechas coherentes, sin fechas futuras ni anteriores al rango permitido.
+- El directorio utiliza tarjetas de tamaño uniforme y el encabezado público agrupa claramente verificaciones, región, comunas, especialidades, experiencia y disponibilidad con los colores SFI.
+
+#### API, configuración y base de datos
+
+- La API interna de maestros incorpora endpoints protegidos para documentos y licencias propios, además de endpoints administrativos para su revisión.
+- Se mantienen autenticación, CSRF, validación de propiedad, permisos administrativos, límites de 5 MB y ausencia de datos documentales en respuestas públicas.
+- Se agregó `PRIVATE_DOCUMENTS_ROOT`, un correo de soporte configurable y el directorio privado a `.gitignore`.
+- El límite de registro público quedó en 10 solicitudes por IP dentro de una ventana real de 3 minutos.
+- Se agregaron las migraciones `0012`, `0013` y `0014` para documentación, tipos de licencia, configuración de especialidades e Instalaciones de gas.
+
+#### Verificación
+
+- `python manage.py check` finalizó sin observaciones.
+- Se ejecutaron 72 pruebas del módulo `maestros`; todas finalizaron correctamente.
+
 ### Mejora de IA con filtros - 28 de agosto de 2026 (UTC-04:00)
 
 #### Búsqueda semántica ferretera

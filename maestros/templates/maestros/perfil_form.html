@@ -1,14 +1,89 @@
 {% extends 'maestros/base.html' %}
 {% block title %}{% if es_nuevo %}Crear perfil profesional{% else %}Editar perfil profesional{% endif %}{% endblock %}
 {% block content %}
-<section class="master-mini-hero master-private-hero"><div class="container"><span class="master-eyebrow"><i class="fa-solid fa-id-card"></i> Perfil profesional</span><h1>{% if es_nuevo %}Presenta tu experiencia.{% else %}Actualiza tu información.{% endif %}</h1><p>La información será revisada antes de aparecer públicamente.</p></div></section>
-<section class="master-section master-private-section"><div class="container"><div class="master-form-layout"><form class="master-form-card" method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
-  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
-  <div class="master-form-heading"><span class="master-icon"><i class="fa-solid fa-user-gear"></i></span><div><small>Datos del maestro</small><h2>Información profesional</h2></div></div>
-  {% for field in form %}
-    {% if field.name == 'disponible' %}<label class="master-check">{{ field }}<span><strong>{{ field.label }}</strong><small>Indica si actualmente puedes recibir nuevos trabajos.</small></span></label>
-    {% else %}<div class="master-field"><label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<b>*</b>{% endif %}</label>{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<em>{{ error }}</em>{% endfor %}</div>{% endif %}
-  {% endfor %}
-  <div class="master-form-actions"><a class="btn-master-secondary" href="{% if es_nuevo %}{% url 'maestros:trabaja_con_nosotros' %}{% else %}{% url 'maestros:panel' %}{% endif %}">Cancelar</a><button class="btn-master-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Guardar perfil</button></div>
-</form><aside class="master-form-help"><i class="fa-solid fa-lightbulb"></i><h2>Un perfil claro genera confianza.</h2><p>Describe los tipos de trabajo que realizas, tu experiencia y las comunas donde realmente puedes trabajar.</p><ul><li>Usa una foto profesional.</li><li>Selecciona tus especialidades reales.</li><li>No incluyas datos sensibles.</li></ul></aside></div></div></section>
+<section class="master-mini-hero master-private-hero">
+  <div class="container">
+    <span class="master-eyebrow"><i class="fa-solid fa-id-card"></i> Perfil profesional</span>
+    <h1>{% if es_nuevo %}Presenta tu experiencia.{% else %}Actualiza tu información.{% endif %}</h1>
+    <p>{% if es_nuevo %}Completa tus datos para iniciar el proceso de verificación.{% else %}Mantén vigente tu presentación, teléfono y zonas de trabajo.{% endif %}</p>
+  </div>
+</section>
+
+<section class="master-section master-private-section">
+  <div class="container">
+    <div class="master-form-layout master-profile-form-layout">
+      <form class="master-form-card master-profile-form-card" method="post" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+        <div class="master-form-heading master-profile-form-heading">
+          <span class="master-icon"><i class="fa-solid fa-user-gear"></i></span>
+          <div><small>Datos del maestro</small><h2>Información profesional</h2><p>Completa cada sección con información clara y actualizada.</p></div>
+          <span class="master-required-note"><b>*</b> Campos obligatorios</span>
+        </div>
+
+        <div class="master-profile-form-sections">
+          <section class="master-profile-form-section master-profile-photo-section">
+            <header class="master-profile-section-header"><span><i class="fa-solid fa-camera"></i></span><div><small>Imagen profesional</small><h3>Foto de perfil</h3><p>Será la primera referencia que verán los clientes.</p></div></header>
+            <div class="master-field">
+              <label for="{{ form.foto.id_for_label }}">{{ form.foto.label }}{% if form.foto.field.required %}<b>*</b>{% endif %}</label>{{ form.foto }}
+              {% if form.foto.help_text %}<small>{{ form.foto.help_text }}</small>{% endif %}{% for error in form.foto.errors %}<em>{{ error }}</em>{% endfor %}
+            </div>
+          </section>
+
+          <section class="master-profile-form-section">
+            <header class="master-profile-section-header"><span><i class="fa-brands fa-whatsapp"></i></span><div><small>Canal de contacto</small><h3>Teléfono del maestro</h3><p>Este número se utilizará únicamente cuando un cliente decida contactarte.</p></div></header>
+            <div class="master-field master-contact-form-field">
+              <label for="{{ form.telefono.id_for_label }}">{{ form.telefono.label }}<b>*</b></label>{{ form.telefono }}
+              <small><i class="fa-solid fa-circle-info"></i> {{ form.telefono.help_text }}</small>{% for error in form.telefono.errors %}<em>{{ error }}</em>{% endfor %}
+            </div>
+          </section>
+
+          <section class="master-profile-form-section">
+            <header class="master-profile-section-header"><span><i class="fa-solid fa-briefcase"></i></span><div><small>Trayectoria</small><h3>Presentación profesional</h3><p>Resume tu experiencia y el tipo de resultados que puedes ofrecer.</p></div></header>
+            <div class="master-profile-presentation-grid">
+              <div class="master-field master-profile-description-field"><label for="{{ form.descripcion_profesional.id_for_label }}">{{ form.descripcion_profesional.label }}<b>*</b></label>{{ form.descripcion_profesional }}{% for error in form.descripcion_profesional.errors %}<em>{{ error }}</em>{% endfor %}</div>
+              <div class="master-field master-experience-field">
+                <span class="master-experience-icon"><i class="fa-solid fa-medal"></i></span>
+                <div><small>Experiencia comprobable</small><label for="{{ form.anos_experiencia.id_for_label }}">{{ form.anos_experiencia.label }}<b>*</b></label></div>
+                <div class="master-experience-input">{{ form.anos_experiencia }}<span>años</span></div>
+                <p>Indica tus años reales trabajando en tus especialidades.</p>
+                {% for error in form.anos_experiencia.errors %}<em>{{ error }}</em>{% endfor %}
+              </div>
+            </div>
+          </section>
+
+          <section class="master-profile-form-section">
+            <header class="master-profile-section-header"><span><i class="fa-solid fa-screwdriver-wrench"></i></span><div><small>Servicios</small><h3>Especialidades</h3><p>Puedes seleccionar más de una especialidad.</p></div></header>
+            <div class="master-field"><label>{{ form.especialidades.label }}<b>*</b></label>{{ form.especialidades }}{% for error in form.especialidades.errors %}<em>{{ error }}</em>{% endfor %}</div>
+          </section>
+
+          <section class="master-profile-form-section">
+            <header class="master-profile-section-header"><span><i class="fa-solid fa-map-location-dot"></i></span><div><small>Cobertura en Chile</small><h3>Zonas donde trabajas</h3><p>Selecciona una región y todas las comunas que realmente puedes atender.</p></div></header>
+            <div class="master-field"><label for="{{ form.region.id_for_label }}">{{ form.region.label }}<b>*</b></label>{{ form.region }}{% for error in form.region.errors %}<em>{{ error }}</em>{% endfor %}</div>
+            <div class="master-field"><label for="{{ form.comunas_trabajo.id_for_label }}">{{ form.comunas_trabajo.label }}<b>*</b></label>{{ form.comunas_trabajo }}{% if form.comunas_trabajo.help_text %}<small>{{ form.comunas_trabajo.help_text }}</small>{% endif %}{% for error in form.comunas_trabajo.errors %}<em>{{ error }}</em>{% endfor %}</div>
+          </section>
+
+          <section class="master-profile-availability">
+            <label class="master-check">{{ form.disponible }}<span><strong>{{ form.disponible.label }}</strong><small>Actívalo cuando puedas recibir nuevas consultas de clientes.</small></span><i class="fa-solid fa-circle-check"></i></label>
+            {% for error in form.disponible.errors %}<em>{{ error }}</em>{% endfor %}
+          </section>
+        </div>
+
+        <div class="master-form-actions master-profile-form-actions"><a class="btn-master-secondary" href="{% if es_nuevo %}{% url 'maestros:trabaja_con_nosotros' %}{% else %}{% url 'maestros:panel' %}{% endif %}">Cancelar</a><button class="btn-master-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Guardar perfil</button></div>
+      </form>
+
+      <aside class="master-form-help master-profile-form-help">
+        <span class="master-help-icon"><i class="fa-solid fa-lightbulb"></i></span><small>Consejos para tu perfil</small><h2>Un perfil claro genera confianza.</h2>
+        <p>Presenta información precisa para que los clientes entiendan rápidamente dónde trabajas y qué sabes hacer.</p>
+        <ol>
+          <li><span>1</span><div><strong>Foto profesional</strong><small>Usa una imagen clara y reciente.</small></div></li>
+          <li><span>2</span><div><strong>Contacto actualizado</strong><small>Revisa que tu número tenga WhatsApp.</small></div></li>
+          <li><span>3</span><div><strong>Especialidades reales</strong><small>Marca solo los trabajos que dominas.</small></div></li>
+          <li><span>4</span><div><strong>Cobertura precisa</strong><small>Selecciona comunas que puedas atender.</small></div></li>
+        </ol>
+        <div class="master-help-notice"><i class="fa-solid fa-shield-halved"></i><span><strong>Protección de datos</strong><small>No incluyas RUT, documentos o información sensible en tu descripción.</small></span></div>
+      </aside>
+    </div>
+  </div>
+</section>
 {% endblock %}

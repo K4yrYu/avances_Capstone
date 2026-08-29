@@ -6,10 +6,44 @@ from django.utils import timezone
 
 from .chile import REGIONES_CHOICES
 from .presentacion import avatar_maestro_url, imagen_proyecto_url
+from .storage import documentos_privados_storage
 
 
 MAX_IMAGENES_POR_TRABAJO = 10
 MAX_TAMANO_IMAGEN = 5 * 1024 * 1024
+MAX_TAMANO_DOCUMENTO = 5 * 1024 * 1024
+
+
+def validar_archivo_documental(archivo):
+    """Valida tamaño, extensión, MIME declarado y firma básica del archivo."""
+    nombre = str(getattr(archivo, "name", "") or "").lower()
+    extensiones = {
+        ".pdf": ("application/pdf", (b"%PDF",)),
+        ".jpg": ("image/jpeg", (b"\xff\xd8\xff",)),
+        ".jpeg": ("image/jpeg", (b"\xff\xd8\xff",)),
+        ".png": ("image/png", (b"\x89PNG\r\n\x1a\n",)),
+    }
+    extension = next((item for item in extensiones if nombre.endswith(item)), "")
+    if not extension:
+        raise ValidationError("Solo se permiten archivos PDF, JPG, JPEG o PNG.")
+    if getattr(archivo, "size", 0) > MAX_TAMANO_DOCUMENTO:
+        raise ValidationError("El archivo debe pesar como máximo 5 MB.")
+
+    mime_esperado, firmas = extensiones[extension]
+    content_type = getattr(archivo, "content_type", "")
+    if content_type and content_type != mime_esperado:
+        raise ValidationError("El tipo de archivo no coincide con su extensión.")
+
+    flujo = getattr(archivo, "file", archivo)
+    posicion = None
+    try:
+        posicion = flujo.tell()
+        cabecera = flujo.read(12)
+        flujo.seek(posicion)
+    except (AttributeError, OSError, ValueError):
+        return
+    if cabecera and not any(cabecera.startswith(firma) for firma in firmas):
+        raise ValidationError("El contenido del archivo no corresponde a un formato permitido.")
 
 
 def validar_fecha_trabajo(value):
@@ -21,9 +55,19 @@ def validar_fecha_trabajo(value):
 
 
 class Especialidad(models.Model):
+    class TipoLicencia(models.TextChoices):
+        NINGUNA = "NINGUNA", "No requiere licencia"
+        SEC_ELECTRICA = "SEC_ELECTRICA", "SEC eléctrica"
+        SEC_GAS = "SEC_GAS", "SEC gas"
+
     nombre = models.CharField(max_length=100, unique=True)
     descripcion = models.TextField(blank=True)
     activa = models.BooleanField(default=True)
+    tipo_licencia = models.CharField(
+        max_length=20,
+        choices=TipoLicencia.choices,
+        default=TipoLicencia.NINGUNA,
+    )
 
     class Meta:
         ordering = ("nombre",)
@@ -103,6 +147,9 @@ class PerfilMaestro(models.Model):
         }
         if nuevo_estado not in estados_admin:
             raise ValueError("Estado administrativo no válido.")
+        if nuevo_estado == self.Estado.APROBADO and not self.puede_ser_aprobado():
+            detalle = " ".join(self.motivos_documentacion_pendiente())
+            raise ValidationError(f"No se puede aprobar este maestro: {detalle}")
         self.estado = nuevo_estado
         self.fecha_aprobacion = timezone.now() if nuevo_estado == self.Estado.APROBADO else None
         self.save(update_fields=["estado", "fecha_aprobacion", "actualizado_en"])
@@ -123,6 +170,320 @@ class PerfilMaestro(models.Model):
             ]
         )
         return True
+
+    def tipos_licencia_requeridos(self):
+        return set(
+            self.especialidades.exclude(
+                tipo_licencia=Especialidad.TipoLicencia.NINGUNA
+            ).values_list("tipo_licencia", flat=True)
+        )
+
+    def faltantes_para_envio(self):
+        documentos = {documento.tipo: documento for documento in self.documentos.all()}
+        faltantes = []
+        for tipo, etiqueta in DocumentoMaestro.Tipo.choices:
+            documento = documentos.get(tipo)
+            if documento is None or not documento.archivo:
+                faltantes.append(etiqueta)
+
+        licencias = {licencia.tipo_licencia: licencia for licencia in self.licencias.all()}
+        etiquetas = dict(Especialidad.TipoLicencia.choices)
+        for tipo in sorted(self.tipos_licencia_requeridos()):
+            licencia = licencias.get(tipo)
+            if licencia is None or not licencia.archivo:
+                faltantes.append(f"Licencia {etiquetas[tipo]}")
+        return faltantes
+
+    def documentos_obligatorios_completos(self):
+        documentos = {documento.tipo: documento for documento in self.documentos.all()}
+        return all(
+            documentos.get(tipo)
+            and documentos[tipo].estado_revision == DocumentoMaestro.EstadoRevision.VERIFICADO
+            for tipo, _ in DocumentoMaestro.Tipo.choices
+        )
+
+    def licencias_obligatorias_completas(self):
+        licencias = {licencia.tipo_licencia: licencia for licencia in self.licencias.all()}
+        return all(
+            licencias.get(tipo)
+            and licencias[tipo].estado_revision == LicenciaMaestro.EstadoRevision.VERIFICADO
+            for tipo in self.tipos_licencia_requeridos()
+        )
+
+    def documentacion_completa(self):
+        return (
+            self.documentos_obligatorios_completos()
+            and self.licencias_obligatorias_completas()
+        )
+
+    def puede_ser_aprobado(self):
+        return self.documentacion_completa()
+
+    def motivos_documentacion_pendiente(self):
+        motivos = []
+        documentos = {documento.tipo: documento for documento in self.documentos.all()}
+        for tipo, etiqueta in DocumentoMaestro.Tipo.choices:
+            documento = documentos.get(tipo)
+            if documento is None or not documento.archivo:
+                motivos.append(f"Falta subir {etiqueta.lower()}.")
+            elif documento.estado_revision == DocumentoMaestro.EstadoRevision.PENDIENTE:
+                motivos.append(f"{etiqueta} pendiente de verificación.")
+            elif documento.estado_revision == DocumentoMaestro.EstadoRevision.RECHAZADO:
+                motivos.append(f"{etiqueta} rechazado.")
+
+        licencias = {licencia.tipo_licencia: licencia for licencia in self.licencias.all()}
+        etiquetas = dict(Especialidad.TipoLicencia.choices)
+        for tipo in sorted(self.tipos_licencia_requeridos()):
+            etiqueta = f"Licencia {etiquetas[tipo]}"
+            licencia = licencias.get(tipo)
+            if licencia is None or not licencia.archivo:
+                motivos.append(f"Falta subir {etiqueta.lower()}.")
+            elif licencia.estado_revision == LicenciaMaestro.EstadoRevision.PENDIENTE:
+                motivos.append(f"{etiqueta} pendiente de verificación.")
+            elif licencia.estado_revision == LicenciaMaestro.EstadoRevision.RECHAZADO:
+                motivos.append(f"{etiqueta} rechazada.")
+        return motivos
+
+    def enviar_a_revision(self):
+        if self.estado == self.Estado.SUSPENDIDO:
+            raise ValidationError(
+                "Un perfil suspendido debe ser habilitado por administración."
+            )
+        if self.estado not in {self.Estado.BORRADOR, self.Estado.RECHAZADO}:
+            raise ValidationError(
+                "Este perfil no necesita ser enviado nuevamente a revisión."
+            )
+        faltantes = self.faltantes_para_envio()
+        if faltantes:
+            raise ValidationError(
+                "No puedes enviar tu perfil a revisión. Falta subir: "
+                + "; ".join(faltantes)
+                + "."
+            )
+        self.estado = self.Estado.PENDIENTE
+        self.observacion_admin = ""
+        self.fecha_aprobacion = None
+        self.save(
+            update_fields=[
+                "estado",
+                "observacion_admin",
+                "fecha_aprobacion",
+                "actualizado_en",
+            ]
+        )
+
+    @property
+    def tiene_licencia_sec_verificada(self):
+        requeridas = self.tipos_licencia_requeridos()
+        if not requeridas:
+            return False
+        verificadas = set(
+            self.licencias.filter(
+                tipo_licencia__in=requeridas,
+                estado_revision=LicenciaMaestro.EstadoRevision.VERIFICADO,
+            ).values_list("tipo_licencia", flat=True)
+        )
+        return requeridas.issubset(verificadas)
+
+
+class EstadoRevisionDocumento(models.TextChoices):
+    PENDIENTE = "PENDIENTE", "Pendiente"
+    VERIFICADO = "VERIFICADO", "Verificado"
+    RECHAZADO = "RECHAZADO", "Rechazado"
+
+
+class DocumentoMaestro(models.Model):
+    class Tipo(models.TextChoices):
+        CEDULA = "CEDULA", "Cédula de identidad"
+        ANTECEDENTES = "ANTECEDENTES", "Certificado de antecedentes"
+
+    EstadoRevision = EstadoRevisionDocumento
+
+    perfil = models.ForeignKey(
+        PerfilMaestro,
+        on_delete=models.CASCADE,
+        related_name="documentos",
+    )
+    tipo = models.CharField(max_length=20, choices=Tipo.choices)
+    archivo = models.FileField(
+        storage=documentos_privados_storage,
+        upload_to="maestros/documentos/%Y/%m/",
+        validators=[validar_archivo_documental],
+    )
+    estado_revision = models.CharField(
+        max_length=12,
+        choices=EstadoRevisionDocumento.choices,
+        default=EstadoRevisionDocumento.PENDIENTE,
+        db_index=True,
+    )
+    observacion_admin = models.TextField(blank=True, max_length=2000)
+    subido_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+    revisado_en = models.DateTimeField(blank=True, null=True)
+    revisado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="documentos_maestro_revisados",
+    )
+
+    class Meta:
+        ordering = ("tipo",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("perfil", "tipo"),
+                name="maestro_documento_tipo_unico",
+            )
+        ]
+        verbose_name = "Documento de maestro"
+        verbose_name_plural = "Documentos de maestros"
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} - {self.perfil.usuario.username}"
+
+    def preparar_reemplazo(self, archivo):
+        anterior = self.archivo.name if self.archivo else ""
+        self.archivo = archivo
+        self.estado_revision = self.EstadoRevision.PENDIENTE
+        self.observacion_admin = ""
+        self.revisado_en = None
+        self.revisado_por = None
+        self.full_clean()
+        self.save()
+        if anterior and anterior != self.archivo.name:
+            self.archivo.storage.delete(anterior)
+        self.perfil.volver_a_revision_por_edicion()
+        return self
+
+    def revisar(self, estado, administrador, observacion=""):
+        if estado not in self.EstadoRevision.values:
+            raise ValidationError("El estado documental no es válido.")
+        observacion = observacion.strip()
+        if estado == self.EstadoRevision.RECHAZADO and len(observacion) < 10:
+            raise ValidationError(
+                "Debes indicar un motivo de rechazo de al menos 10 caracteres."
+            )
+        self.estado_revision = estado
+        self.observacion_admin = observacion
+        self.revisado_en = timezone.now() if estado != self.EstadoRevision.PENDIENTE else None
+        self.revisado_por = administrador if estado != self.EstadoRevision.PENDIENTE else None
+        self.save(
+            update_fields=[
+                "estado_revision",
+                "observacion_admin",
+                "revisado_en",
+                "revisado_por",
+                "actualizado_en",
+            ]
+        )
+
+
+class LicenciaMaestro(models.Model):
+    EstadoRevision = EstadoRevisionDocumento
+    CLASES_ELECTRICAS = (("A", "Clase A"), ("B", "Clase B"), ("C", "Clase C"), ("D", "Clase D"))
+    CLASES_GAS = (("1", "Clase 1"), ("2", "Clase 2"), ("3", "Clase 3"))
+    CLASES = CLASES_ELECTRICAS + CLASES_GAS
+
+    perfil = models.ForeignKey(
+        PerfilMaestro,
+        on_delete=models.CASCADE,
+        related_name="licencias",
+    )
+    tipo_licencia = models.CharField(
+        max_length=20,
+        choices=(
+            (Especialidad.TipoLicencia.SEC_ELECTRICA, "SEC eléctrica"),
+            (Especialidad.TipoLicencia.SEC_GAS, "SEC gas"),
+        ),
+    )
+    clase = models.CharField(max_length=1, choices=CLASES)
+    numero_licencia = models.CharField(max_length=100)
+    archivo = models.FileField(
+        storage=documentos_privados_storage,
+        upload_to="maestros/licencias/%Y/%m/",
+        validators=[validar_archivo_documental],
+    )
+    estado_revision = models.CharField(
+        max_length=12,
+        choices=EstadoRevisionDocumento.choices,
+        default=EstadoRevisionDocumento.PENDIENTE,
+        db_index=True,
+    )
+    observacion_admin = models.TextField(blank=True, max_length=2000)
+    subido_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+    revisado_en = models.DateTimeField(blank=True, null=True)
+    revisado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="licencias_maestro_revisadas",
+    )
+
+    class Meta:
+        ordering = ("tipo_licencia",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("perfil", "tipo_licencia"),
+                name="maestro_licencia_tipo_unico",
+            )
+        ]
+        verbose_name = "Licencia de maestro"
+        verbose_name_plural = "Licencias de maestros"
+
+    def __str__(self):
+        return f"{self.get_tipo_licencia_display()} - {self.perfil.usuario.username}"
+
+    def clean(self):
+        super().clean()
+        permitidas = {
+            Especialidad.TipoLicencia.SEC_ELECTRICA: {"A", "B", "C", "D"},
+            Especialidad.TipoLicencia.SEC_GAS: {"1", "2", "3"},
+        }
+        if self.clase not in permitidas.get(self.tipo_licencia, set()):
+            raise ValidationError(
+                {"clase": "La clase no corresponde al tipo de licencia seleccionado."}
+            )
+
+    def preparar_reemplazo(self, archivo, clase, numero_licencia):
+        anterior = self.archivo.name if self.archivo else ""
+        self.archivo = archivo
+        self.clase = clase
+        self.numero_licencia = numero_licencia.strip()
+        self.estado_revision = self.EstadoRevision.PENDIENTE
+        self.observacion_admin = ""
+        self.revisado_en = None
+        self.revisado_por = None
+        self.full_clean()
+        self.save()
+        if anterior and anterior != self.archivo.name:
+            self.archivo.storage.delete(anterior)
+        self.perfil.volver_a_revision_por_edicion()
+        return self
+
+    def revisar(self, estado, administrador, observacion=""):
+        if estado not in self.EstadoRevision.values:
+            raise ValidationError("El estado documental no es válido.")
+        observacion = observacion.strip()
+        if estado == self.EstadoRevision.RECHAZADO and len(observacion) < 10:
+            raise ValidationError(
+                "Debes indicar un motivo de rechazo de al menos 10 caracteres."
+            )
+        self.estado_revision = estado
+        self.observacion_admin = observacion
+        self.revisado_en = timezone.now() if estado != self.EstadoRevision.PENDIENTE else None
+        self.revisado_por = administrador if estado != self.EstadoRevision.PENDIENTE else None
+        self.save(
+            update_fields=[
+                "estado_revision",
+                "observacion_admin",
+                "revisado_en",
+                "revisado_por",
+                "actualizado_en",
+            ]
+        )
 
 
 class ApelacionMaestro(models.Model):

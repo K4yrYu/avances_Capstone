@@ -1,18 +1,31 @@
 import re
+from pathlib import Path
+from urllib.parse import urlencode
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from .chile import COMUNA_REGION, COMUNAS_CHOICES, REGIONES_CHOICES
-from .forms import ApelacionMaestroForm, EspecialidadForm, PerfilMaestroForm, TrabajoRealizadoForm
+from .forms import (
+    ApelacionMaestroForm,
+    DocumentoMaestroForm,
+    EspecialidadForm,
+    LicenciaMaestroForm,
+    PerfilMaestroForm,
+    TrabajoRealizadoForm,
+)
 from .models import (
     ApelacionMaestro,
+    DocumentoMaestro,
     Especialidad,
     ImagenTrabajoRealizado,
+    LicenciaMaestro,
     ObservacionMaestro,
     PerfilMaestro,
     TrabajoRealizado,
@@ -45,6 +58,45 @@ def _registrar_observacion(perfil, tipo, texto, administrador):
         )
 
 
+def _contexto_documentacion(perfil):
+    documentos = {documento.tipo: documento for documento in perfil.documentos.all()}
+    documentos_panel = []
+    for tipo, etiqueta in DocumentoMaestro.Tipo.choices:
+        documento = documentos.get(tipo)
+        documentos_panel.append(
+            {
+                "tipo": tipo,
+                "etiqueta": etiqueta,
+                "documento": documento,
+                "form": DocumentoMaestroForm(),
+            }
+        )
+
+    licencias = {licencia.tipo_licencia: licencia for licencia in perfil.licencias.all()}
+    etiquetas = dict(Especialidad.TipoLicencia.choices)
+    licencias_panel = []
+    for tipo in sorted(perfil.tipos_licencia_requeridos()):
+        licencia = licencias.get(tipo)
+        instancia = LicenciaMaestro(
+            perfil=perfil,
+            tipo_licencia=tipo,
+            clase=licencia.clase if licencia else "",
+            numero_licencia=licencia.numero_licencia if licencia else "",
+        )
+        licencias_panel.append(
+            {
+                "tipo": tipo,
+                "etiqueta": etiquetas[tipo],
+                "licencia": licencia,
+                "form": LicenciaMaestroForm(
+                    instance=instancia,
+                    tipo_licencia=tipo,
+                ),
+            }
+        )
+    return documentos_panel, licencias_panel
+
+
 def trabaja_con_nosotros(request):
     perfil = None
     if request.user.is_authenticated:
@@ -59,13 +111,18 @@ def crear_perfil(request):
     if PerfilMaestro.objects.filter(usuario=request.user).exists():
         return redirect("maestros:panel")
 
-    form = PerfilMaestroForm(request.POST or None, request.FILES or None)
+    form = PerfilMaestroForm(
+        request.POST or None,
+        request.FILES or None,
+        usuario=request.user,
+    )
     if request.method == "POST" and form.is_valid():
         perfil = form.save(commit=False)
         perfil.usuario = request.user
         perfil.estado = PerfilMaestro.Estado.BORRADOR
         perfil.save()
         form.save_m2m()
+        form.guardar_telefono()
         messages.success(
             request,
             "Tu perfil profesional fue creado como borrador. Cuando esté listo, envíalo usando el botón «Enviar a revisión».",
@@ -79,12 +136,18 @@ def panel_maestro(request):
     perfil = (
         PerfilMaestro.objects.filter(usuario=request.user)
         .select_related("apelacion")
-        .prefetch_related("especialidades", "observaciones__registrada_por")
+        .prefetch_related(
+            "especialidades",
+            "observaciones__registrada_por",
+            "documentos__revisado_por",
+            "licencias__revisado_por",
+        )
         .first()
     )
     if perfil is None:
         return redirect("maestros:trabaja_con_nosotros")
     trabajos = perfil.trabajos.prefetch_related("especialidades", "imagenes")
+    documentos_panel, licencias_panel = _contexto_documentacion(perfil)
     return render(
         request,
         "maestros/panel.html",
@@ -92,6 +155,9 @@ def panel_maestro(request):
             "perfil": perfil,
             "trabajos": trabajos,
             "apelacion_form": ApelacionMaestroForm(),
+            "documentos_panel": documentos_panel,
+            "licencias_panel": licencias_panel,
+            "faltantes_envio": perfil.faltantes_para_envio(),
         },
     )
 
@@ -99,11 +165,16 @@ def panel_maestro(request):
 @login_required
 def editar_perfil(request):
     perfil = _perfil_del_usuario(request)
-    form = PerfilMaestroForm(request.POST or None, request.FILES or None, instance=perfil)
+    form = PerfilMaestroForm(
+        request.POST or None,
+        request.FILES or None,
+        instance=perfil,
+        usuario=request.user,
+    )
     if request.method == "POST" and form.is_valid():
         form.save()
+        form.guardar_telefono()
         campos_sensibles = {
-            "foto",
             "descripcion_profesional",
             "anos_experiencia",
             "especialidades",
@@ -116,6 +187,11 @@ def editar_perfil(request):
             messages.success(
                 request,
                 "Tu perfil fue actualizado y volvió a revisión por los cambios profesionales.",
+            )
+        elif perfil.estado == PerfilMaestro.Estado.APROBADO:
+            messages.success(
+                request,
+                "Tu perfil fue actualizado y mantiene su estado aprobado.",
             )
         else:
             messages.success(
@@ -130,15 +206,106 @@ def editar_perfil(request):
 @login_required
 def enviar_revision(request):
     perfil = _perfil_del_usuario(request)
-    if perfil.estado == PerfilMaestro.Estado.SUSPENDIDO:
-        messages.error(request, "Un perfil suspendido debe ser habilitado por administración.")
+    try:
+        perfil.enviar_a_revision()
+    except ValidationError as error:
+        messages.error(request, " ".join(error.messages))
         return redirect("maestros:panel")
-    perfil.estado = PerfilMaestro.Estado.PENDIENTE
-    perfil.observacion_admin = ""
-    perfil.fecha_aprobacion = None
-    perfil.save(update_fields=["estado", "observacion_admin", "fecha_aprobacion", "actualizado_en"])
     messages.success(request, "Tu perfil fue enviado a revisión.")
     return redirect("maestros:panel")
+
+
+@require_POST
+@login_required
+@transaction.atomic
+def subir_documento(request, tipo):
+    perfil = _perfil_del_usuario(request)
+    if tipo not in DocumentoMaestro.Tipo.values:
+        raise PermissionDenied("El tipo de documento no es válido.")
+    form = DocumentoMaestroForm(request.POST, request.FILES)
+    if not form.is_valid():
+        detalle = " ".join(error for errores in form.errors.values() for error in errores)
+        messages.error(request, detalle or "No fue posible cargar el documento.")
+        return redirect("maestros:panel")
+
+    archivo = form.cleaned_data["archivo"]
+    documento = DocumentoMaestro.objects.filter(perfil=perfil, tipo=tipo).first()
+    if documento:
+        documento.preparar_reemplazo(archivo)
+        accion = "reemplazado"
+    else:
+        documento = DocumentoMaestro(perfil=perfil, tipo=tipo, archivo=archivo)
+        documento.full_clean()
+        documento.save()
+        perfil.volver_a_revision_por_edicion()
+        accion = "cargado"
+    messages.success(request, f"El documento fue {accion} y quedó pendiente de revisión.")
+    return redirect("maestros:panel")
+
+
+@require_POST
+@login_required
+@transaction.atomic
+def subir_licencia(request, tipo):
+    perfil = _perfil_del_usuario(request)
+    if tipo not in perfil.tipos_licencia_requeridos():
+        raise PermissionDenied("Tu perfil no requiere este tipo de licencia.")
+    instancia = LicenciaMaestro(perfil=perfil, tipo_licencia=tipo)
+    form = LicenciaMaestroForm(
+        request.POST,
+        request.FILES,
+        instance=instancia,
+        tipo_licencia=tipo,
+    )
+    if not form.is_valid():
+        detalle = " ".join(error for errores in form.errors.values() for error in errores)
+        messages.error(request, detalle or "No fue posible cargar la licencia.")
+        return redirect("maestros:panel")
+
+    licencia = LicenciaMaestro.objects.filter(
+        perfil=perfil,
+        tipo_licencia=tipo,
+    ).first()
+    if licencia:
+        licencia.preparar_reemplazo(
+            form.cleaned_data["archivo"],
+            form.cleaned_data["clase"],
+            form.cleaned_data["numero_licencia"],
+        )
+        accion = "reemplazada"
+    else:
+        licencia = form.save(commit=False)
+        licencia.perfil = perfil
+        licencia.tipo_licencia = tipo
+        licencia.full_clean()
+        licencia.save()
+        perfil.volver_a_revision_por_edicion()
+        accion = "cargada"
+    messages.success(request, f"La licencia fue {accion} y quedó pendiente de revisión.")
+    return redirect("maestros:panel")
+
+
+def _respuesta_archivo_privado(request, objeto):
+    if not request.user.is_staff and objeto.perfil.usuario_id != request.user.id:
+        raise PermissionDenied("No tienes permiso para consultar este documento.")
+    objeto.archivo.open("rb")
+    return FileResponse(
+        objeto.archivo,
+        as_attachment=False,
+        filename=Path(objeto.archivo.name).name,
+    )
+
+
+@login_required
+def descargar_documento(request, pk):
+    documento = get_object_or_404(DocumentoMaestro.objects.select_related("perfil"), pk=pk)
+    return _respuesta_archivo_privado(request, documento)
+
+
+@login_required
+def descargar_licencia(request, pk):
+    licencia = get_object_or_404(LicenciaMaestro.objects.select_related("perfil"), pk=pk)
+    return _respuesta_archivo_privado(request, licencia)
 
 
 @require_POST
@@ -290,14 +457,42 @@ def detalle_maestro(request, pk):
     telefono_digitos = re.sub(r"\D", "", telefono)
     if len(telefono_digitos) == 9:
         telefono_digitos = f"56{telefono_digitos}"
+    mensaje_whatsapp = (
+        "Hola, encontré tu perfil de maestro en SFI y quisiera hacer una consulta."
+    )
+    contacto_maestro_url = ""
+    if telefono_digitos:
+        contacto_maestro_url = (
+            f"https://wa.me/{telefono_digitos}?{urlencode({'text': mensaje_whatsapp})}"
+        )
+
+    nombre_maestro = perfil.usuario.get_full_name() or perfil.usuario.username
+    reporte_perfil_url = "mailto:{correo}?{parametros}".format(
+        correo=settings.SUPPORT_EMAIL,
+        parametros=urlencode(
+            {
+                "subject": f"Reporte de perfil de maestro SFI #{perfil.pk}",
+                "body": (
+                    f"Deseo reportar el perfil #{perfil.pk} de {nombre_maestro}.\n\n"
+                    "Motivo (marca uno):\n"
+                    "- Identidad posiblemente falsa\n"
+                    "- Documentación falsa\n"
+                    "- Licencia dudosa\n"
+                    "- Información engañosa\n"
+                    "- Contenido inapropiado\n\n"
+                    "Detalle:\n"
+                ),
+            }
+        ),
+    )
     return render(
         request,
         "maestros/detalle.html",
         {
             "perfil": perfil,
             "trabajos": trabajos,
-            "telefono_contacto": telefono,
-            "telefono_whatsapp": telefono_digitos,
+            "contacto_maestro_url": contacto_maestro_url,
+            "reporte_perfil_url": reporte_perfil_url,
         },
     )
 
@@ -309,6 +504,8 @@ def revision_maestros(request):
     perfiles_base = PerfilMaestro.objects.select_related("usuario", "apelacion").prefetch_related(
         "especialidades",
         "observaciones__registrada_por",
+        "documentos__revisado_por",
+        "licencias__revisado_por",
     )
     conteos = {
         "total": perfiles_base.count(),
@@ -318,6 +515,13 @@ def revision_maestros(request):
     perfiles = perfiles_base
     if estado in PerfilMaestro.Estado.values:
         perfiles = perfiles.filter(estado=estado)
+    perfiles = list(perfiles)
+    for perfil in perfiles:
+        documentos, licencias = _contexto_documentacion(perfil)
+        perfil.documentos_revision = documentos
+        perfil.licencias_revision = licencias
+        perfil.documentacion_aprobable = perfil.puede_ser_aprobado()
+        perfil.motivos_documentales = perfil.motivos_documentacion_pendiente()
     return render(
         request,
         "maestros/revision_admin.html",
@@ -370,7 +574,11 @@ def cambiar_estado_maestro(request, pk):
             messages.success(request, "La apelación fue rechazada y el perfil continúa suspendido.")
             return redirect("maestros:admin_revision")
 
-        perfil.cambiar_estado(PerfilMaestro.Estado.APROBADO)
+        try:
+            perfil.cambiar_estado(PerfilMaestro.Estado.APROBADO)
+        except ValidationError as error:
+            messages.error(request, " ".join(error.messages))
+            return redirect("maestros:admin_revision")
         if apelacion is not None:
             apelacion.resolver(ApelacionMaestro.Estado.ACEPTADA, request.user, observacion)
         _registrar_observacion(
@@ -417,7 +625,11 @@ def cambiar_estado_maestro(request, pk):
         return redirect("maestros:admin_revision")
     perfil.observacion_admin = observacion
     perfil.save(update_fields=["observacion_admin", "actualizado_en"])
-    perfil.cambiar_estado(nuevo_estado)
+    try:
+        perfil.cambiar_estado(nuevo_estado)
+    except ValidationError as error:
+        messages.error(request, " ".join(error.messages))
+        return redirect("maestros:admin_revision")
     tipos_observacion = {
         PerfilMaestro.Estado.APROBADO: ObservacionMaestro.Tipo.APROBACION,
         PerfilMaestro.Estado.RECHAZADO: ObservacionMaestro.Tipo.RECHAZO,
@@ -430,6 +642,44 @@ def cambiar_estado_maestro(request, pk):
         request.user,
     )
     messages.success(request, f"El perfil quedó {perfil.get_estado_display().lower()}.")
+    return redirect("maestros:admin_revision")
+
+
+@require_POST
+@login_required
+def revisar_documento(request, pk):
+    _exigir_admin(request)
+    documento = get_object_or_404(DocumentoMaestro, pk=pk)
+    estado = request.POST.get("estado_revision", "").upper()
+    observacion = request.POST.get("observacion_admin", "")
+    try:
+        documento.revisar(estado, request.user, observacion)
+    except ValidationError as error:
+        messages.error(request, " ".join(error.messages))
+    else:
+        messages.success(
+            request,
+            f"{documento.get_tipo_display()} quedó {documento.get_estado_revision_display().lower()}.",
+        )
+    return redirect("maestros:admin_revision")
+
+
+@require_POST
+@login_required
+def revisar_licencia(request, pk):
+    _exigir_admin(request)
+    licencia = get_object_or_404(LicenciaMaestro, pk=pk)
+    estado = request.POST.get("estado_revision", "").upper()
+    observacion = request.POST.get("observacion_admin", "")
+    try:
+        licencia.revisar(estado, request.user, observacion)
+    except ValidationError as error:
+        messages.error(request, " ".join(error.messages))
+    else:
+        messages.success(
+            request,
+            f"La licencia quedó {licencia.get_estado_revision_display().lower()}.",
+        )
     return redirect("maestros:admin_revision")
 
 

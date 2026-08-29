@@ -11,6 +11,16 @@ urlpatterns = [
         api_views.EnviarRevisionAPIView.as_view(),
         name="api_enviar_revision",
     ),
+    path(
+        "api/maestros/documentos/",
+        api_views.DocumentosPropiosAPIView.as_view(),
+        name="api_documentos",
+    ),
+    path(
+        "api/maestros/licencias/",
+        api_views.LicenciasPropiasAPIView.as_view(),
+        name="api_licencias",
+    ),
     path("api/maestros/trabajos/", api_views.TrabajosAPIView.as_view(), name="api_trabajos"),
     path(
         "api/maestros/trabajos/<int:pk>/",
@@ -33,6 +43,16 @@ urlpatterns = [
         name="api_admin_estado",
     ),
     path(
+        "api/maestros/admin/documentos/<int:pk>/estado/",
+        api_views.RevisionDocumentoAdminAPIView.as_view(),
+        name="api_admin_documento_estado",
+    ),
+    path(
+        "api/maestros/admin/licencias/<int:pk>/estado/",
+        api_views.RevisionLicenciaAdminAPIView.as_view(),
+        name="api_admin_licencia_estado",
+    ),
+    path(
         "api/maestros/publicos/",
         api_views.MaestrosPublicosAPIView.as_view(),
         name="api_publicos",
@@ -48,6 +68,26 @@ urlpatterns = [
     path("maestros/perfil/crear/", views.crear_perfil, name="crear_perfil"),
     path("maestros/perfil/editar/", views.editar_perfil, name="editar_perfil"),
     path("maestros/perfil/enviar-revision/", views.enviar_revision, name="enviar_revision"),
+    path(
+        "maestros/documentos/<str:tipo>/subir/",
+        views.subir_documento,
+        name="subir_documento",
+    ),
+    path(
+        "maestros/documentos/<int:pk>/ver/",
+        views.descargar_documento,
+        name="descargar_documento",
+    ),
+    path(
+        "maestros/licencias/<str:tipo>/subir/",
+        views.subir_licencia,
+        name="subir_licencia",
+    ),
+    path(
+        "maestros/licencias/<int:pk>/ver/",
+        views.descargar_licencia,
+        name="descargar_licencia",
+    ),
     path("maestros/perfil/apelar/", views.solicitar_apelacion, name="solicitar_apelacion"),
     path("maestros/trabajos/", views.gestion_trabajos, name="trabajos"),
     path("maestros/trabajos/nuevo/", views.crear_trabajo, name="crear_trabajo"),
@@ -57,5 +97,15 @@ urlpatterns = [
     path("administracion/maestros/", views.revision_maestros, name="admin_revision"),
     path("administracion/maestros/especialidades/agregar/", views.crear_especialidad, name="admin_crear_especialidad"),
     path("administracion/maestros/<int:pk>/estado/", views.cambiar_estado_maestro, name="admin_estado"),
+    path(
+        "administracion/maestros/documentos/<int:pk>/estado/",
+        views.revisar_documento,
+        name="admin_documento_estado",
+    ),
+    path(
+        "administracion/maestros/licencias/<int:pk>/estado/",
+        views.revisar_licencia,
+        name="admin_licencia_estado",
+    ),
     path("maestros/<int:pk>/", views.detalle_maestro, name="detalle"),
 ]

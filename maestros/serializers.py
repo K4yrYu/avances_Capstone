@@ -7,10 +7,13 @@ from .chile import COMUNA_REGION, COMUNAS_CHOICES, REGIONES_COMUNAS, comunas_de_
 from .models import (
     MAX_IMAGENES_POR_TRABAJO,
     MAX_TAMANO_IMAGEN,
+    DocumentoMaestro,
     Especialidad,
     ImagenTrabajoRealizado,
+    LicenciaMaestro,
     PerfilMaestro,
     TrabajoRealizado,
+    validar_archivo_documental,
     validar_fecha_trabajo,
 )
 
@@ -44,6 +47,148 @@ class ImagenTrabajoSerializer(serializers.ModelSerializer):
         model = ImagenTrabajoRealizado
         fields = ("id", "imagen", "creada_en")
         read_only_fields = fields
+
+
+class ArchivoDocumentalField(serializers.FileField):
+    def to_internal_value(self, data):
+        archivo = super().to_internal_value(data)
+        try:
+            validar_archivo_documental(archivo)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.messages) from error
+        return archivo
+
+
+class DocumentoMaestroSerializer(serializers.ModelSerializer):
+    archivo = ArchivoDocumentalField(write_only=True)
+    nombre_archivo = serializers.SerializerMethodField()
+    descarga_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DocumentoMaestro
+        fields = (
+            "id",
+            "tipo",
+            "archivo",
+            "nombre_archivo",
+            "descarga_url",
+            "estado_revision",
+            "observacion_admin",
+            "subido_en",
+            "actualizado_en",
+            "revisado_en",
+        )
+        read_only_fields = (
+            "id",
+            "nombre_archivo",
+            "descarga_url",
+            "estado_revision",
+            "observacion_admin",
+            "subido_en",
+            "actualizado_en",
+            "revisado_en",
+        )
+
+    def get_nombre_archivo(self, obj):
+        return obj.archivo.name.rsplit("/", 1)[-1] if obj.archivo else ""
+
+    def get_descarga_url(self, obj):
+        from django.urls import reverse
+
+        url = reverse("maestros:descargar_documento", args=[obj.pk])
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
+
+
+class LicenciaMaestroSerializer(serializers.ModelSerializer):
+    archivo = ArchivoDocumentalField(write_only=True)
+    nombre_archivo = serializers.SerializerMethodField()
+    descarga_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LicenciaMaestro
+        fields = (
+            "id",
+            "tipo_licencia",
+            "clase",
+            "numero_licencia",
+            "archivo",
+            "nombre_archivo",
+            "descarga_url",
+            "estado_revision",
+            "observacion_admin",
+            "subido_en",
+            "actualizado_en",
+            "revisado_en",
+        )
+        read_only_fields = (
+            "id",
+            "nombre_archivo",
+            "descarga_url",
+            "estado_revision",
+            "observacion_admin",
+            "subido_en",
+            "actualizado_en",
+            "revisado_en",
+        )
+
+    def validate_tipo_licencia(self, tipo):
+        perfil = self.context.get("perfil")
+        if perfil and tipo not in perfil.tipos_licencia_requeridos():
+            raise serializers.ValidationError(
+                "Tu perfil no requiere este tipo de licencia profesional."
+            )
+        return tipo
+
+    def validate(self, attrs):
+        tipo = attrs.get("tipo_licencia", getattr(self.instance, "tipo_licencia", ""))
+        clase = attrs.get("clase", getattr(self.instance, "clase", ""))
+        permitidas = {
+            Especialidad.TipoLicencia.SEC_ELECTRICA: {"A", "B", "C", "D"},
+            Especialidad.TipoLicencia.SEC_GAS: {"1", "2", "3"},
+        }
+        if clase not in permitidas.get(tipo, set()):
+            raise serializers.ValidationError(
+                {"clase": "La clase no corresponde al tipo de licencia seleccionado."}
+            )
+        return attrs
+
+    def get_nombre_archivo(self, obj):
+        return obj.archivo.name.rsplit("/", 1)[-1] if obj.archivo else ""
+
+    def get_descarga_url(self, obj):
+        from django.urls import reverse
+
+        url = reverse("maestros:descargar_licencia", args=[obj.pk])
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
+
+
+class RevisionDocumentalSerializer(serializers.Serializer):
+    estado_revision = serializers.ChoiceField(
+        choices=DocumentoMaestro.EstadoRevision.choices
+    )
+    observacion_admin = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=2000,
+    )
+
+    def validate(self, attrs):
+        observacion = attrs.get("observacion_admin", "").strip()
+        if (
+            attrs["estado_revision"] == DocumentoMaestro.EstadoRevision.RECHAZADO
+            and len(observacion) < 10
+        ):
+            raise serializers.ValidationError(
+                {
+                    "observacion_admin": (
+                        "Debes indicar un motivo de rechazo de al menos 10 caracteres."
+                    )
+                }
+            )
+        attrs["observacion_admin"] = observacion
+        return attrs
 
 
 class PerfilMaestroSerializer(serializers.ModelSerializer):
@@ -128,7 +273,6 @@ class PerfilMaestroSerializer(serializers.ModelSerializer):
         sensibles_cambiados = any(
             campo in validated_data and getattr(instance, campo) != validated_data[campo]
             for campo in (
-                "foto",
                 "descripcion_profesional",
                 "anos_experiencia",
                 "region",
@@ -268,6 +412,19 @@ class CambioEstadoMaestroSerializer(serializers.Serializer):
                         "Solo puedes aprobar o rechazar perfiles pendientes de revisión. "
                         "El maestro debe actualizar y volver a enviar su perfil."
                     )
+                }
+            )
+        if (
+            attrs["estado"] == PerfilMaestro.Estado.APROBADO
+            and perfil is not None
+            and not perfil.puede_ser_aprobado()
+        ):
+            raise serializers.ValidationError(
+                {
+                    "estado": [
+                        "No se puede aprobar este maestro.",
+                        *perfil.motivos_documentacion_pendiente(),
+                    ]
                 }
             )
         if (
