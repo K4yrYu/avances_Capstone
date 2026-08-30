@@ -13,6 +13,7 @@ from .recomendacion_colores import (
     pinturas_compatibles,
 )
 from .sinonimos_ferreteros import expandir_consulta
+from .planificador_proyectos import resolver_proyecto_generico
 
 
 class AsistenteNoDisponible(Exception):
@@ -1023,23 +1024,16 @@ def _resolver_proyecto(datos):
         return _resolver_repisa(datos)
     if 'bano' in proyecto or 'sanitario' in proyecto:
         return _resolver_bano(datos)
-    orientacion = str(datos.get('respuesta') or '').strip()
-    mensaje = (
-        f'{orientacion} ' if orientacion else ''
-    ) + (
-        'Todavía no puedo cerrar una cotización completa y verificable para ese proyecto '
-        'con el catálogo actual. Sí puedo planificar una repisa o renovar un baño; para otros proyectos te '
-        'indicaré materiales generales y cuáles faltan antes de calcular un presupuesto.'
+    return resolver_proyecto_generico(
+        datos,
+        buscar_productos=lambda consulta: _buscar_productos(consulta, limite=20),
+        producto_publico=_producto_publico,
+        buscar_maestros=buscar_maestros,
+        resolver_especialidad=_especialidad_desde_texto,
     )
-    return {
-        'tipo': 'aclaracion',
-        'mensaje': mensaje,
-        'productos': [],
-        'sugerencias': ['Quiero construir una repisa', 'Quiero renovar mi baño'],
-    }
 
 
-def _buscar_productos(consulta):
+def _buscar_productos(consulta, limite=6):
     palabras_omitidas = {
         'para', 'con', 'una', 'uno', 'unos', 'unas', 'por', 'del', 'las', 'los',
         'que', 'quiero', 'necesito', 'busco', 'producto', 'productos',
@@ -1101,7 +1095,11 @@ def _buscar_productos(consulta):
     resultados.sort(key=lambda item: (
         -item[0], -item[1], item[2].precio, item[2].nombre.casefold(),
     ))
-    return [item[2] for item in resultados[:6]]
+    try:
+        limite = max(1, min(int(limite), 20))
+    except (TypeError, ValueError):
+        limite = 6
+    return [item[2] for item in resultados[:limite]]
 
 
 def _resolver_recomendacion_color(datos):

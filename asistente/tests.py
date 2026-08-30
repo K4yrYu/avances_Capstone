@@ -1341,3 +1341,136 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
         # Ambos deben encontrar el taladro
         self.assertIn(self.taladro.id, [p.id for p in directos])
         self.assertIn(self.taladro.id, [p.id for p in sinonimos])
+
+
+@override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
+class PlanificadorGenericoProyectosTests(TestCase):
+    def setUp(self):
+        self.madera = Producto.objects.create(
+            nombre='Pino dimensionado para exterior',
+            descripcion='Madera para estructuras y proyectos exteriores.',
+            precio=8990,
+            imagen='productos/pino-exterior.webp',
+            stock=20,
+            categoria='Construcción',
+            activo=True,
+        )
+        self.tornillos = Producto.objects.create(
+            nombre='Tornillos para madera pack 50',
+            descripcion='Fijaciones para unir piezas de madera.',
+            precio=4990,
+            imagen='productos/tornillos-madera.webp',
+            stock=15,
+            categoria='Ferretería',
+            activo=True,
+        )
+        self.barniz = Producto.objects.create(
+            nombre='Barniz protector para madera exterior',
+            descripcion='Protección de madera expuesta a lluvia y humedad.',
+            precio=15990,
+            imagen='productos/barniz-exterior.webp',
+            stock=7,
+            categoria='Pinturas',
+            activo=True,
+        )
+        especialidad, _ = Especialidad.objects.get_or_create(
+            nombre='Carpintería',
+            defaults={'activa': True},
+        )
+        usuario = Usuario.objects.create_user(
+            username='carpintero_generico',
+            email='carpintero-generico@example.invalid',
+            rut='23333333-3',
+            telefono='+56933333333',
+            password=None,
+            first_name='Pedro',
+            last_name='Madera',
+            email_confirmado=True,
+        )
+        self.perfil = PerfilMaestro.objects.create(
+            usuario=usuario,
+            descripcion_profesional='Carpintero para proyectos de madera.',
+            anos_experiencia=7,
+            region='RM',
+            comuna='Maipú',
+            zonas_trabajo='Maipú, Cerrillos',
+            disponible=True,
+            estado=PerfilMaestro.Estado.APROBADO,
+            fecha_aprobacion=timezone.now(),
+        )
+        self.perfil.especialidades.add(especialidad)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_proyecto_libre_usa_productos_reales_y_maestro_aprobado(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'respuesta': 'Prepararé una orientación con el catálogo disponible.',
+            'proyecto': 'Casita de madera exterior para perro',
+            'tareas_proyecto': [
+                {
+                    'nombre': 'Construir la estructura',
+                    'busquedas': ['pino dimensionado exterior', 'tornillos para madera'],
+                },
+                {
+                    'nombre': 'Proteger contra la lluvia',
+                    'busquedas': ['barniz madera exterior'],
+                },
+            ],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': ['Carpintería'],
+            'datos_faltantes_proyecto': ['ancho', 'alto', 'profundidad'],
+            'comuna_maestro': 'Maipú',
+            'especialidad_maestro': '',
+            'consulta_producto': '',
+            'presupuesto': 0,
+            'terminacion': 'cualquiera',
+            'color': '',
+            'incluir_herramientas': False,
+        }
+
+        resultado = procesar_consulta(
+            'Quiero construir una casita de madera para mi perro en Maipú',
+            [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        ids_recomendados = {producto['id'] for producto in resultado['productos']}
+        self.assertEqual(len(ids_recomendados), 3)
+        self.assertEqual(
+            Producto.objects.filter(pk__in=ids_recomendados, activo=True).count(),
+            3,
+        )
+        self.assertTrue(
+            any('tornillo' in producto['nombre'].casefold() for producto in resultado['productos'])
+        )
+        self.assertTrue(
+            any('barniz' in producto['nombre'].casefold() for producto in resultado['productos'])
+        )
+        self.assertTrue(
+            any('pino' in producto['nombre'].casefold() for producto in resultado['productos'])
+        )
+        self.assertTrue(all(producto['stock'] > 0 for producto in resultado['productos']))
+        self.assertEqual(resultado['especialidades'], ['Carpintería'])
+        self.assertEqual([maestro['id'] for maestro in resultado['maestros']], [self.perfil.id])
+        self.assertIn('ancho, alto, profundidad', resultado['mensaje'])
+        self.assertTrue(resultado['calculo_orientativo'])
+
+    def test_proyecto_generico_no_inventa_producto_ausente(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Observatorio doméstico',
+            'tareas_proyecto': [{
+                'nombre': 'Instalar cubierta especial',
+                'busquedas': ['panel transparente espacial'],
+            }],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': ['Especialidad inventada'],
+            'datos_faltantes_proyecto': [],
+            'comuna_maestro': 'Maipú',
+        })
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertEqual(resultado['productos'], [])
+        self.assertEqual(resultado['maestros'], [])
+        self.assertEqual(resultado['especialidades'], [])
+        self.assertEqual(resultado['faltantes_catalogo'], ['panel transparente espacial'])

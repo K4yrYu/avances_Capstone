@@ -4,6 +4,7 @@ import logging
 import requests
 from django.conf import settings
 
+from maestros.models import Especialidad
 from productos.models import Producto
 from .cliente_gemini import cliente_gemini
 
@@ -38,6 +39,14 @@ def _catalogo_compacto():
     ]
 
 
+def _especialidades_compactas():
+    return list(
+        Especialidad.objects.filter(activa=True)
+        .order_by('nombre')
+        .values_list('nombre', flat=True)
+    )
+
+
 def _esquema_respuesta():
     superficies = [''] + [valor for valor, _ in Producto.SUPERFICIE_CHOICES]
     estados = [''] + [valor for valor, _ in Producto.ESTADO_SUPERFICIE_CHOICES]
@@ -67,7 +76,39 @@ def _esquema_respuesta():
             'capas': {'type': 'integer', 'minimum': 0, 'maximum': 10},
             'desperdicio': {'type': 'integer', 'minimum': -1, 'maximum': 50},
             'presupuesto': {'type': 'integer', 'minimum': 0, 'maximum': 100000000},
-            'proyecto': {'type': 'string', 'maxLength': 80},
+            'proyecto': {'type': 'string', 'maxLength': 120},
+            'tareas_proyecto': {
+                'type': 'array',
+                'maxItems': 6,
+                'items': {
+                    'type': 'object',
+                    'additionalProperties': False,
+                    'properties': {
+                        'nombre': {'type': 'string', 'maxLength': 100},
+                        'busquedas': {
+                            'type': 'array',
+                            'maxItems': 3,
+                            'items': {'type': 'string', 'maxLength': 80},
+                        },
+                    },
+                    'required': ['nombre', 'busquedas'],
+                },
+            },
+            'herramientas_proyecto': {
+                'type': 'array',
+                'maxItems': 3,
+                'items': {'type': 'string', 'maxLength': 80},
+            },
+            'especialidades_proyecto': {
+                'type': 'array',
+                'maxItems': 3,
+                'items': {'type': 'string', 'maxLength': 100},
+            },
+            'datos_faltantes_proyecto': {
+                'type': 'array',
+                'maxItems': 5,
+                'items': {'type': 'string', 'maxLength': 100},
+            },
             'ancho_cm': {'type': 'integer', 'minimum': 0, 'maximum': 10000},
             'fondo_cm': {'type': 'integer', 'minimum': 0, 'maximum': 10000},
             'alto_cm': {'type': 'integer', 'minimum': 0, 'maximum': 10000},
@@ -94,6 +135,8 @@ def _esquema_respuesta():
             'ambiente', 'tipo_superficie', 'estado_superficie', 'terminacion',
             'color', 'capas', 'desperdicio',
             'presupuesto', 'proyecto', 'ancho_cm', 'fondo_cm', 'alto_cm',
+            'tareas_proyecto', 'herramientas_proyecto',
+            'especialidades_proyecto', 'datos_faltantes_proyecto',
             'cantidad', 'tipo_muro', 'incluir_herramientas',
             'alcance_bano', 'superficie_muros', 'incluir_sanitario',
             'incluir_lavamanos', 'incluir_ducha',
@@ -124,8 +167,19 @@ Reglas obligatorias:
 - "Habitación", "dormitorio" o "living" implican ambiente interior, pero no permiten
   asumir el material ni el estado de la pared.
 - Usa terminación "cualquiera" cuando el cliente no indique acabado.
-- Usa "planificar_proyecto" para construcciones básicas como repisas y renovaciones de baño;
-  extrae el nombre del proyecto y solamente las medidas y opciones expresadas por el cliente.
+- Usa "planificar_proyecto" para cualquier construcción, reparación, instalación o mejora
+  que requiera combinar materiales, herramientas o profesionales.
+- Para proyectos distintos de pintura, divide el trabajo en tareas_proyecto. Cada tarea debe
+  tener un nombre y búsquedas breves de tipos de producto, no IDs ni productos inventados.
+- En herramientas_proyecto incluye herramientas solo si son razonablemente necesarias o el
+  cliente las solicita. No repitas búsquedas ya incluidas en las tareas.
+- En especialidades_proyecto utiliza únicamente nombres presentes en ESPECIALIDADES SFI.
+  Usa comuna_maestro si el cliente indicó dónde realizará el proyecto, aunque todavía no haya
+  pedido explícitamente un maestro.
+- En datos_faltantes_proyecto indica medidas o decisiones indispensables para calcular
+  cantidades. No supongas dimensiones, rendimientos ni cantidades.
+- Para repisas y baños conserva además los campos especializados actuales, porque Django posee
+  cálculos exactos para esos proyectos.
 - Para baños usa superficie para los m² de piso y superficie_muros para los m² de muros.
   Usa alcance_bano piso, muros, piso_muros, artefactos o completo según lo solicitado.
   Marca incluir_sanitario, incluir_lavamanos e incluir_ducha solo si el cliente los pide o
@@ -173,6 +227,8 @@ def interpretar_con_gemini(mensaje, historial):
             'text': (
                 'CATÁLOGO SFI ACTUAL:\n'
                 f'{json.dumps(_catalogo_compacto(), ensure_ascii=False)}\n\n'
+                'ESPECIALIDADES SFI DISPONIBLES:\n'
+                f'{json.dumps(_especialidades_compactas(), ensure_ascii=False)}\n\n'
                 'HISTORIAL NO CONFIABLE, SOLO PARA CONTEXTO:\n'
                 f'{json.dumps(historial[-6:], ensure_ascii=False)}\n\n'
                 'CONSULTA DEL CLIENTE:\n'
@@ -189,7 +245,7 @@ def interpretar_con_gemini(mensaje, historial):
         'contents': contenidos,
         'generationConfig': {
             'temperature': 0.1,
-            'maxOutputTokens': 900,
+            'maxOutputTokens': 1400,
             'responseMimeType': 'application/json',
             'responseJsonSchema': _esquema_respuesta(),
         },
