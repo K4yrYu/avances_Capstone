@@ -2,6 +2,7 @@ from django.db import models
 from usuarios.models import Usuario
 from productos.models import Producto
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db.models import Q
 
 Usuario = get_user_model()
@@ -14,7 +15,7 @@ class Venta(models.Model):
         ('pago_error', 'Pago con incidencia'),
     ]
 
-    id_usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE)
+    id_usuario = models.ForeignKey(Usuario, on_delete=models.PROTECT)
     fecha_compra = models.DateTimeField(null=True, blank=True)
     total_venta = models.IntegerField(default=0)
     estado_venta = models.CharField(max_length=20, choices=ESTADO_VENTA_CHOICES, default='carrito')
@@ -59,7 +60,13 @@ class Detalle(models.Model):
     cantidad_producto = models.PositiveIntegerField()
     subtotal_venta = models.IntegerField()
     id_venta = models.ForeignKey(Venta, on_delete=models.CASCADE, related_name='detalles')
-    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='detalles')
+    producto = models.ForeignKey(
+        Producto,
+        on_delete=models.SET_NULL,
+        related_name='detalles',
+        null=True,
+        blank=True,
+    )
 
     # Congelados al momento de la compra
     nombre_producto = models.CharField(max_length=200, default='Producto eliminado')
@@ -71,6 +78,8 @@ class Detalle(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.pk:
+            if self.producto_id is None:
+                raise ValidationError('Un detalle nuevo debe estar asociado a un producto.')
             self.nombre_producto = self.producto.nombre
             self.precio_unitario = self.producto.precio
             self.imagen_producto = self.producto.imagen.url if self.producto.imagen else None

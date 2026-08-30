@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.db.models.deletion import ProtectedError
 from transbank.common import request_service as sdk_request_service
 
 from productos.models import Producto
@@ -101,6 +102,22 @@ class SeguridadCarritoTests(TestCase):
         self.assertEqual(retiros.status_code, 200)
         self.assertEqual(retiros.json(), [])
         self.assertEqual(boleta.status_code, 404)
+
+    def test_abrir_carrito_sincroniza_precio_unitario_subtotal_y_total(self):
+        self.producto.precio = 1990
+        self.producto.save(update_fields=['precio'])
+        self.client.force_login(self.dueno)
+
+        response = self.client.get(reverse('vista_carrito'))
+
+        self.assertEqual(response.status_code, 200)
+        self.detalle.refresh_from_db()
+        self.venta.refresh_from_db()
+        self.assertEqual(self.detalle.precio_unitario, 1990)
+        self.assertEqual(self.detalle.subtotal_venta, 3980)
+        self.assertEqual(self.venta.total_venta, 3980)
+        self.assertContains(response, 'data-clp="1990"')
+        self.assertContains(response, 'data-clp="3980"')
 
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
@@ -433,3 +450,123 @@ class SeguridadWebpayTests(TestCase):
                 producto_id_original=self.producto.pk,
             ).exists()
         )
+
+    def test_precio_enviado_por_frontend_no_reemplaza_precio_del_catalogo(self):
+        producto = Producto.objects.create(
+            nombre='Taladro', descripcion='Taladro', precio=45990,
+            imagen='https://example.com/taladro.jpg', stock=4,
+            categoria='Herramientas', activo=True,
+        )
+
+        response = self.client.post(
+            reverse('agregar_producto_carrito'),
+            {'producto': producto.pk, 'cantidad_producto': 1, 'precio': 1},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        detalle = Detalle.objects.get(id_venta=self.venta, producto=producto)
+        self.assertEqual(detalle.precio_unitario, 45990)
+        self.assertEqual(detalle.subtotal_venta, 45990)
+
+    def test_iniciar_pago_actualiza_precio_y_total_desde_catalogo(self):
+        detalle = self.venta.detalles.get()
+        Detalle.objects.filter(pk=detalle.pk).update(
+            precio_unitario=10000,
+            subtotal_venta=20000,
+        )
+        Venta.objects.filter(pk=self.venta.pk).update(total_venta=20000)
+        self.producto.precio = 12000
+        self.producto.save(update_fields=['precio'])
+        tx = Mock()
+
+        self._iniciar_pago(tx)
+
+        detalle.refresh_from_db()
+        self.assertEqual(detalle.precio_unitario, 12000)
+        self.assertEqual(detalle.subtotal_venta, 24000)
+        self.assertEqual(self.venta.total_venta, 24000)
+        self.assertEqual(self.venta.webpay_amount, 24000)
+        self.assertEqual(tx.create.call_args.kwargs['amount'], 24000)
+
+    def test_iniciar_pago_rechaza_stock_insuficiente_sin_llamar_webpay(self):
+        self.producto.stock = 1
+        self.producto.save(update_fields=['stock'])
+        tx = Mock()
+
+        with patch('carro_compras.views._webpay_transaction', return_value=tx):
+            response = self.client.post(
+                reverse('iniciar_pago_webpay'),
+                {'tipo_entrega': 'retiro'},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        tx.create.assert_not_called()
+        self.venta.refresh_from_db()
+        self.assertEqual(self.venta.estado_venta, 'carrito')
+
+    def test_iniciar_pago_rechaza_producto_inactivo_sin_llamar_webpay(self):
+        self.producto.activo = False
+        self.producto.save(update_fields=['activo'])
+        tx = Mock()
+
+        with patch('carro_compras.views._webpay_transaction', return_value=tx):
+            response = self.client.post(
+                reverse('iniciar_pago_webpay'),
+                {'tipo_entrega': 'retiro'},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        tx.create.assert_not_called()
+        self.venta.refresh_from_db()
+        self.assertEqual(self.venta.estado_venta, 'carrito')
+
+    def test_precio_queda_congelado_despues_de_iniciar_pago(self):
+        tx = Mock()
+        self._iniciar_pago(tx)
+        detalle = self.venta.detalles.get()
+        precio_congelado = detalle.precio_unitario
+        self.producto.precio = 99999
+        self.producto.save(update_fields=['precio'])
+        tx.commit.return_value = self._respuesta_autorizada()
+
+        with patch('carro_compras.views._webpay_transaction', return_value=tx):
+            response = self.client.post(
+                reverse('respuesta_pago_webpay'),
+                {'token_ws': 'token-webpay-seguro'},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        detalle.refresh_from_db()
+        self.venta.refresh_from_db()
+        self.assertEqual(detalle.precio_unitario, precio_congelado)
+        self.assertEqual(self.venta.total_venta, precio_congelado * 2)
+
+    def test_eliminar_producto_pagado_conserva_detalle_y_boleta(self):
+        detalle = self.venta.detalles.get()
+        self.venta.estado_venta = 'pagado'
+        self.venta.save(update_fields=['estado_venta'])
+        nombre = detalle.nombre_producto
+        precio = detalle.precio_unitario
+
+        self.producto.delete()
+
+        detalle.refresh_from_db()
+        self.venta.refresh_from_db()
+        self.assertIsNone(detalle.producto_id)
+        self.assertEqual(detalle.nombre_producto, nombre)
+        self.assertEqual(detalle.precio_unitario, precio)
+        response = self.client.get(reverse('ver_boleta', args=[self.venta.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, nombre)
+        self.assertContains(response, 'Producto hist')
+
+    def test_usuario_con_venta_pagada_no_puede_eliminarse_fisicamente(self):
+        self.venta.estado_venta = 'pagado'
+        self.venta.save(update_fields=['estado_venta'])
+
+        with self.assertRaises(ProtectedError):
+            self.usuario.delete()
+
+        self.assertTrue(Usuario.objects.filter(pk=self.usuario.pk).exists())
+        self.assertTrue(Venta.objects.filter(pk=self.venta.pk).exists())

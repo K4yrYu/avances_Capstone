@@ -176,7 +176,7 @@
                         <div class="purchased-product-image">
                           {% if detalle.imagen_producto %}
                             <img src="{{ detalle.imagen_producto }}" alt="{{ detalle.nombre_producto }}" loading="lazy">
-                          {% elif detalle.producto.imagen %}
+                          {% elif detalle.producto and detalle.producto.imagen %}
                             <img src="{{ detalle.producto.imagen.url }}" alt="{{ detalle.nombre_producto }}" loading="lazy">
                           {% else %}
                             <img src="{% static 'img/sfi-logo.png' %}" alt="Imagen no disponible">

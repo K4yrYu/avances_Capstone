@@ -126,7 +126,7 @@
                 <strong>Actualizamos tu carrito</strong>
                 <span>
                   Eliminamos por falta de stock:
-                  {% for detalle in productos_eliminados %}{{ detalle.producto.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+                  {% for detalle in productos_eliminados %}{{ detalle.nombre_producto }}{% if not forloop.last %}, {% endif %}{% endfor %}.
                 </span>
               </div>
             </div>
@@ -179,7 +179,7 @@
                       </p>
                       <p class="unit-price">
                         Precio unitario:
-                        <strong class="money-value" data-clp="{{ detalle.producto.precio }}">${{ detalle.producto.precio }}</strong>
+                        <strong class="money-value" data-clp="{{ detalle.precio_unitario }}">${{ detalle.precio_unitario }}</strong>
                       </p>
                       <span class="stock-pill"><i class="fa-solid fa-check" aria-hidden="true"></i> {{ detalle.producto.stock }} disponibles</span>
                     </div>

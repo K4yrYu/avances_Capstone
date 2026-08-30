@@ -151,7 +151,7 @@
                   <tr>
                     <td data-label="Producto">
                       <strong>{{ detalle.nombre_producto }}</strong>
-                      <small>Código SFI {{ detalle.producto_id|stringformat:"04d" }}</small>
+                      <small>{% if detalle.producto_id %}Código SFI {{ detalle.producto_id|stringformat:"04d" }}{% else %}Producto histórico{% endif %}</small>
                     </td>
                     <td class="text-center" data-label="Cantidad">{{ detalle.cantidad_producto }}</td>
                     <td class="text-end money-value" data-label="Precio unitario" data-clp="{{ detalle.precio_unitario }}">${{ detalle.precio_unitario }}</td>

@@ -43,6 +43,13 @@ class PagoInvalidoError(Exception):
     pass
 
 
+class CarritoNoPagableError(Exception):
+    def __init__(self, mensaje, status_code=status.HTTP_400_BAD_REQUEST):
+        super().__init__(mensaje)
+        self.mensaje = mensaje
+        self.status_code = status_code
+
+
 TOKEN_WEBPAY_RE = re.compile(r'^[A-Za-z0-9_-]{16,100}$')
 
 
@@ -69,6 +76,90 @@ def _recalcular_total(venta):
     venta.total_venta = sum(detalle.subtotal_venta for detalle in venta.detalles.all())
     venta.save(update_fields=['total_venta'])
     return venta.total_venta
+
+
+def _actualizar_snapshot_detalle(detalle, producto):
+    """Mantiene coherentes los datos visibles de un detalle que aún es carrito."""
+    detalle.nombre_producto = producto.nombre
+    detalle.precio_unitario = producto.precio
+    detalle.imagen_producto = producto.imagen.url if producto.imagen else None
+    detalle.save(update_fields=[
+        'cantidad_producto',
+        'nombre_producto',
+        'precio_unitario',
+        'imagen_producto',
+        'subtotal_venta',
+    ])
+
+
+def _sincronizar_carrito_para_pago(venta):
+    """Valida y congela los snapshots usando datos bloqueados del catálogo."""
+    detalles = list(
+        Detalle.objects.select_for_update()
+        .filter(id_venta=venta)
+        .order_by('producto_id', 'id')
+    )
+    if not detalles:
+        raise CarritoNoPagableError('No puedes pagar un carrito vacío.')
+
+    producto_ids = [detalle.producto_id for detalle in detalles]
+    if any(producto_id is None for producto_id in producto_ids):
+        raise CarritoNoPagableError(
+            'Uno de los productos del carrito ya no existe.',
+            status.HTTP_409_CONFLICT,
+        )
+
+    productos = {
+        producto.pk: producto
+        for producto in Producto.objects.select_for_update()
+        .filter(pk__in=producto_ids)
+        .order_by('pk')
+    }
+
+    for detalle in detalles:
+        producto = productos.get(detalle.producto_id)
+        if producto is None:
+            raise CarritoNoPagableError(
+                f'{detalle.nombre_producto} ya no existe en el catálogo.',
+                status.HTTP_409_CONFLICT,
+            )
+        if not producto.activo:
+            raise CarritoNoPagableError(
+                f'{producto.nombre} ya no está disponible.',
+                status.HTTP_409_CONFLICT,
+            )
+        if detalle.cantidad_producto <= 0:
+            raise CarritoNoPagableError(
+                f'La cantidad de {producto.nombre} no es válida.'
+            )
+        if detalle.cantidad_producto > producto.stock:
+            raise CarritoNoPagableError(
+                f'Stock insuficiente para {producto.nombre}.',
+                status.HTTP_409_CONFLICT,
+            )
+        if producto.precio is None or producto.precio <= 0:
+            raise CarritoNoPagableError(
+                f'El precio de {producto.nombre} no es válido.'
+            )
+
+    total = 0
+    for detalle in detalles:
+        producto = productos[detalle.producto_id]
+        detalle.nombre_producto = producto.nombre
+        detalle.precio_unitario = producto.precio
+        detalle.imagen_producto = producto.imagen.url if producto.imagen else None
+        detalle.subtotal_venta = producto.precio * detalle.cantidad_producto
+        detalle.save(update_fields=[
+            'nombre_producto',
+            'precio_unitario',
+            'imagen_producto',
+            'subtotal_venta',
+        ])
+        total += detalle.subtotal_venta
+
+    if total <= 0:
+        raise CarritoNoPagableError('El total de la compra no es válido.')
+    return detalles, total
 
 
 def _webpay_transaction():
@@ -135,13 +226,13 @@ def vista_carrito(request):
 
             for detalle in detalles:
                 producto = detalle.producto
-                if producto.stock <= 0 or not producto.activo:
+                if producto is None or producto.stock <= 0 or not producto.activo:
                     productos_eliminados.append(detalle)
                     detalle.delete()
-                elif detalle.cantidad_producto > producto.stock:
-                    detalle.cantidad_producto = producto.stock
-                    detalle.subtotal_venta = producto.precio * producto.stock
-                    detalle.save()
+                else:
+                    if detalle.cantidad_producto > producto.stock:
+                        detalle.cantidad_producto = producto.stock
+                    _actualizar_snapshot_detalle(detalle, producto)
 
             detalles = Detalle.objects.filter(id_venta=venta).select_related('producto')
             total_carrito = sum(d.subtotal_venta for d in detalles)
@@ -340,11 +431,16 @@ def actualizar_cantidad_producto(request, detalle_id):
             id_venta__estado_venta='carrito',
         )
         cantidad_nueva = entrada.validated_data['cantidad_producto']
+        if detalle.producto is None:
+            return Response(
+                {"detail": "El producto ya no está disponible."},
+                status=status.HTTP_409_CONFLICT,
+            )
         if not detalle.producto.activo or cantidad_nueva > detalle.producto.stock:
             return Response({"detail": f"Solo hay {detalle.producto.stock} unidades disponibles."}, status=status.HTTP_400_BAD_REQUEST)
 
         detalle.cantidad_producto = cantidad_nueva
-        detalle.save(update_fields=['cantidad_producto', 'subtotal_venta'])
+        _actualizar_snapshot_detalle(detalle, detalle.producto)
         venta = detalle.id_venta
         _recalcular_total(venta)
 
@@ -358,19 +454,24 @@ def actualizar_cantidad_producto(request, detalle_id):
 def disminuir_cantidad_producto(request, detalle_id):
     with transaction.atomic():
         detalle = get_object_or_404(
-            Detalle.objects.select_for_update().select_related('id_venta'),
+            Detalle.objects.select_for_update().select_related('producto', 'id_venta'),
             id=detalle_id,
             id_venta__id_usuario=request.user,
             id_venta__estado_venta='carrito',
         )
         venta = detalle.id_venta
+        if detalle.producto is None or not detalle.producto.activo:
+            return Response(
+                {"detail": "El producto ya no está disponible."},
+                status=status.HTTP_409_CONFLICT,
+            )
         if detalle.cantidad_producto == 1:
             detalle.delete()
             _recalcular_total(venta)
             return Response({"message": "Producto eliminado del carrito.", "total_carrito": venta.total_venta})
 
         detalle.cantidad_producto -= 1
-        detalle.save(update_fields=['cantidad_producto', 'subtotal_venta'])
+        _actualizar_snapshot_detalle(detalle, detalle.producto)
         _recalcular_total(venta)
 
     return Response({"subtotal_venta": detalle.subtotal_venta, "total_carrito": venta.total_venta})
@@ -389,40 +490,29 @@ def iniciar_pago_webpay(request):
     if tipo_entrega == 'retiro':
         direccion_despacho = ''
 
-    with transaction.atomic():
-        venta = Venta.objects.select_for_update().filter(
-            id_usuario=request.user,
-            estado_venta='carrito',
-        ).first()
-        if not venta:
-            return Response({'error': 'No tienes un carrito activo.'}, status=status.HTTP_404_NOT_FOUND)
+    try:
+        with transaction.atomic():
+            venta = Venta.objects.select_for_update().filter(
+                id_usuario=request.user,
+                estado_venta='carrito',
+            ).first()
+            if not venta:
+                return Response({'error': 'No tienes un carrito activo.'}, status=status.HTTP_404_NOT_FOUND)
 
-        detalles = list(venta.detalles.select_related('producto').all())
-        if not detalles:
-            return Response({'error': 'No puedes pagar un carrito vacío.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        for detalle in detalles:
-            if not detalle.producto.activo or detalle.cantidad_producto > detalle.producto.stock:
-                return Response(
-                    {'error': f'Stock insuficiente para {detalle.nombre_producto}.'},
-                    status=status.HTTP_409_CONFLICT,
-                )
-
-        total = sum(detalle.subtotal_venta for detalle in detalles)
-        if total <= 0:
-            return Response({'error': 'El total de la compra no es válido.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        buy_order = f"F{venta.id}-{int(time.time())}"[:26]
-        session_id = secrets.token_urlsafe(24)[:61]
-        venta.total_venta = total
-        venta.tipo_entrega = tipo_entrega
-        venta.direccion_despacho = direccion_despacho
-        venta.estado_venta = 'pago_pendiente'
-        venta.webpay_amount = total
-        venta.webpay_buy_order = buy_order
-        venta.webpay_session_id = session_id
-        venta.webpay_payment_status = 'initializing'
-        venta.save()
+            _, total = _sincronizar_carrito_para_pago(venta)
+            buy_order = f"F{venta.id}-{int(time.time())}"[:26]
+            session_id = secrets.token_urlsafe(24)[:61]
+            venta.total_venta = total
+            venta.tipo_entrega = tipo_entrega
+            venta.direccion_despacho = direccion_despacho
+            venta.estado_venta = 'pago_pendiente'
+            venta.webpay_amount = total
+            venta.webpay_buy_order = buy_order
+            venta.webpay_session_id = session_id
+            venta.webpay_payment_status = 'initializing'
+            venta.save()
+    except CarritoNoPagableError as exc:
+        return Response({'error': exc.mensaje}, status=exc.status_code)
 
     tx = _webpay_transaction()
     token = None
