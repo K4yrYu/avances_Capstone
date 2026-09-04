@@ -1,5 +1,6 @@
 import base64
 import tempfile
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core import mail
@@ -8,6 +9,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.models import Sum
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from usuarios.models import Usuario
 from .models import HistorialPrecio, Producto, Proveedor, SolicitudReposicion
@@ -118,6 +120,26 @@ class SeguridadProductosTests(TestCase):
         self.assertIn('nombre', movimiento.cambios)
         self.assertIn('precio', movimiento.cambios)
         self.assertEqual(movimiento.responsable, self.admin)
+
+    def test_edicion_rechaza_cambio_directo_de_stock(self):
+        self.client.force_login(self.admin)
+        response = self.client.put(
+            reverse('api_editar_producto', args=[self.producto.id]),
+            {'stock': 999},
+            content_type='application/json',
+        )
+
+        self.producto.refresh_from_db()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.producto.stock, 10)
+        self.assertIn('stock', response.json())
+
+    def test_formulario_edicion_muestra_stock_solo_lectura(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('editar_producto', args=[self.producto.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'readonly aria-readonly="true"')
 
     def test_nuevo_producto_exige_archivo_de_imagen(self):
         datos = {
@@ -504,6 +526,74 @@ class ReposicionInventarioTests(TestCase):
         self.assertContains(pagina, 'Confirmar recibo de productos')
         self.assertContains(pagina, f'id="recepcion-{solicitud.id}"')
         self.assertNotIn(self.producto, pagina.context['productos_alerta'])
+
+    def test_panel_rotacion_solo_considera_ventas_pagadas(self):
+        from carro_compras.models import Detalle, Venta
+
+        producto_sin_ventas = Producto.objects.create(
+            nombre='Producto sin ventas para rotación',
+            descripcion='Producto usado para comprobar la baja rotación.',
+            precio=1990,
+            stock=10,
+            stock_minimo=2,
+            categoria=self.producto.categoria,
+            activo=True,
+        )
+
+        venta_pagada = Venta.objects.create(
+            id_usuario=self.admin,
+            total_venta=self.producto.precio * 3,
+            estado_venta='pagado',
+            fecha_compra=timezone.now() - timedelta(days=2),
+        )
+        Detalle.objects.create(
+            id_venta=venta_pagada,
+            producto=self.producto,
+            cantidad_producto=3,
+            precio_unitario=self.producto.precio,
+            subtotal_venta=self.producto.precio * 3,
+        )
+        venta_pendiente = Venta.objects.create(
+            id_usuario=self.admin,
+            total_venta=self.producto.precio * 7,
+            estado_venta='pago_pendiente',
+        )
+        Detalle.objects.create(
+            id_venta=venta_pendiente,
+            producto=self.producto,
+            cantidad_producto=7,
+            precio_unitario=self.producto.precio,
+            subtotal_venta=self.producto.precio * 7,
+        )
+
+        response = self.client.get(reverse('gestion_reposicion'), {'periodo': 30})
+
+        self.assertEqual(response.status_code, 200)
+        rotacion = {
+            item['id']: item for item in response.context['rotacion_productos']
+        }
+        self.assertEqual(rotacion[self.producto.pk]['vendidas'], 3)
+        self.assertTrue(any(
+            item['vendidas'] == 0
+            for item in response.context['baja_rotacion']
+        ))
+        self.assertTrue(any(
+            item['vendidas'] > 0
+            for item in response.context['baja_rotacion']
+        ))
+        self.assertContains(response, 'Selecciona una barra para ver detalles')
+        self.assertContains(response, 'Baja rotación')
+        self.assertContains(response, 'Aplicar')
+
+        filtrada = self.client.get(reverse('gestion_reposicion'), {
+            'periodo': 30, 'categoria': 'Pinturas',
+        })
+        self.assertEqual(filtrada.status_code, 200)
+        self.assertEqual(filtrada.context['categoria_rotacion'], 'Pinturas')
+        self.assertTrue(all(
+            item['categoria'] == 'Pinturas'
+            for item in filtrada.context['rotacion_productos']
+        ))
 
     def test_producto_con_pedido_enviado_no_puede_solicitarse_otra_vez(self):
         datos = {

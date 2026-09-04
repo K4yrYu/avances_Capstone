@@ -104,6 +104,22 @@
           </div>{% else %}<div class="history-empty decorated"><i class="fa-solid fa-circle-check"></i><div><strong>No hay solicitudes pendientes</strong><span>Todas las entregas registradas ya fueron revisadas.</span></div></div>{% endif %}
         </section>
 
+        <section class="replenishment-card rotation-panel" id="rotacion-inventario">
+          <div class="section-title rotation-heading"><div><span>Decisión de compra</span><h2>Rotación de productos</h2><p>Estimación basada únicamente en ventas pagadas. Selecciona una barra para ver sus detalles.</p></div><form method="get" class="rotation-period"><label for="categoria-rotacion">Categoría</label><select id="categoria-rotacion" name="categoria"><option value="">Todas</option>{% for valor, etiqueta in categorias_rotacion %}<option value="{{ valor }}" {% if categoria_rotacion == valor %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}</select><label for="periodo-rotacion">Período</label><select id="periodo-rotacion" name="periodo"><option value="30" {% if periodo_rotacion == 30 %}selected{% endif %}>30 días</option><option value="90" {% if periodo_rotacion == 90 %}selected{% endif %}>90 días</option><option value="365" {% if periodo_rotacion == 365 %}selected{% endif %}>365 días</option></select><button type="submit"><i class="fa-solid fa-filter"></i> Aplicar</button></form></div>
+          <div class="rotation-charts">
+            <article><div class="chart-title"><i class="fa-solid fa-arrow-trend-up"></i><div><strong>Más vendidos</strong><small>Unidades confirmadas</small></div></div><div class="chart-canvas-wrap"><canvas id="chart-mas-vendidos"></canvas></div></article>
+            <article><div class="chart-title low"><i class="fa-solid fa-arrow-trend-down"></i><div><strong>Baja rotación</strong><small>Productos con ventas bajas o sin ventas</small></div></div><div class="chart-canvas-wrap"><canvas id="chart-baja-rotacion"></canvas></div></article>
+          </div>
+          <div class="rotation-detail" id="rotation-detail" aria-live="polite"><div class="rotation-detail-empty"><i class="fa-solid fa-arrow-pointer"></i><span><strong>Selecciona una barra para ver detalles</strong><small>Verás stock, mínimo, pendientes, rotación y sugerencia de compra.</small></span></div></div>
+          <p class="rotation-disclaimer"><i class="fa-solid fa-circle-info"></i> La cantidad sugerida es una estimación histórica, no una predicción garantizada. El administrador conserva la decisión final.</p>
+        </section>
+
+        <section class="replenishment-card expiry-panel">
+          <div class="section-title"><div><span>Control por lotes</span><h2>Vencimientos y ofertas sugeridas</h2></div>{% if lotes_vencidos %}<form method="post" action="{% url 'procesar_lotes_vencidos' %}">{% csrf_token %}<button class="process-expired" type="submit"><i class="fa-solid fa-box-archive"></i> Procesar {{ lotes_vencidos|length }} vencido{{ lotes_vencidos|length|pluralize }}</button></form>{% endif %}</div>
+          {% if lotes_vencidos %}<div class="expired-alert"><i class="fa-solid fa-triangle-exclamation"></i><div><strong>{{ lotes_vencidos|length }} lote{{ lotes_vencidos|length|pluralize }} vencido{{ lotes_vencidos|length|pluralize }}</strong><span>Procesarlos retirará sus unidades y desactivará del catálogo los productos sin lotes vigentes. Todo quedará registrado en Movimientos.</span></div></div>{% endif %}
+          <div class="expiry-grid">{% for lote in lotes_por_vencer %}<article><div><span class="expiry-days">{{ lote.dias_para_vencer }} días</span><strong>{{ lote.producto.nombre }}</strong><small>Lote {{ lote.lote }} · {{ lote.cantidad_disponible }} unidades · vence {{ lote.fecha_vencimiento|date:"d/m/Y" }}</small></div><div><b>Oferta sugerida: {{ lote.descuento_sugerido }}%</b><a href="{% url 'editar_producto' lote.producto.id %}">Revisar precio <i class="fa-solid fa-arrow-right"></i></a></div></article>{% empty %}<div class="history-empty decorated"><i class="fa-solid fa-circle-check"></i><div><strong>Sin vencimientos próximos</strong><span>No hay lotes vigentes que venzan durante los próximos 60 días.</span></div></div>{% endfor %}</div>
+        </section>
+
         <section class="replenishment-card request-section completed-requests">
           <div class="section-title request-section-title"><div><span>Trazabilidad</span><h2>Historial de recepciones</h2><p>Cada revisión conserva lo que llegó y las incidencias detectadas.</p></div><strong class="request-count completed"><i class="fa-solid fa-box-archive"></i> {{ recepciones_historial|length }}</strong></div>
           {% if recepciones_historial %}<div class="request-history">
@@ -121,7 +137,10 @@
 
   <div class="modal fade" id="modalProveedor" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content supplier-modal"><div class="modal-header"><div><span>Directorio comercial</span><h2 class="modal-title">Nuevo proveedor</h2></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><form method="post" action="{% url 'crear_proveedor' %}">{% csrf_token %}<div class="modal-body"><label>Nombre de empresa<input name="nombre" maxlength="160" required></label><label>Persona de contacto<input name="nombre_contacto" maxlength="160"></label><label>Correo de pedidos<input type="email" name="email" required></label><label>Teléfono<input name="telefono" maxlength="40"></label></div><div class="modal-footer"><button type="button" class="cancel-provider" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="save-provider">Crear proveedor</button></div></form></div></div></div>
 
+  {{ mas_vendidos|json_script:"datos-mas-vendidos" }}
+  {{ baja_rotacion|json_script:"datos-baja-rotacion" }}
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="{% static 'js/reposicion.js' %}?v=20260824-motivo-no-llego-opcional"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="{% static 'js/reposicion.js' %}?v=20260904-baja-rotacion"></script>
 </body>
 </html>

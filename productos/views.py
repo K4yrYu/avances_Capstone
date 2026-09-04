@@ -1,5 +1,6 @@
 import logging
 import secrets
+from datetime import timedelta
 
 from django.conf import settings
 from django.contrib import messages
@@ -7,6 +8,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.shortcuts import redirect, render, get_object_or_404
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
@@ -424,6 +426,32 @@ def _enviar_correo_incidencias_reposicion(recepcion):
 
 @user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def gestion_reposicion(request):
+    from movimientos.models import LoteInventario
+    from .analytics import normalizar_filtros_rotacion, obtener_rotacion_productos
+    periodo_rotacion, categoria_rotacion = normalizar_filtros_rotacion(
+        request.GET.get('periodo', '30'), request.GET.get('categoria', '')
+    )
+    rotacion_productos = obtener_rotacion_productos(
+        periodo=periodo_rotacion, categoria=categoria_rotacion,
+    )
+    mas_vendidos = sorted(rotacion_productos, key=lambda item: (-item['vendidas'], item['nombre']))[:8]
+    sin_ventas = sorted(
+        (item for item in rotacion_productos if item['vendidas'] == 0),
+        key=lambda item: item['nombre'],
+    )
+    ventas_mas_bajas = sorted(
+        (item for item in rotacion_productos if item['vendidas'] > 0),
+        key=lambda item: (item['vendidas'], item['nombre']),
+    )
+    baja_rotacion = sin_ventas[:4] + ventas_mas_bajas[:4]
+    if len(baja_rotacion) < 8:
+        seleccionados = {item['id'] for item in baja_rotacion}
+        restantes = [
+            item for item in sin_ventas + ventas_mas_bajas
+            if item['id'] not in seleccionados
+        ]
+        baja_rotacion.extend(restantes[:8 - len(baja_rotacion)])
+    baja_rotacion.sort(key=lambda item: (item['vendidas'], item['nombre']))
     productos_alerta = list(
         _productos_elegibles_reposicion().select_related('proveedor').order_by(
             'proveedor__nombre', 'nombre'
@@ -447,6 +475,20 @@ def gestion_reposicion(request):
         'detalles__detalle_solicitud__producto',
     )[:30]
     proveedores = Proveedor.objects.filter(activo=True).prefetch_related('productos')
+    hoy = timezone.localdate()
+    lotes_por_vencer = LoteInventario.objects.select_related('producto').filter(
+        cantidad_disponible__gt=0,
+        fecha_vencimiento__gte=hoy,
+        fecha_vencimiento__lte=hoy + timedelta(days=60),
+    ).order_by('fecha_vencimiento')[:12]
+    for lote in lotes_por_vencer:
+        dias = (lote.fecha_vencimiento - hoy).days
+        lote.dias_para_vencer = dias
+        lote.descuento_sugerido = 20 if dias <= 15 else (15 if dias <= 30 else 10)
+    lotes_vencidos = LoteInventario.objects.select_related('producto').filter(
+        cantidad_disponible__gt=0,
+        fecha_vencimiento__lt=hoy,
+    ).order_by('fecha_vencimiento')
     return render(request, 'productos/reposicion.html', {
         'productos_alerta': productos_alerta,
         'solicitudes_activas': solicitudes_activas,
@@ -459,7 +501,69 @@ def gestion_reposicion(request):
         'solicitudes_abiertas': SolicitudReposicion.objects.filter(
             estado__in=['pendiente', 'enviada', 'error']
         ).count(),
+        'periodo_rotacion': periodo_rotacion,
+        'categoria_rotacion': categoria_rotacion,
+        'categorias_rotacion': Producto.CATEGORIA_CHOICES,
+        'rotacion_productos': rotacion_productos,
+        'mas_vendidos': mas_vendidos,
+        'baja_rotacion': baja_rotacion,
+        'fecha_hoy': hoy.isoformat(),
+        'lotes_por_vencer': lotes_por_vencer,
+        'lotes_vencidos': lotes_vencidos,
     })
+
+
+@require_http_methods(['POST'])
+@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
+def procesar_lotes_vencidos(request):
+    from movimientos.contexto import contexto_responsable
+    from movimientos.models import LoteInventario
+    from movimientos.services import registrar_ajuste_stock
+
+    hoy = timezone.localdate()
+    afectados = 0
+    with transaction.atomic():
+        lotes = list(
+            LoteInventario.objects.select_for_update().select_related('producto').filter(
+                cantidad_disponible__gt=0,
+                fecha_vencimiento__lt=hoy,
+            ).order_by('producto_id', 'fecha_vencimiento')
+        )
+        por_producto = {}
+        for lote in lotes:
+            por_producto.setdefault(lote.producto_id, []).append(lote)
+        for producto_id, lotes_producto in por_producto.items():
+            producto = Producto.objects.select_for_update().get(pk=producto_id)
+            cantidad_vencida = min(
+                sum(lote.cantidad_disponible for lote in lotes_producto),
+                producto.stock,
+            )
+            if cantidad_vencida:
+                registrar_ajuste_stock(
+                    producto_id=producto_id,
+                    nuevo_stock=producto.stock - cantidad_vencida,
+                    observacion=f'Retiro de {cantidad_vencida} unidad(es) por vencimiento de lote.',
+                    responsable=request.user,
+                )
+            for lote in lotes_producto:
+                lote.cantidad_disponible = 0
+                lote.save(update_fields=['cantidad_disponible'])
+            hay_lotes_vigentes = LoteInventario.objects.filter(
+                producto_id=producto_id,
+                cantidad_disponible__gt=0,
+                fecha_vencimiento__gte=hoy,
+            ).exists()
+            producto.refresh_from_db(fields=['stock', 'activo'])
+            if producto.controla_vencimiento and not hay_lotes_vigentes and producto.activo:
+                producto.activo = False
+                with contexto_responsable(request.user):
+                    producto.save(update_fields=['activo'])
+            afectados += 1
+    if afectados:
+        messages.success(request, f'Se procesaron vencimientos de {afectados} producto(s). Los cambios quedaron en Movimientos.')
+    else:
+        messages.info(request, 'No hay lotes vencidos pendientes de procesar.')
+    return redirect('gestion_reposicion')
 
 
 def _registrar_pedido_en_movimientos(solicitud):
@@ -601,7 +705,7 @@ def reenviar_solicitud_reposicion(request, id):
 @require_http_methods(['POST'])
 @user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def recibir_solicitud_reposicion(request, id):
-    from movimientos.models import MovimientoInventario
+    from movimientos.models import LoteInventario, MovimientoInventario
     from movimientos.services import registrar_evento_reposicion, registrar_movimiento_stock
 
     with transaction.atomic():
@@ -660,20 +764,60 @@ def recibir_solicitud_reposicion(request, id):
             } and len(motivo) < 10:
                 messages.error(request, f'Explica en al menos 10 caracteres el problema con {item.producto.nombre}.')
                 return redirect('gestion_reposicion')
-            datos.append((item, pendiente, cantidad, resultado, motivo))
+            lotes = []
+            if cantidad and item.producto.controla_vencimiento:
+                codigos = request.POST.getlist(f'lote_codigo_{item.pk}[]')
+                cantidades = request.POST.getlist(f'lote_cantidad_{item.pk}[]')
+                ingresos = request.POST.getlist(f'lote_ingreso_{item.pk}[]')
+                vencimientos = request.POST.getlist(f'lote_vencimiento_{item.pk}[]')
+                if not (len(codigos) == len(cantidades) == len(ingresos) == len(vencimientos)):
+                    messages.error(request, f'Completa correctamente los lotes de {item.producto.nombre}.')
+                    return redirect('gestion_reposicion')
+                for codigo, cantidad_lote, ingreso, vencimiento in zip(codigos, cantidades, ingresos, vencimientos):
+                    codigo = codigo.strip()[:80]
+                    try:
+                        cantidad_lote = int(cantidad_lote)
+                    except (TypeError, ValueError):
+                        cantidad_lote = 0
+                    fecha_ingreso = parse_date(ingreso)
+                    fecha_vencimiento = parse_date(vencimiento)
+                    if not codigo or cantidad_lote <= 0 or not fecha_ingreso or not fecha_vencimiento:
+                        messages.error(request, f'Cada lote de {item.producto.nombre} requiere código, cantidad y fechas válidas.')
+                        return redirect('gestion_reposicion')
+                    if fecha_vencimiento <= fecha_ingreso:
+                        messages.error(request, f'El vencimiento del lote {codigo} debe ser posterior a su ingreso.')
+                        return redirect('gestion_reposicion')
+                    if fecha_ingreso > timezone.localdate():
+                        messages.error(request, f'La fecha de ingreso del lote {codigo} no puede estar en el futuro.')
+                        return redirect('gestion_reposicion')
+                    if fecha_vencimiento < timezone.localdate():
+                        messages.error(request, f'El lote {codigo} ya está vencido y no puede ingresar al inventario.')
+                        return redirect('gestion_reposicion')
+                    existente = LoteInventario.objects.filter(
+                        producto=item.producto,
+                        lote=codigo,
+                    ).first()
+                    if existente and existente.fecha_vencimiento != fecha_vencimiento:
+                        messages.error(request, f'El lote {codigo} ya existe con otro vencimiento.')
+                        return redirect('gestion_reposicion')
+                    lotes.append((codigo, cantidad_lote, fecha_ingreso, fecha_vencimiento))
+                if sum(lote[1] for lote in lotes) != cantidad:
+                    messages.error(request, f'Las cantidades de los lotes de {item.producto.nombre} deben sumar {cantidad}.')
+                    return redirect('gestion_reposicion')
+            datos.append((item, pendiente, cantidad, resultado, motivo, lotes))
 
         if not datos:
             messages.error(request, 'La solicitud ya no tiene productos pendientes.')
             return redirect('gestion_reposicion')
 
-        hay_incidencias = any(resultado != DetalleRecepcionReposicion.Resultado.COMPLETO for _, _, _, resultado, _ in datos)
+        hay_incidencias = any(resultado != DetalleRecepcionReposicion.Resultado.COMPLETO for _, _, _, resultado, _, _ in datos)
         recepcion = RecepcionReposicion.objects.create(
             solicitud=solicitud,
             recibida_por=request.user,
             estado=(RecepcionReposicion.Estado.INCIDENCIA if hay_incidencias else RecepcionReposicion.Estado.COMPLETA),
             clave_idempotencia=token_recepcion,
         )
-        for item, pendiente, cantidad, resultado, motivo in datos:
+        for item, pendiente, cantidad, resultado, motivo, lotes in datos:
             DetalleRecepcionReposicion.objects.create(
                 recepcion=recepcion,
                 detalle_solicitud=item,
@@ -697,6 +841,21 @@ def recibir_solicitud_reposicion(request, id):
                     estado=(MovimientoInventario.Estado.PARCIAL if pendiente_resultante else MovimientoInventario.Estado.APLICADO),
                     clave_idempotencia=f'reposicion:{solicitud.pk}:recepcion:{recepcion.pk}:item:{item.pk}:entrada',
                 )
+                for codigo, cantidad_lote, fecha_ingreso, fecha_vencimiento in lotes:
+                    lote, creado = LoteInventario.objects.select_for_update().get_or_create(
+                        producto=item.producto,
+                        lote=codigo,
+                        defaults={
+                            'cantidad_disponible': cantidad_lote,
+                            'fecha_ingreso': fecha_ingreso,
+                            'fecha_vencimiento': fecha_vencimiento,
+                            'referencia': f'{solicitud.numero} · recepción {recepcion.pk}',
+                        },
+                    )
+                    if not creado:
+                        lote.cantidad_disponible += cantidad_lote
+                        lote.referencia = f'{solicitud.numero} · recepción {recepcion.pk}'
+                        lote.save(update_fields=['cantidad_disponible', 'referencia'])
             if resultado != DetalleRecepcionReposicion.Resultado.COMPLETO:
                 resultado_texto = dict(
                     DetalleRecepcionReposicion.Resultado.choices

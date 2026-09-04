@@ -49,6 +49,8 @@ def index(request):
 
 @user_passes_test(lambda u: u.is_staff, login_url='/usuarios/iniciosesion/')
 def panel_administracion(request):
+    from productos.analytics import normalizar_filtros_rotacion, obtener_rotacion_productos
+
     Usuario = get_user_model()
     productos = Producto.objects.all()
     productos_activos = productos.filter(activo=True)
@@ -109,10 +111,30 @@ def panel_administracion(request):
         'movimientos_reposicion_pendiente': unidades_reposicion_pendientes,
     }
     ventas_recientes = ventas_pagadas.select_related('id_usuario').order_by('-fecha_compra')[:5]
+    periodo_ventas, categoria_ventas = normalizar_filtros_rotacion(
+        request.GET.get('ventas_periodo', '30'), request.GET.get('ventas_categoria', '')
+    )
+    rotacion_resumen = obtener_rotacion_productos(
+        periodo=periodo_ventas, categoria=categoria_ventas,
+    )
+    productos_mas_vendidos = [
+        item for item in sorted(
+            rotacion_resumen, key=lambda item: (-item['vendidas'], item['nombre'])
+        ) if item['vendidas'] > 0
+    ][:5]
+    maximo_vendido = max(
+        (item['vendidas'] for item in productos_mas_vendidos), default=0,
+    )
+    for item in productos_mas_vendidos:
+        item['altura_grafico'] = max(round(item['vendidas'] * 100 / maximo_vendido), 4)
 
     return render(request, 'home/panel_admin.html', {
         'resumen': resumen,
         'ventas_recientes': ventas_recientes,
+        'productos_mas_vendidos': productos_mas_vendidos,
+        'periodo_ventas': periodo_ventas,
+        'categoria_ventas': categoria_ventas,
+        'categorias_ventas': Producto.CATEGORIA_CHOICES,
     })
 
 def contacto(request):

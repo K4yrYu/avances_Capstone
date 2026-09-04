@@ -23,6 +23,7 @@ urlpatterns = [
     path('administracion/reposicion/solicitar/', views.crear_solicitud_reposicion, name='crear_solicitud_reposicion'),
     path('administracion/reposicion/<int:id>/reenviar/', views.reenviar_solicitud_reposicion, name='reenviar_solicitud_reposicion'),
     path('administracion/reposicion/<int:id>/recibir/', views.recibir_solicitud_reposicion, name='recibir_solicitud_reposicion'),
+    path('administracion/reposicion/vencimientos/procesar/', views.procesar_lotes_vencidos, name='procesar_lotes_vencidos'),
 
 
 

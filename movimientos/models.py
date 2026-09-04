@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 
 class MovimientoInventario(models.Model):
@@ -101,6 +102,7 @@ class LoteInventario(models.Model):
     )
     lote = models.CharField(max_length=80)
     cantidad_disponible = models.PositiveIntegerField(default=0)
+    fecha_ingreso = models.DateField(default=timezone.localdate)
     fecha_vencimiento = models.DateField()
     referencia = models.CharField(max_length=120, blank=True)
     creado_en = models.DateTimeField(auto_now_add=True)

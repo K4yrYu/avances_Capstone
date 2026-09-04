@@ -1,9 +1,10 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 
 from productos.models import Producto
 
-from .models import MovimientoInventario
+from .models import LoteInventario, MovimientoInventario
 
 
 def datos_historicos_producto(producto):
@@ -123,3 +124,30 @@ def registrar_ajuste_stock(*, producto_id, nuevo_stock, observacion, responsable
         observacion=observacion,
         responsable=responsable,
     )
+
+
+@transaction.atomic
+def descontar_lotes_fefo(*, producto_id, cantidad):
+    producto = Producto.objects.select_for_update().get(pk=producto_id)
+    if not producto.controla_vencimiento:
+        return []
+    lotes = list(
+        LoteInventario.objects.select_for_update().filter(
+            producto_id=producto_id,
+            cantidad_disponible__gt=0,
+            fecha_vencimiento__gte=timezone.localdate(),
+        ).order_by('fecha_vencimiento', 'fecha_ingreso', 'pk')
+    )
+    if sum(lote.cantidad_disponible for lote in lotes) < cantidad:
+        raise ValidationError(f'Los lotes disponibles de {producto.nombre} no cubren la venta.')
+    restante = cantidad
+    consumos = []
+    for lote in lotes:
+        if restante <= 0:
+            break
+        consumo = min(lote.cantidad_disponible, restante)
+        lote.cantidad_disponible -= consumo
+        lote.save(update_fields=['cantidad_disponible'])
+        consumos.append((lote.pk, consumo))
+        restante -= consumo
+    return consumos

@@ -138,6 +138,10 @@ class Producto(models.Model):
     precio = models.IntegerField(validators=[MinValueValidator(1)])
     imagen = models.ImageField(upload_to='productos/', max_length=255)
     stock = models.PositiveIntegerField(default=0)
+    controla_vencimiento = models.BooleanField(
+        default=False,
+        help_text='Controla las existencias de este producto por lote y fecha de vencimiento.',
+    )
     categoria = models.CharField(
         max_length=100,
         choices=CATEGORIA_CHOICES,

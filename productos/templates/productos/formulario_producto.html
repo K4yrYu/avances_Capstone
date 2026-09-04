@@ -342,9 +342,9 @@
 
               <div class="form-fields-grid inventory-form-grid">
                 <div class="admin-field">
-                  <label for="stock">Stock inicial <span>*</span></label>
-                  <div class="input-with-icon"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><input type="number" class="form-control" id="stock" name="stock" min="0" step="1" value="{{ producto.stock|default:0 }}" inputmode="numeric" required></div>
-                  <small class="field-help">Puede comenzar en cero si aún no hay unidades.</small>
+                  <label for="stock">{% if modo_edicion %}Stock actual{% else %}Stock inicial{% endif %} <span>*</span></label>
+                  <div class="input-with-icon"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><input type="number" class="form-control" id="stock" name="stock" min="0" step="1" value="{{ producto.stock|default:0 }}" inputmode="numeric" required {% if modo_edicion %}readonly aria-readonly="true"{% endif %}></div>
+                  <small class="field-help">{% if modo_edicion %}El stock solo cambia mediante ventas, recepciones o ajustes registrados en Movimientos.{% else %}Puede comenzar en cero si aún no hay unidades.{% endif %}</small>
                   <span class="field-error" data-error-for="stock"></span>
                 </div>
 
@@ -367,6 +367,12 @@
                   <small class="field-help">Las solicitudes de compra se enviarán al correo de este proveedor.</small>
                   <span class="field-error" data-error-for="proveedor"></span>
                 </div>
+
+                <label class="publication-toggle" for="controla_vencimiento">
+                  <input type="checkbox" id="controla_vencimiento" name="controla_vencimiento" {% if producto.controla_vencimiento %}checked{% endif %}>
+                  <span class="toggle-control" aria-hidden="true"></span>
+                  <span><strong>Controlar por lote y vencimiento</strong><small>Solicitará lote, fecha de ingreso y vencimiento al recibir este producto.</small></span>
+                </label>
 
                 <label class="publication-toggle" for="activo">
                   <input type="checkbox" id="activo" name="activo" {% if not modo_edicion or producto.activo %}checked{% endif %}>

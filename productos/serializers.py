@@ -42,7 +42,7 @@ class ProductoSerializer(serializers.ModelSerializer):
             'secado_tacto_horas', 'repintado_min_horas', 'repintado_max_horas',
             'tiempo_repintado_legible',
             'proveedor', 'proveedor_nombre',
-            'stock_minimo', 'necesita_reposicion', 'cantidad_reposicion_sugerida',
+            'stock_minimo', 'controla_vencimiento', 'necesita_reposicion', 'cantidad_reposicion_sugerida',
             'unidad_venta', 'contenido', 'unidad_contenido',
             'tipo_calculo', 'tipo_calculo_display', 'rendimiento', 'unidad_rendimiento',
             'capas_recomendadas', 'porcentaje_desperdicio', 'uso_recomendado',
@@ -50,6 +50,32 @@ class ProductoSerializer(serializers.ModelSerializer):
             'rendimiento_legible', 'apto_para_calculo',
         ]
         read_only_fields = ['id']
+
+    def _validate_stock_y_lotes(self, attrs):
+        attrs = super().validate(attrs)
+        if self.instance is not None and 'stock' in attrs and attrs['stock'] != self.instance.stock:
+            raise serializers.ValidationError({
+                'stock': 'El stock no se edita desde Productos. Registra una recepción, venta o ajuste en Movimientos.'
+            })
+        controla_vencimiento = attrs.get(
+            'controla_vencimiento',
+            self.instance.controla_vencimiento if self.instance else False,
+        )
+        stock = self.instance.stock if self.instance else attrs.get('stock', 0)
+        if controla_vencimiento and stock:
+            unidades_lote = 0
+            if self.instance:
+                unidades_lote = sum(
+                    self.instance.lotes_inventario.values_list('cantidad_disponible', flat=True)
+                )
+            if unidades_lote != stock:
+                raise serializers.ValidationError({
+                    'controla_vencimiento': (
+                        'Para activar el control por lotes, el stock debe estar en cero o ya estar respaldado por lotes. '
+                        'Usa Movimientos y Reposición para regularizarlo.'
+                    )
+                })
+        return attrs
 
     def validate_precio(self, value):
         if value <= 0:
@@ -166,6 +192,7 @@ class ProductoSerializer(serializers.ModelSerializer):
         )
 
     def validate(self, attrs):
+        attrs = self._validate_stock_y_lotes(attrs)
         if self.instance is None and not attrs.get('imagen'):
             raise serializers.ValidationError({'imagen': 'Debes subir una imagen del producto.'})
 

@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}?v=20260823-topbar-actions">
+  <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}?v=20260831-vertical-sales-chart">
 </head>
 <body>
   <a class="skip-link" href="#contenido-panel">Saltar al contenido</a>
@@ -129,6 +129,22 @@
               <i class="fa-solid fa-plus" aria-hidden="true"></i> Nuevo producto
             </a>
           </div>
+        </section>
+
+        <section class="dashboard-sales-chart" aria-labelledby="ventas-destacadas-titulo">
+          <div class="dashboard-sales-heading">
+            <div><span>Ventas confirmadas</span><h2 id="ventas-destacadas-titulo">Productos más vendidos</h2><p>Selecciona una barra para ver sus unidades y stock actual.</p></div>
+            <form method="get" class="dashboard-sales-filters">
+              <label>Categoría<select name="ventas_categoria"><option value="">Todas</option>{% for valor, etiqueta in categorias_ventas %}<option value="{{ valor }}" {% if categoria_ventas == valor %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}</select></label>
+              <label>Período<select name="ventas_periodo"><option value="30" {% if periodo_ventas == 30 %}selected{% endif %}>30 días</option><option value="90" {% if periodo_ventas == 90 %}selected{% endif %}>90 días</option><option value="365" {% if periodo_ventas == 365 %}selected{% endif %}>365 días</option></select></label>
+              <button type="submit"><i class="fa-solid fa-chart-column"></i> Mostrar gráfico</button>
+            </form>
+          </div>
+          <div class="dashboard-sales-body">
+            <div class="dashboard-sales-bars" id="dashboard-sales-chart" aria-label="Gráfico de productos más vendidos">{% if productos_mas_vendidos %}<div class="dashboard-sales-columns">{% for item in productos_mas_vendidos %}<button type="button" class="dashboard-sales-column" style="--bar-height: {{ item.altura_grafico }}%;" data-producto="{{ item.nombre }}" data-categoria="{{ item.categoria }}" data-vendidas="{{ item.vendidas }}" data-stock="{{ item.stock }}" data-rotacion="{{ item.rotacion }}" data-sugerida="{{ item.sugerida }}" aria-label="{{ item.nombre }}: {{ item.vendidas }} unidades vendidas. Seleccionar para ver detalles."><strong>{{ item.vendidas }}</strong><span class="dashboard-sales-column-track"><span></span></span><small title="{{ item.nombre }}">{{ item.nombre }}</small></button>{% endfor %}</div>{% else %}<div class="dashboard-sales-empty"><i class="fa-solid fa-chart-column"></i><span><strong>Sin ventas en este período</strong><small>Prueba otra categoría o un período más amplio.</small></span></div>{% endif %}</div>
+            <div class="dashboard-sales-detail" id="dashboard-sales-detail"><i class="fa-solid fa-arrow-pointer"></i><span><strong>Selecciona una barra para ver detalles</strong><small>Se mostrarán categoría, unidades vendidas, stock y rotación.</small></span></div>
+          </div>
+          <a class="dashboard-sales-link" href="{% url 'gestion_reposicion' %}?periodo={{ periodo_ventas }}{% if categoria_ventas %}&categoria={{ categoria_ventas|urlencode }}{% endif %}">Ver análisis completo <i class="fa-solid fa-arrow-right"></i></a>
         </section>
 
         <section class="metrics-grid" aria-label="Indicadores principales">
@@ -394,5 +410,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{% static 'js/panel_admin.js' %}?v=20260831-vertical-sales-chart"></script>
 </body>
 </html>

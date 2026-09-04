@@ -31,6 +31,12 @@ class ProductoAdmin(admin.ModelAdmin):
     search_fields = ('nombre', 'sku', 'marca', 'modelo', 'descripcion', 'uso_recomendado')
     ordering = ('nombre',)
     readonly_fields = ('presentacion', 'rendimiento_legible', 'estado_calculo')
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj is not None:
+            fields.append('stock')
+        return tuple(fields)
     fieldsets = (
         ('Información comercial', {
             'fields': (
@@ -39,7 +45,7 @@ class ProductoAdmin(admin.ModelAdmin):
             ),
         }),
         ('Inventario', {
-            'fields': (('stock', 'stock_minimo'), 'proveedor', 'activo', 'unidad_venta'),
+            'fields': (('stock', 'stock_minimo'), 'controla_vencimiento', 'proveedor', 'activo', 'unidad_venta'),
         }),
         ('Ficha técnica para el asistente SFI', {
             'fields': (

@@ -682,7 +682,12 @@ def respuesta_pago_webpay(request):
             for detalle in detalles:
                 producto = productos[detalle.producto_id]
                 from movimientos.models import MovimientoInventario
-                from movimientos.services import registrar_movimiento_stock
+                from movimientos.services import descontar_lotes_fefo, registrar_movimiento_stock
+
+                descontar_lotes_fefo(
+                    producto_id=producto.pk,
+                    cantidad=detalle.cantidad_producto,
+                )
 
                 registrar_movimiento_stock(
                     producto_id=producto.pk,

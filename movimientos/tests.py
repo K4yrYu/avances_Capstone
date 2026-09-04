@@ -1,13 +1,16 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
+from datetime import timedelta
+
 from django.test import TestCase
+from django.utils import timezone
 from django.urls import reverse
 
 from productos.models import Producto
 
-from .models import MovimientoInventario
-from .services import registrar_movimiento_stock
+from .models import LoteInventario, MovimientoInventario
+from .services import descontar_lotes_fefo, registrar_movimiento_stock
 
 
 class AccesoMovimientosTests(TestCase):
@@ -149,3 +152,44 @@ class ReinicioKardexTests(TestCase):
         inicial = MovimientoInventario.objects.get(producto_id_original=producto.pk)
         self.assertEqual(inicial.tipo, MovimientoInventario.Tipo.INICIAL)
         self.assertEqual(inicial.stock_resultante, 12)
+
+
+class LotesFefoTests(TestCase):
+    def test_descuenta_primero_el_lote_que_vence_antes(self):
+        producto = Producto.objects.create(
+            nombre='Sellador con lote', descripcion='Prueba FEFO', precio=8990,
+            imagen='productos/sellador.jpg', stock=10, sku='FEFO-001',
+            controla_vencimiento=True,
+        )
+        hoy = timezone.localdate()
+        primero = LoteInventario.objects.create(
+            producto=producto, lote='L-A', cantidad_disponible=4,
+            fecha_ingreso=hoy, fecha_vencimiento=hoy + timedelta(days=30),
+        )
+        segundo = LoteInventario.objects.create(
+            producto=producto, lote='L-B', cantidad_disponible=6,
+            fecha_ingreso=hoy, fecha_vencimiento=hoy + timedelta(days=90),
+        )
+
+        descontar_lotes_fefo(producto_id=producto.pk, cantidad=5)
+
+        primero.refresh_from_db()
+        segundo.refresh_from_db()
+        self.assertEqual(primero.cantidad_disponible, 0)
+        self.assertEqual(segundo.cantidad_disponible, 5)
+
+    def test_no_utiliza_lotes_vencidos(self):
+        producto = Producto.objects.create(
+            nombre='Adhesivo vencido', descripcion='Prueba', precio=5990,
+            imagen='productos/adhesivo.jpg', stock=2, sku='FEFO-002',
+            controla_vencimiento=True,
+        )
+        hoy = timezone.localdate()
+        LoteInventario.objects.create(
+            producto=producto, lote='VENCIDO', cantidad_disponible=2,
+            fecha_ingreso=hoy - timedelta(days=60),
+            fecha_vencimiento=hoy - timedelta(days=1),
+        )
+
+        with self.assertRaises(ValidationError):
+            descontar_lotes_fefo(producto_id=producto.pk, cantidad=1)

@@ -47,7 +47,7 @@
     const existingImage = root.dataset.existingImage || "";
     const fieldNames = [
       "nombre", "descripcion", "categoria", "precio", "marca", "modelo", "sku", "color", "color_hex", "ambiente_uso",
-      "proveedor", "stock", "stock_minimo", "activo",
+      "proveedor", "stock", "stock_minimo", "controla_vencimiento", "activo",
       "unidad_venta", "contenido", "unidad_contenido", "tipo_calculo", "rendimiento",
       "unidad_rendimiento", "capas_recomendadas", "porcentaje_desperdicio", "uso_recomendado",
       "tipo_pintura", "terminacion", "secado_tacto_horas", "repintado_min_horas", "repintado_max_horas",
@@ -205,7 +205,7 @@
     fields.color_hex?.addEventListener("input", () => {
       if (/^#[0-9a-f]{6}$/i.test(fields.color_hex.value)) colorPicker.value = fields.color_hex.value;
     });
-    fieldNames.filter((name) => !["activo", "informacion_tecnica_verificada", "imagen"].includes(name)).forEach((name) => {
+    fieldNames.filter((name) => !["activo", "controla_vencimiento", "informacion_tecnica_verificada", "imagen"].includes(name)).forEach((name) => {
       fields[name]?.addEventListener("input", () => setFieldError(name, ""));
       fields[name]?.addEventListener("change", () => setFieldError(name, ""));
     });
@@ -298,6 +298,7 @@
         productUsesColor() ? preparationOptions.filter((option) => option.checked).map((option) => option.value) : []
       ));
       payload.append("activo", fields.activo.checked ? "true" : "false");
+      payload.append("controla_vencimiento", fields.controla_vencimiento.checked ? "true" : "false");
       payload.append("informacion_tecnica_verificada", fields.informacion_tecnica_verificada.checked ? "true" : "false");
       payload.append("especificaciones", JSON.stringify(validation.specifications));
       if (fields.imagen.files[0]) payload.append("imagen", fields.imagen.files[0]);
