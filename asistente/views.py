@@ -35,6 +35,7 @@ def api_consultar_asistente(request):
         resultado = procesar_consulta(
             entrada.validated_data['mensaje'],
             entrada.validated_data['historial'],
+            entrada.validated_data['productos_contexto'],
         )
     except AsistenteNoDisponible as exc:
         return Response(

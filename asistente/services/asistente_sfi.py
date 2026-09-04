@@ -224,6 +224,9 @@ def _completar_intencion_maestro(datos, mensaje, historial):
     ))
     todas_las_comunas = _pide_todas_las_comunas(mensaje)
     otra_comuna = _pide_otra_comuna(mensaje)
+    buscar_por_comuna = any(frase in mensaje_normalizado for frase in (
+        'buscar por comuna', 'filtrar por comuna', 'elegir comuna',
+    ))
     listado_especialidad = _pide_listado_especialidad(mensaje)
     cambio_especialidad_contextual = bool(especialidad_mensaje and en_flujo_maestro)
 
@@ -233,7 +236,9 @@ def _completar_intencion_maestro(datos, mensaje, historial):
         or (aceptacion and ofrecio_busqueda)
         or (pidio_comuna and comuna_mensaje)
         or (pidio_especialidad and especialidad_mensaje)
-        or ((en_flujo_maestro or pidio_comuna) and (todas_las_comunas or otra_comuna))
+        or ((en_flujo_maestro or pidio_comuna) and (
+            todas_las_comunas or otra_comuna or buscar_por_comuna
+        ))
         or cambio_especialidad_contextual
     ):
         datos['intencion'] = 'buscar_maestro'
@@ -261,12 +266,13 @@ def _completar_intencion_maestro(datos, mensaje, historial):
     comuna_interpretada = _comuna_desde_texto(datos.get('comuna_maestro') or '')
     if todas_las_comunas or listado_especialidad:
         datos['comuna_maestro'] = TODAS_LAS_COMUNAS
-    elif otra_comuna:
+    elif otra_comuna or buscar_por_comuna:
         datos['comuna_maestro'] = ''
+        datos['_preguntar_comuna_maestro'] = True
     elif comuna_mensaje:
         datos['comuna_maestro'] = comuna_mensaje
     elif solicitud_contextual_generica and especialidad_contexto:
-        datos['comuna_maestro'] = comuna_contexto or TODAS_LAS_COMUNAS
+        datos['comuna_maestro'] = comuna_contexto
     elif aceptacion or cambio_especialidad_contextual or pidio_especialidad:
         datos['comuna_maestro'] = comuna_contexto
     elif solicitud_directa:
@@ -378,9 +384,16 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
                 datos['consulta_producto'] = ' '.join(terminos[:8])
 
     proyecto_normalizado = _texto_normalizado(datos.get('proyecto'))
+    terminos_bano = (
+        'bano', 'lavamanos', 'vanitorio', 'sanitario', 'inodoro',
+        ' wc ', 'ducha', 'regadera',
+    )
     es_proyecto_bano = (
         datos.get('intencion') == 'planificar_proyecto'
-        and ('bano' in proyecto_normalizado or 'bano' in texto_usuario)
+        and any(
+            termino in f' {proyecto_normalizado} {texto_usuario} '
+            for termino in terminos_bano
+        )
     )
     if es_proyecto_bano:
         solicita_completo = any(frase in texto_usuario for frase in (
@@ -966,21 +979,21 @@ def _resolver_bano(datos):
 
     if faltantes_catalogo:
         mensaje_stock = (
-            f' Falta completar: {"; ".join(faltantes_catalogo)}. No presento el presupuesto '
-            'como completo hasta que todo tenga stock.'
+            ' No pude completar toda la propuesta porque falta disponibilidad de: '
+            f'{"; ".join(faltantes_catalogo)}.'
         )
     else:
-        mensaje_stock = ' Todos los productos seleccionados tienen stock registrado.'
+        mensaje_stock = ''
 
     mensaje_presupuesto = ''
     if presupuesto:
         if presupuesto >= subtotal and not faltantes_catalogo:
-            mensaje_presupuesto = (
+            mensaje_presupuesto += (
                 f' Tu presupuesto de {_formatear_clp(presupuesto)} alcanza y quedarían '
                 f'{_formatear_clp(presupuesto - subtotal)}.'
             )
         elif subtotal > presupuesto:
-            mensaje_presupuesto = (
+            mensaje_presupuesto += (
                 f' Tu presupuesto de {_formatear_clp(presupuesto)} no alcanza para los '
                 f'productos disponibles: faltan {_formatear_clp(subtotal - presupuesto)}.'
             )
@@ -997,8 +1010,9 @@ def _resolver_bano(datos):
     return {
         'tipo': 'plan_proyecto',
         'mensaje': (
-            f'Preparé materiales para {alcance_display}. El total de productos disponibles '
-            f'es {_formatear_clp(subtotal)}.{mensaje_stock}{mensaje_presupuesto} '
+            f'Para {alcance_display} encontré estas opciones en nuestro catálogo, '
+            f'con un presupuesto estimado de {_formatear_clp(subtotal)}.'
+            f'{mensaje_stock}{mensaje_presupuesto} '
             'La estimación no incluye mano de obra, retiro de escombros ni reparaciones ocultas. '
             'Antes de intervenir agua, desagües o impermeabilización, verifica medidas y '
             'compatibilidad; para esas conexiones conviene un gasfíter y para revestimientos '
@@ -1022,7 +1036,10 @@ def _resolver_proyecto(datos):
     proyecto = _texto_normalizado(datos.get('proyecto'))
     if 'repisa' in proyecto or 'estante' in proyecto:
         return _resolver_repisa(datos)
-    if 'bano' in proyecto or 'sanitario' in proyecto:
+    if any(termino in f' {proyecto} ' for termino in (
+        'bano', 'sanitario', 'inodoro', ' wc ', 'lavamanos',
+        'vanitorio', 'ducha', 'regadera',
+    )):
         return _resolver_bano(datos)
     return resolver_proyecto_generico(
         datos,
@@ -1089,7 +1106,9 @@ def _buscar_productos(consulta, limite=6):
         coincidencias = sum(
             contiene(texto_completo, palabra) for palabra in palabras_expandidas
         )
-        coincidencias_minimas = 2 if len(palabras_originales) >= 3 else 1
+        # Una consulta compuesta debe conservar su tipo: "kit de ducha" no
+        # puede resolverse con cualquier otro kit ni con cualquier producto de baño.
+        coincidencias_minimas = min(len(palabras_originales), 3)
         if puntaje and coincidencias >= coincidencias_minimas:
             resultados.append((coincidencias, puntaje, producto))
     resultados.sort(key=lambda item: (
@@ -1100,6 +1119,59 @@ def _buscar_productos(consulta, limite=6):
     except (TypeError, ValueError):
         limite = 6
     return [item[2] for item in resultados[:limite]]
+
+
+def _aplicar_contexto_productos(datos, mensaje, productos_contexto):
+    ids = list(dict.fromkeys(productos_contexto or []))[:8]
+    if not ids:
+        return datos
+    productos = {
+        producto.pk: producto
+        for producto in Producto.objects.filter(pk__in=ids, activo=True)
+    }
+    ordenados = [productos[producto_id] for producto_id in ids if producto_id in productos]
+    if not ordenados:
+        return datos
+
+    texto = _texto_normalizado(mensaje)
+    referencia_contextual = any(frase in texto for frase in (
+        'este', 'esta', 'ese', 'esa', 'estos', 'estas', 'esos', 'esas',
+        'anterior', 'anteriores', 'de los que mostraste', 'de esas opciones',
+        'similar', 'similares', 'parecido', 'parecida', 'mismo', 'misma',
+        'primero', 'primera', 'segundo', 'segunda', 'tercero', 'tercera',
+    ))
+    comparacion_contextual = any(frase in texto for frase in (
+        'mas barato', 'mas economico', 'menor precio',
+        'mas caro', 'mayor precio', 'precio mas alto',
+    ))
+    if not referencia_contextual and not comparacion_contextual:
+        return datos
+
+    posicion = None
+    for indice, nombres in enumerate((
+        ('primero', 'primera'), ('segundo', 'segunda'), ('tercero', 'tercera'),
+    )):
+        if any(nombre in texto for nombre in nombres):
+            posicion = indice
+            break
+    if posicion is not None and posicion < len(ordenados):
+        referencia = ordenados[posicion]
+    elif len(ordenados) == 1:
+        referencia = ordenados[0]
+    else:
+        referencia = None
+
+    datos['intencion'] = 'buscar_producto'
+    if comparacion_contextual and referencia is None:
+        datos['_productos_contexto_ids'] = [producto.pk for producto in ordenados]
+        datos['consulta_producto'] = 'productos mostrados anteriormente'
+    elif referencia is not None:
+        datos['consulta_producto'] = referencia.nombre
+        if not any(frase in texto for frase in ('similar', 'similares', 'parecido', 'parecida')):
+            datos['_productos_contexto_ids'] = [referencia.pk]
+    elif referencia_contextual:
+        datos['_contexto_ambiguo'] = True
+    return datos
 
 
 def _resolver_recomendacion_color(datos):
@@ -1314,14 +1386,24 @@ def _resolver_busqueda_maestro(datos):
             ],
         }
     if not comuna:
+        if datos.get('_preguntar_comuna_maestro'):
+            return {
+                'tipo': 'aclaracion_maestro',
+                'mensaje': 'Perfecto. ¿En qué comuna necesitas el trabajo?',
+                'productos': [],
+                'maestros': [],
+                'sugerencias': ['Maipú', 'Santiago', 'Providencia'],
+            }
         return {
             'tipo': 'aclaracion_maestro',
-            'mensaje': 'Claro. ¿En qué comuna necesitas el trabajo?',
+            'mensaje': (
+                f'Puedo buscar profesionales de {especialidad}. '
+                '¿Prefieres buscar por comuna o ver todos los disponibles?'
+            ),
             'productos': [],
             'maestros': [],
             'sugerencias': [
-                'Maipú',
-                'Santiago',
+                'Buscar por comuna',
                 f'Ver todos los maestros de {especialidad}',
             ],
         }
@@ -1345,12 +1427,26 @@ def _resolver_busqueda_maestro(datos):
             ],
         }
     cantidad = len(maestros)
-    sustantivo = 'maestro verificado disponible' if cantidad == 1 else 'maestros verificados disponibles'
-    alcance = 'sin filtrar por comuna' if todas_las_comunas else f'en {comuna}'
+    especialidad_normalizada = _texto_normalizado(especialidad)
+    nombres_oficio = {
+        'gasfiteria': ('gasfíter', 'gasfíteres'),
+        'pintura': ('maestro pintor', 'maestros pintores'),
+        'ceramica y revestimientos': ('maestro ceramista', 'maestros ceramistas'),
+        'electricidad': ('electricista', 'electricistas'),
+        'carpinteria': ('carpintero', 'carpinteros'),
+    }
+    singular, plural = nombres_oficio.get(
+        especialidad_normalizada,
+        (f'profesional de {especialidad}', f'profesionales de {especialidad}'),
+    )
+    sustantivo = singular if cantidad == 1 else plural
+    alcance = '' if todas_las_comunas else f' en {comuna}'
     return {
         'tipo': 'maestros',
         'mensaje': (
-            f'Encontré {cantidad} {sustantivo} para {especialidad} {alcance}.'
+            f'Encontré {cantidad} {sustantivo} '
+            f'{"disponibles" if cantidad != 1 else "disponible"}{alcance}. Te dejo '
+            f'{"sus perfiles" if cantidad != 1 else "su perfil"} para que puedas revisarlo.'
         ),
         'productos': [],
         'maestros': maestros,
@@ -1373,8 +1469,26 @@ def resolver_interpretacion(datos):
     if intencion == 'planificar_proyecto':
         return _resolver_proyecto(datos)
     if intencion == 'buscar_producto':
+        if datos.get('_contexto_ambiguo'):
+            return {
+                'tipo': 'aclaracion',
+                'mensaje': '¿A cuál de los productos mostrados te refieres? Puedes indicar primero, segundo o tercero.',
+                'productos': [],
+                'sugerencias': ['El primero', 'El segundo', 'Muéstrame opciones similares'],
+            }
         consulta = str(datos.get('consulta_producto') or '').strip()
-        productos = _buscar_productos(consulta)
+        ids_contexto = datos.get('_productos_contexto_ids') or []
+        if ids_contexto:
+            encontrados = {
+                producto.pk: producto
+                for producto in Producto.objects.filter(pk__in=ids_contexto, activo=True)
+            }
+            productos = [
+                encontrados[producto_id]
+                for producto_id in ids_contexto if producto_id in encontrados
+            ]
+        else:
+            productos = _buscar_productos(consulta)
         if not consulta:
             return {
                 'tipo': 'aclaracion',
@@ -1453,9 +1567,11 @@ def resolver_interpretacion(datos):
     }
 
 
-def procesar_consulta(mensaje, historial):
+def procesar_consulta(mensaje, historial, productos_contexto=None):
     try:
-        interpretacion = interpretar_con_gemini(mensaje, historial)
+        interpretacion = interpretar_con_gemini(
+            mensaje, historial, productos_contexto or [],
+        )
     except GeminiNoDisponible as exc:
         raise AsistenteNoDisponible(str(exc)) from exc
     interpretacion = _normalizar_preferencias_extraidas(
@@ -1467,6 +1583,9 @@ def procesar_consulta(mensaje, historial):
         interpretacion,
         mensaje,
         historial,
+    )
+    interpretacion = _aplicar_contexto_productos(
+        interpretacion, mensaje, productos_contexto,
     )
     return resolver_interpretacion(interpretacion)
 

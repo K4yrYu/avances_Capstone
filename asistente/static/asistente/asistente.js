@@ -56,6 +56,14 @@
       saveConversation();
     }
 
+    function contextProductIds() {
+      const lastResult = [...conversationEntries].reverse().find(entry =>
+        entry.role === "assistant" && Array.isArray(entry.products) && entry.products.length
+      );
+      if (!lastResult) return [];
+      return [...new Set(lastResult.products.map(product => Number(product.id)).filter(id => Number.isInteger(id) && id > 0))].slice(0, 8);
+    }
+
     function getCookie(name) {
       const prefix = `${name}=`;
       const cookie = document.cookie.split(";").map(value => value.trim()).find(value => value.startsWith(prefix));
@@ -176,7 +184,7 @@
           method: "POST",
           credentials: "same-origin",
           headers: {"Content-Type": "application/json", Accept: "application/json", "X-CSRFToken": getCookie("csrftoken")},
-          body: JSON.stringify({mensaje: message, historial: historyForRequest}),
+          body: JSON.stringify({mensaje: message, historial: historyForRequest, productos_contexto: contextProductIds()}),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(firstError(data) || "No fue posible consultar al asistente.");

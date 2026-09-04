@@ -74,8 +74,15 @@ def _puntaje_directo(producto, consulta):
 
 
 def _coincidencia_suficiente(producto, consulta):
-    cantidad_palabras = len(_palabras_consulta(consulta))
-    minimo = 2 if cantidad_palabras >= 3 else 1
+    palabras = _palabras_consulta(consulta)
+    cantidad_palabras = len(palabras)
+    # Son términos demasiado polisémicos para identificar por sí solos un
+    # producto. Por ejemplo, "llaves" no convierte un candado en herramienta
+    # de gasfitería y "kit" no define qué clase de kit necesita el proyecto.
+    ambiguas = {'llave', 'llaves', 'kit', 'juego', 'set', 'pieza', 'piezas'}
+    if cantidad_palabras == 1 and palabras[0] in ambiguas:
+        return False
+    minimo = min(cantidad_palabras, 3)
     return _coincidencias_directas(producto, consulta) >= minimo
 
 

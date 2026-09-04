@@ -11,11 +11,20 @@ class MensajeHistorialSerializer(serializers.Serializer):
 class ConsultaAsistenteSerializer(serializers.Serializer):
     mensaje = serializers.CharField(min_length=2, max_length=700, trim_whitespace=True)
     historial = MensajeHistorialSerializer(many=True, required=False, default=list)
+    productos_contexto = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        default=list,
+        max_length=8,
+    )
 
     def validate_historial(self, value):
         if len(value) > 6:
             raise serializers.ValidationError('Solo se permiten los últimos 6 mensajes.')
         return value
+
+    def validate_productos_contexto(self, value):
+        return list(dict.fromkeys(value))
 
 
 class ConfiguracionFotoPinturaSerializer(ConsultaAsistenteSerializer):
@@ -33,7 +42,6 @@ class ConfiguracionFotoPinturaSerializer(ConsultaAsistenteSerializer):
         ).exists():
             raise serializers.ValidationError('La pintura seleccionada no está disponible.')
         return value
-
 
 class AnalisisFotoPinturaSerializer(serializers.Serializer):
     imagen = serializers.ImageField(allow_empty_file=False, write_only=True)

@@ -508,7 +508,7 @@ class AsistenteSfiTests(TestCase):
         })
 
         self.assertIn('Revestimiento de piso (stock insuficiente)', resultado['faltantes_catalogo'])
-        self.assertIn('No presento el presupuesto como completo', resultado['mensaje'])
+        self.assertIn('falta disponibilidad', resultado['mensaje'])
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_bano_normaliza_alcance_y_no_inventa_sanitarios(self, interpretar):
@@ -533,6 +533,52 @@ class AsistenteSfiTests(TestCase):
         self.assertNotIn('BAN-WC-DD', skus)
         self.assertNotIn('BAN-MUE-60', skus)
         self.assertNotIn('BAN-DUC-CRO', skus)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_cambiar_lavamanos_usa_flujo_sanitario_y_no_recomienda_candado(self, interpretar):
+        candado = Producto.objects.create(
+            nombre='Candado de bronce 40 mm con llaves',
+            descripcion='Candado con dos llaves para seguridad.',
+            precio=7790, imagen='productos/candado-test.webp', stock=20,
+            categoria='Ferretería', marca='SFI', sku='TEST-CANDADO-LAVAMANOS',
+        )
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de lavamanos',
+            'tareas_proyecto': [{
+                'nombre': 'Desmontaje de lavamanos antiguo',
+                'busquedas': ['llaves'],
+            }],
+            'herramientas_proyecto': ['destornillador'],
+            'especialidades_proyecto': ['Gasfitería'],
+            'datos_faltantes_proyecto': [],
+            'alcance_bano': '', 'superficie': 0, 'superficie_muros': 0,
+            'incluir_sanitario': False, 'incluir_lavamanos': False,
+            'incluir_ducha': False, 'presupuesto': 0,
+            'terminacion': 'cualquiera', 'color': '',
+            'incluir_herramientas': False,
+        }
+
+        resultado = procesar_consulta('Quiero cambiar mi lavamanos', [])
+
+        ids = {item['id'] for item in resultado['productos']}
+        skus = {item['sku'] for item in resultado['productos']}
+        self.assertEqual(resultado['tipo'], 'plan_proyecto')
+        self.assertNotIn(candado.pk, ids)
+        self.assertIn('BAN-MUE-60', skus)
+        self.assertIn('BAN-GRI-LV', skus)
+        self.assertIn('BAN-KIT-LV', skus)
+        self.assertNotIn('BAN-WC-DD', skus)
+        self.assertNotIn('BAN-DUC-CRO', skus)
+        self.assertIn('con un presupuesto estimado de $', resultado['mensaje'])
+        self.assertNotIn('stock registrado', resultado['mensaje'])
+        self.assertIn('en nuestro catálogo', resultado['mensaje'])
+        self.assertIn('La estimación no incluye mano de obra', resultado['mensaje'])
+
+        resultado_con_total = procesar_consulta(
+            '¿Cuánto cuesta todo para cambiar mi lavamanos?', []
+        )
+        self.assertIn('con un presupuesto estimado de $', resultado_con_total['mensaje'])
 
     def test_calculo_pintura_compara_presupuesto(self):
         resultado = resolver_interpretacion({
@@ -917,7 +963,7 @@ class AsistenteSfiTests(TestCase):
         self.assertIn('María Soto', nombres)
         self.assertIn('Jorge Rojas', nombres)
         self.assertIn('Daniela Silva', nombres)
-        self.assertIn('sin filtrar por comuna', resultado['mensaje'])
+        self.assertIn('maestros pintores disponibles', resultado['mensaje'])
 
     def test_solicitud_generica_reutiliza_el_oficio_sin_confundir_retiro_en_tienda(self):
         historial = [
@@ -939,10 +985,9 @@ class AsistenteSfiTests(TestCase):
             historial,
         )
 
-        self.assertEqual(resultado['tipo'], 'maestros')
-        self.assertIn('Miguel Castro', [item['nombre'] for item in resultado['maestros']])
-        self.assertIn('sin filtrar por comuna', resultado['mensaje'])
-        self.assertNotIn('en Retiro', resultado['mensaje'])
+        self.assertEqual(resultado['tipo'], 'aclaracion_maestro')
+        self.assertIn('buscar por comuna', resultado['mensaje'].lower())
+        self.assertFalse(resultado['maestros'])
 
     def test_retiro_explicito_se_mantiene_como_comuna(self):
         historial = [{
@@ -984,8 +1029,26 @@ class AsistenteSfiTests(TestCase):
         resultado = self.consultar_maestro('De cualquiera', historial)
 
         self.assertEqual(resultado['tipo'], 'maestros')
-        self.assertIn('sin filtrar por comuna', resultado['mensaje'])
+        self.assertIn('maestros pintores disponibles', resultado['mensaje'])
         self.assertIn('María Soto', [item['nombre'] for item in resultado['maestros']])
+
+    def test_elegir_busqueda_por_comuna_pregunta_la_ubicacion(self):
+        historial = [
+            {'role': 'user', 'content': 'Necesito un gasfíter'},
+            {
+                'role': 'assistant',
+                'content': (
+                    'Puedo buscar profesionales de Gasfitería. '
+                    '¿Prefieres buscar por comuna o ver todos los disponibles?'
+                ),
+            },
+        ]
+
+        resultado = self.consultar_maestro('Buscar por comuna', historial)
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_maestro')
+        self.assertIn('qué comuna', resultado['mensaje'].lower())
+        self.assertEqual(resultado['sugerencias'], ['Maipú', 'Santiago', 'Providencia'])
 
     def test_muestrame_todos_mientras_pregunta_comuna_muestra_categoria(self):
         historial = [
@@ -1244,6 +1307,63 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
         resultados = _buscar_productos('taladro')
         ids = [p.id for p in resultados]
         self.assertIn(self.taladro.id, ids)
+
+    def test_busqueda_kit_ducha_no_muestra_productos_de_bano_irrelevantes(self):
+        kit = Producto.objects.create(
+            nombre='Kit ducha cromado', descripcion='Conjunto para ducha',
+            precio=24990, imagen='productos/kit-ducha.webp', stock=8,
+            categoria='Baño', marca='SFI', sku='BAN-DUC-TEST',
+        )
+        sanitario = Producto.objects.create(
+            nombre='Sanitario dos piezas', descripcion='Artefacto para baño',
+            precio=89990, imagen='productos/sanitario.webp', stock=5,
+            categoria='Baño', marca='SFI', sku='BAN-SAN-TEST',
+        )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'buscar_producto', 'consulta_producto': 'kit de ducha',
+            'presupuesto': 0,
+        })
+
+        ids = [producto['id'] for producto in resultado['productos']]
+        self.assertIn(kit.pk, ids)
+        self.assertNotIn(sanitario.pk, ids)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_comparacion_contextual_se_limita_a_productos_mostrados(self, interpretar):
+        alternativa = Producto.objects.create(
+            nombre='Taladro profesional premium', descripcion='Herramienta de alto valor',
+            precio=99990, imagen='productos/taladro-premium.webp', stock=4,
+            categoria='Herramientas', marca='SFI', sku='HER-TAL-PREMIUM',
+        )
+        interpretar.return_value = {
+            'intencion': 'buscar_producto', 'consulta_producto': '',
+            'presupuesto': 0, 'terminacion': 'cualquiera', 'color': '',
+            'incluir_herramientas': False,
+        }
+
+        resultado = procesar_consulta(
+            '¿Cuál es el más barato de esos?', [],
+            [alternativa.pk, self.taladro.pk],
+        )
+
+        self.assertEqual(len(resultado['productos']), 1)
+        self.assertEqual(resultado['productos'][0]['id'], self.taladro.pk)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_referencia_ambigua_pide_posicion_del_producto(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'buscar_producto', 'consulta_producto': '',
+            'presupuesto': 0, 'terminacion': 'cualquiera', 'color': '',
+            'incluir_herramientas': False,
+        }
+
+        resultado = procesar_consulta(
+            '¿Cuánto cuesta ese?', [], [self.taladro.pk, self.pino.pk],
+        )
+
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertIn('cuál de los productos', resultado['mensaje'])
 
     def test_busqueda_especifica_no_incluye_sierra_por_coincidir_solo_en_cable(self):
         from .services.asistente_sfi import _buscar_productos
