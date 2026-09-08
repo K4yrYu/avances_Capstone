@@ -37,6 +37,25 @@ class AccesoMovimientosTests(TestCase):
         respuesta = self.client.get(reverse("movimientos:lista"))
         self.assertEqual(respuesta.status_code, 302)
 
+    def test_selector_de_reajuste_redirige_al_formulario_del_producto(self):
+        admin = self.crear_usuario("admin_selector", staff=True)
+        producto = Producto.objects.create(
+            nombre="Producto para reajuste", descripcion="Prueba", precio=1000,
+            imagen="productos/reajuste.jpg", stock=4, sku="MOV-REAJUSTE-1",
+        )
+        self.client.force_login(admin)
+
+        respuesta = self.client.get(
+            reverse("movimientos:iniciar_reajuste"),
+            {"producto": producto.pk},
+        )
+
+        self.assertRedirects(
+            respuesta,
+            reverse("movimientos:reajustar_producto", args=[producto.pk]),
+            fetch_redirect_response=False,
+        )
+
 
 class RegistroHistoricoTests(TestCase):
     def setUp(self):
@@ -109,25 +128,28 @@ class RegistroHistoricoTests(TestCase):
             movimiento.delete()
 
 
-class AjusteManualTests(AccesoMovimientosTests):
-    def test_ajuste_manual_registra_responsable_y_stock(self):
+class MermaManualTests(AccesoMovimientosTests):
+    def test_merma_registra_responsable_y_disminuye_stock(self):
         admin = self.crear_usuario("admin_ajuste", staff=True)
         producto = Producto.objects.create(
             nombre="Producto ajustable", descripcion="Prueba", precio=1000,
             imagen="productos/ajuste.jpg", stock=5, sku="MOV-AJUSTE-1",
         )
         self.client.force_login(admin)
-        respuesta = self.client.post(reverse("movimientos:registrar_ajuste"), {
+        respuesta = self.client.post(reverse("movimientos:registrar_merma"), {
             "producto": producto.pk,
-            "nuevo_stock": 12,
-            "observacion": "Conteo físico de inventario.",
+            "cantidad": 2,
+            "observacion": "Producto dañado durante la manipulación.",
         })
         producto.refresh_from_db()
         self.assertRedirects(respuesta, reverse("movimientos:lista"))
-        self.assertEqual(producto.stock, 12)
-        ajuste = MovimientoInventario.objects.get(tipo=MovimientoInventario.Tipo.AJUSTE)
-        self.assertEqual(ajuste.entrada, 7)
-        self.assertEqual(ajuste.responsable, admin)
+        self.assertEqual(producto.stock, 3)
+        merma = MovimientoInventario.objects.get(
+            tipo=MovimientoInventario.Tipo.SALIDA,
+            origen=MovimientoInventario.Origen.MERMA,
+        )
+        self.assertEqual(merma.salida, 2)
+        self.assertEqual(merma.responsable, admin)
 
 
 class ReinicioKardexTests(TestCase):

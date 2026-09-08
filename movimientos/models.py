@@ -11,6 +11,7 @@ class MovimientoInventario(models.Model):
         ENTRADA = "entrada", "Entrada"
         SALIDA = "salida", "Salida"
         AJUSTE = "ajuste", "Ajuste"
+        REAJUSTE = "reajuste", "Reajuste"
         MODIFICACION = "modificacion", "Modificación"
         ELIMINACION = "eliminacion", "Eliminación"
         INCIDENCIA = "incidencia", "Incidencia"
@@ -26,6 +27,7 @@ class MovimientoInventario(models.Model):
         REPOSICION = "reposicion", "Reposición"
         VENTA = "venta", "Venta"
         AJUSTE_MANUAL = "ajuste_manual", "Ajuste manual"
+        MERMA = "merma", "Merma"
         EDICION_PRODUCTO = "edicion_producto", "Edición de producto"
         ELIMINACION_PRODUCTO = "eliminacion_producto", "Eliminación de producto"
 

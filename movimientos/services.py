@@ -100,27 +100,19 @@ def registrar_evento_reposicion(
 
 
 @transaction.atomic
-def registrar_ajuste_stock(*, producto_id, nuevo_stock, observacion, responsable=None):
+def registrar_merma_stock(*, producto_id, cantidad, observacion, responsable=None):
+    if cantidad <= 0:
+        raise ValidationError("La cantidad de la merma debe ser mayor que cero.")
     producto = Producto.objects.select_for_update().get(pk=producto_id)
-    stock_anterior = producto.stock
-    if nuevo_stock < 0:
-        raise ValidationError("El stock no puede ser negativo.")
-    if nuevo_stock == stock_anterior:
-        raise ValidationError("El nuevo stock debe ser diferente al stock actual.")
-
-    Producto.objects.filter(pk=producto.pk).update(stock=nuevo_stock)
-    diferencia = nuevo_stock - stock_anterior
-    return MovimientoInventario.objects.create(
-        **datos_historicos_producto(producto),
-        tipo=MovimientoInventario.Tipo.AJUSTE,
-        estado=MovimientoInventario.Estado.APLICADO,
-        origen=MovimientoInventario.Origen.AJUSTE_MANUAL,
-        cantidad_solicitada=abs(diferencia),
-        cantidad_movida=abs(diferencia),
-        entrada=max(diferencia, 0),
-        salida=max(-diferencia, 0),
-        stock_anterior=stock_anterior,
-        stock_resultante=nuevo_stock,
+    if cantidad > producto.stock:
+        raise ValidationError(f"La merma no puede superar el stock de {producto.nombre}.")
+    if producto.controla_vencimiento:
+        descontar_lotes_fefo(producto_id=producto_id, cantidad=cantidad)
+    return registrar_movimiento_stock(
+        producto_id=producto_id,
+        tipo=MovimientoInventario.Tipo.SALIDA,
+        cantidad=cantidad,
+        origen=MovimientoInventario.Origen.MERMA,
         observacion=observacion,
         responsable=responsable,
     )

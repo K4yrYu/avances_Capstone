@@ -51,7 +51,7 @@
       "unidad_venta", "contenido", "unidad_contenido", "tipo_calculo", "rendimiento",
       "unidad_rendimiento", "capas_recomendadas", "porcentaje_desperdicio", "uso_recomendado",
       "tipo_pintura", "terminacion", "secado_tacto_horas", "repintado_min_horas", "repintado_max_horas",
-      "especificaciones", "informacion_tecnica_verificada", "imagen",
+      "especificaciones", "informacion_tecnica_verificada", "imagen", "motivo_reajuste",
     ];
     const fields = Object.fromEntries(fieldNames.map((name) => [name, form.elements[name]]));
     const imageZone = document.getElementById("image-upload-zone");
@@ -213,6 +213,10 @@
     function validateForm() {
       clearErrors();
       const errors = {};
+      const motivoReajuste = fields.motivo_reajuste;
+      if (motivoReajuste && motivoReajuste.value.trim().length < 10) {
+        errors.motivo_reajuste = "Explica el motivo del reajuste (mínimo 10 caracteres).";
+      }
       const content = Number(fields.contenido.value);
       const performance = Number(fields.rendimiento.value);
       const waste = Number(fields.porcentaje_desperdicio.value);
@@ -302,6 +306,8 @@
       payload.append("informacion_tecnica_verificada", fields.informacion_tecnica_verificada.checked ? "true" : "false");
       payload.append("especificaciones", JSON.stringify(validation.specifications));
       if (fields.imagen.files[0]) payload.append("imagen", fields.imagen.files[0]);
+      const motivoReajuste = document.getElementById("motivo_reajuste");
+      if (motivoReajuste) payload.append("motivo_reajuste", motivoReajuste.value.trim());
 
       submitButton.disabled = true;
       submitButton.querySelector("span").textContent = mode === "edit" ? "Guardando cambios…" : "Creando producto…";

@@ -11,7 +11,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}?v=20260823-topbar-actions">
-  <link rel="stylesheet" href="{% static 'css/formulario_producto_admin.css' %}">
+  <link rel="stylesheet" href="{% static 'css/formulario_producto_admin.css' %}?v=20260907-reajuste-motivo">
 </head>
 <body>
   <a class="skip-link" href="#contenido-formulario">Saltar al formulario</a>
@@ -81,7 +81,7 @@
         class="product-form-page"
         id="contenido-formulario"
         data-submit-url="{% if modo_edicion %}{% url 'api_editar_producto' producto.id %}{% else %}{% url 'api_agregar_producto' %}{% endif %}"
-        data-products-url="{% url 'lista_productos_crud' %}"
+        data-products-url="{% if url_retorno %}{{ url_retorno }}{% else %}{% url 'lista_productos_crud' %}{% endif %}"
         data-provider-url="{% url 'crear_proveedor' %}"
         data-placeholder-url="{% static 'img/sfi-logo.png' %}"
         data-mode="{% if modo_edicion %}edit{% else %}create{% endif %}"
@@ -90,10 +90,10 @@
         <section class="form-page-heading">
           <div>
             <span class="form-kicker"><i class="fa-solid fa-circle" aria-hidden="true"></i> Inventario SFI</span>
-            <h1>{% if modo_edicion %}Editar producto{% else %}Agregar producto{% endif %}</h1>
-            <p>{% if modo_edicion %}Actualiza la información comercial, técnica y de inventario de {{ producto.nombre }}.{% else %}Registra una ficha comercial y técnica preparada para el catálogo y el asistente SFI.{% endif %}</p>
+            <h1>{% if modo_reajuste %}Reajustar información{% elif modo_edicion %}Editar producto{% else %}Agregar producto{% endif %}</h1>
+            <p>{% if modo_reajuste %}Actualiza la ficha de {{ producto.nombre }}. El stock permanecerá protegido y el motivo quedará en Movimientos.{% elif modo_edicion %}Actualiza la información comercial y técnica de {{ producto.nombre }}.{% else %}Registra una ficha comercial y técnica preparada para el catálogo y el asistente SFI.{% endif %}</p>
           </div>
-          <a class="back-products-link" href="{% url 'lista_productos_crud' %}"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver a productos</a>
+          <a class="back-products-link" href="{% if url_retorno %}{{ url_retorno }}{% else %}{% url 'lista_productos_crud' %}{% endif %}"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver</a>
         </section>
 
         <form id="form-producto" class="product-create-form" enctype="multipart/form-data" novalidate>
@@ -149,7 +149,7 @@
 
                 <div class="admin-field">
                   <label for="sku">SKU</label>
-                  <div class="input-with-icon"><i class="fa-solid fa-barcode" aria-hidden="true"></i><input type="text" class="form-control" id="sku" name="sku" maxlength="50" value="{{ producto.sku|default:'' }}" placeholder="Ej. SFI-SIP-LTX-CW004W-1GL"></div>
+                  <div class="input-with-icon"><i class="fa-solid fa-barcode" aria-hidden="true"></i><input type="text" class="form-control" id="sku" name="sku" maxlength="50" value="{{ producto.sku|default:'' }}" placeholder="Ej. SFI-SIP-LTX-CW004W-1GL" {% if bloquear_identidad %}readonly aria-readonly="true"{% endif %}></div>
                   <small class="field-help">C&oacute;digo comercial &uacute;nico del producto.</small>
                   <span class="field-error" data-error-for="sku"></span>
                 </div>
@@ -205,7 +205,7 @@
               <div class="form-fields-grid technical-fields-grid">
                 <div class="admin-field">
                   <label for="unidad_venta">Forma de venta <span>*</span></label>
-                  <select class="form-select" id="unidad_venta" name="unidad_venta" required>
+                  <select class="form-select" id="unidad_venta" name="unidad_venta" required {% if bloquear_identidad %}disabled aria-disabled="true"{% endif %}>
                     {% for valor, etiqueta in unidades_venta %}<option value="{{ valor }}" {% if producto.unidad_venta == valor or not modo_edicion and valor == 'unidad' %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
                   </select>
                   <small class="field-help">Cómo compra el cliente este producto.</small>
@@ -238,13 +238,13 @@
 
                 <div class="admin-field">
                   <label for="contenido">Contenido por presentación</label>
-                  <input type="number" class="form-control" id="contenido" name="contenido" min="0.001" step="0.001" value="{% if producto.contenido %}{{ producto.contenido|unlocalize }}{% endif %}" placeholder="Ej. 3.785" inputmode="decimal">
+                  <input type="number" class="form-control" id="contenido" name="contenido" min="0.001" step="0.001" value="{% if producto.contenido %}{{ producto.contenido|unlocalize }}{% endif %}" placeholder="Ej. 3.785" inputmode="decimal" {% if bloquear_identidad %}readonly aria-readonly="true"{% endif %}>
                   <span class="field-error" data-error-for="contenido"></span>
                 </div>
 
                 <div class="admin-field">
                   <label for="unidad_contenido">Unidad del contenido</label>
-                  <select class="form-select" id="unidad_contenido" name="unidad_contenido">
+                  <select class="form-select" id="unidad_contenido" name="unidad_contenido" {% if bloquear_identidad %}disabled aria-disabled="true"{% endif %}>
                     <option value="">Selecciona una unidad</option>
                     {% for valor, etiqueta in unidades_contenido %}<option value="{{ valor }}" {% if producto.unidad_contenido == valor %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
                   </select>
@@ -344,7 +344,7 @@
                 <div class="admin-field">
                   <label for="stock">{% if modo_edicion %}Stock actual{% else %}Stock inicial{% endif %} <span>*</span></label>
                   <div class="input-with-icon"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><input type="number" class="form-control" id="stock" name="stock" min="0" step="1" value="{{ producto.stock|default:0 }}" inputmode="numeric" required {% if modo_edicion %}readonly aria-readonly="true"{% endif %}></div>
-                  <small class="field-help">{% if modo_edicion %}El stock solo cambia mediante ventas, recepciones o ajustes registrados en Movimientos.{% else %}Puede comenzar en cero si aún no hay unidades.{% endif %}</small>
+                  <small class="field-help">{% if modo_edicion %}El stock solo cambia mediante reposiciones, ventas o mermas registradas en Movimientos.{% else %}Puede comenzar en cero si aún no hay unidades.{% endif %}</small>
                   <span class="field-error" data-error-for="stock"></span>
                 </div>
 
@@ -421,10 +421,12 @@
             </section>
           </aside>
 
+          {% if modo_reajuste %}<section class="admin-form-card reajuste-reason-card"><div class="form-card-heading"><span class="form-section-icon yellow"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i></span><div><small>TRAZABILIDAD OBLIGATORIA</small><h2>Motivo del reajuste</h2></div></div><div class="admin-field"><label for="motivo_reajuste">Explica por qué se modifica la ficha <span>*</span></label><textarea class="form-control" id="motivo_reajuste" name="motivo_reajuste" rows="3" minlength="10" maxlength="500" required placeholder="Ej. Se reduce el precio para aplicar una oferta temporal."></textarea><small class="field-help">Este texto aparecerá en el Registro de movimientos.</small><span class="field-error" data-error-for="motivo_reajuste"></span></div></section>{% endif %}
+
           <div class="form-submit-bar">
-            <div><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><span><strong>Registro protegido</strong><small>Solo administradores pueden crear productos.</small></span></div>
+            <div><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><span><strong>Registro protegido</strong><small>{% if modo_reajuste %}El stock no cambiará y el reajuste quedará auditado.{% else %}Solo administradores pueden crear productos.{% endif %}</small></span></div>
             <div class="submit-actions">
-              <a href="{% url 'lista_productos_crud' %}">Cancelar</a>
+              <a href="{% if url_retorno %}{{ url_retorno }}{% else %}{% url 'lista_productos_crud' %}{% endif %}">Cancelar</a>
               <button type="submit" id="submit-product"><i class="fa-solid {% if modo_edicion %}fa-floppy-disk{% else %}fa-plus{% endif %}" aria-hidden="true"></i><span>{% if modo_edicion %}Guardar cambios{% else %}Crear producto{% endif %}</span></button>
             </div>
           </div>
@@ -466,6 +468,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="{% static 'js/formulario_producto.js' %}?v=20260823-edit-fix"></script>
+  <script src="{% static 'js/formulario_producto.js' %}?v=20260907-reajuste-validation"></script>
 </body>
 </html>

@@ -90,6 +90,7 @@ class SeguridadProductosTests(TestCase):
             'categoria': self.producto.categoria,
             'marca': self.producto.marca,
             'activo': True,
+            'motivo_reajuste': 'Corrección administrativa de prueba.',
         }
 
         response = self.client.put(
@@ -105,7 +106,10 @@ class SeguridadProductosTests(TestCase):
         self.client.force_login(self.admin)
         response = self.client.put(
             reverse('api_editar_producto', args=[self.producto.id]),
-            {'nombre': 'Taladro actualizado', 'precio': 45990},
+            {
+                'nombre': 'Taladro actualizado', 'precio': 45990,
+                'motivo_reajuste': 'Actualización de ficha y precio comercial.',
+            },
             content_type='application/json',
         )
 
@@ -115,17 +119,21 @@ class SeguridadProductosTests(TestCase):
         self.assertEqual(self.producto.precio, 45990)
         movimiento = MovimientoInventario.objects.filter(
             producto_id_original=self.producto.pk,
-            tipo=MovimientoInventario.Tipo.MODIFICACION,
+            tipo=MovimientoInventario.Tipo.REAJUSTE,
         ).latest('id')
         self.assertIn('nombre', movimiento.cambios)
         self.assertIn('precio', movimiento.cambios)
         self.assertEqual(movimiento.responsable, self.admin)
+        self.assertEqual(
+            movimiento.observacion,
+            'Actualización de ficha y precio comercial.',
+        )
 
     def test_edicion_rechaza_cambio_directo_de_stock(self):
         self.client.force_login(self.admin)
         response = self.client.put(
             reverse('api_editar_producto', args=[self.producto.id]),
-            {'stock': 999},
+            {'stock': 999, 'motivo_reajuste': 'Corrección por revisión administrativa.'},
             content_type='application/json',
         )
 
@@ -134,12 +142,49 @@ class SeguridadProductosTests(TestCase):
         self.assertEqual(self.producto.stock, 10)
         self.assertIn('stock', response.json())
 
+    def test_reajuste_permite_cambiar_solo_precio_para_oferta(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.put(
+            reverse('api_editar_producto', args=[self.producto.id]),
+            {
+                'precio': 44990,
+                'motivo_reajuste': 'Precio rebajado para oferta temporal.',
+            },
+            content_type='application/json',
+        )
+
+        self.producto.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.producto.precio, 44990)
+        self.assertTrue(
+            MovimientoInventario.objects.filter(
+                producto_id_original=self.producto.pk,
+                tipo=MovimientoInventario.Tipo.REAJUSTE,
+                cambios__has_key='precio',
+            ).exists()
+        )
+
     def test_formulario_edicion_muestra_stock_solo_lectura(self):
         self.client.force_login(self.admin)
         response = self.client.get(reverse('editar_producto', args=[self.producto.id]))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'readonly aria-readonly="true"')
+        self.assertContains(response, 'Motivo del reajuste')
+
+    def test_reajuste_exige_motivo(self):
+        self.client.force_login(self.admin)
+        response = self.client.put(
+            reverse('api_editar_producto', args=[self.producto.id]),
+            {'nombre': 'Cambio sin motivo'},
+            content_type='application/json',
+        )
+
+        self.producto.refresh_from_db()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.producto.nombre, 'Taladro')
+        self.assertIn('motivo_reajuste', response.json())
 
     def test_nuevo_producto_exige_archivo_de_imagen(self):
         datos = {

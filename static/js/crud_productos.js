@@ -21,7 +21,6 @@
         const {escapeHtml, safeUrl} = seguridad;
         const apiUrl = pagina.dataset.apiUrl;
         const toggleUrlBase = pagina.dataset.toggleUrl;
-        const editUrlBase = pagina.dataset.editUrl;
         const imagenAlternativa = obtenerUrlSegura(pagina.dataset.placeholderUrl);
         const modalElemento = document.getElementById("modalEstadoProducto");
         const modal = new bootstrap.Modal(modalElemento);
@@ -161,10 +160,6 @@
                 : "";
             const fichaTexto = aptoCalculo ? "Lista para cálculo" : (fichaVerificada ? "Verificada" : "Pendiente");
             const fichaClase = aptoCalculo ? "ready" : (fichaVerificada ? "verified" : "pending");
-            const editar = activo
-                ? `<a class="action-button edit" href="${crearUrl(editUrlBase, id)}"><i class="fa-solid fa-pen" aria-hidden="true"></i> Editar</a>`
-                : "";
-
             return `
                 <tr>
                     <td>
@@ -189,11 +184,6 @@
                     </td>
                     <td>
                         <div class="product-actions">
-                            ${editar}
-                            <button class="action-button toggle ${activo ? "" : "activate"}" type="button" data-toggle-product="${id}">
-                                <i class="fa-solid ${activo ? "fa-eye-slash" : "fa-rotate-left"}" aria-hidden="true"></i>
-                                ${activo ? "Desactivar" : "Reactivar"}
-                            </button>
                         </div>
                     </td>
                 </tr>

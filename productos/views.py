@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.core.mail import EmailMultiAlternatives
 from django.shortcuts import redirect, render, get_object_or_404
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework.decorators import api_view, permission_classes
@@ -280,14 +281,19 @@ def lista_productos_crud(request):
 @api_view(['PUT'])
 @permission_classes([EsAdmin])
 def api_editar_producto(request, id):
-    from movimientos.contexto import contexto_responsable
+    from movimientos.contexto import contexto_reajuste
 
     producto = get_object_or_404(Producto, id=id)
+    motivo = str(request.data.get('motivo_reajuste') or '').strip()
+    if len(motivo) < 10:
+        return Response({
+            'motivo_reajuste': ['Explica el motivo del reajuste (mínimo 10 caracteres).'],
+        }, status=status.HTTP_400_BAD_REQUEST)
     serializer = ProductoSerializer(producto, data=request.data, partial=True)
     if serializer.is_valid():
         precio_anterior = producto.precio
         with transaction.atomic():
-            with contexto_responsable(request.user):
+            with contexto_reajuste(request.user, motivo):
                 producto = serializer.save()
             if producto.precio != precio_anterior:
                 HistorialPrecio.objects.create(
@@ -305,6 +311,15 @@ def api_editar_producto(request, id):
 @user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def editar_producto(request, id):
     producto = get_object_or_404(Producto, id=id)
+    modo_reajuste = True
+    from movimientos.models import MovimientoInventario
+    bloquear_identidad = producto.movimientos_inventario.exclude(
+        tipo__in=[
+            MovimientoInventario.Tipo.INICIAL,
+            MovimientoInventario.Tipo.MODIFICACION,
+            MovimientoInventario.Tipo.REAJUSTE,
+        ]
+    ).exists()
     especificaciones_texto = '\n'.join(
         f'{clave}: {valor}' for clave, valor in producto.especificaciones.items()
     )
@@ -324,6 +339,9 @@ def editar_producto(request, id):
         'proveedores': Proveedor.objects.filter(activo=True),
         'especificaciones_texto': especificaciones_texto,
         'modo_edicion': True,
+        'modo_reajuste': modo_reajuste,
+        'url_retorno': reverse('movimientos:lista'),
+        'bloquear_identidad': bloquear_identidad,
     })
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -517,8 +535,8 @@ def gestion_reposicion(request):
 @user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def procesar_lotes_vencidos(request):
     from movimientos.contexto import contexto_responsable
-    from movimientos.models import LoteInventario
-    from movimientos.services import registrar_ajuste_stock
+    from movimientos.models import LoteInventario, MovimientoInventario
+    from movimientos.services import registrar_movimiento_stock
 
     hoy = timezone.localdate()
     afectados = 0
@@ -539,9 +557,11 @@ def procesar_lotes_vencidos(request):
                 producto.stock,
             )
             if cantidad_vencida:
-                registrar_ajuste_stock(
+                registrar_movimiento_stock(
                     producto_id=producto_id,
-                    nuevo_stock=producto.stock - cantidad_vencida,
+                    tipo=MovimientoInventario.Tipo.SALIDA,
+                    cantidad=cantidad_vencida,
+                    origen=MovimientoInventario.Origen.MERMA,
                     observacion=f'Retiro de {cantidad_vencida} unidad(es) por vencimiento de lote.',
                     responsable=request.user,
                 )

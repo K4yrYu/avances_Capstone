@@ -1,17 +1,34 @@
+from decimal import Decimal
+
 from django.db.models.signals import post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
 from productos.models import Producto
 
-from .contexto import obtener_responsable_actual
+from .contexto import obtener_motivo_actual, obtener_responsable_actual
 from .models import MovimientoInventario
 from .services import datos_historicos_producto
 
 
 CAMPOS_AUDITADOS = (
-    "nombre", "sku", "categoria", "marca", "modelo", "precio", "stock",
-    "stock_minimo", "unidad_venta", "activo", "proveedor_id",
+    "nombre", "descripcion", "imagen", "sku", "categoria", "marca", "modelo",
+    "precio", "stock", "stock_minimo", "unidad_venta", "activo", "proveedor_id",
+    "color", "color_hex", "ambiente_uso", "superficies_compatibles",
+    "tipo_pintura", "terminacion", "propiedades_pintura",
+    "preparaciones_recomendadas", "secado_tacto_horas", "repintado_min_horas",
+    "repintado_max_horas", "controla_vencimiento", "contenido", "unidad_contenido",
+    "tipo_calculo", "rendimiento", "unidad_rendimiento", "capas_recomendadas",
+    "porcentaje_desperdicio", "uso_recomendado", "especificaciones",
+    "informacion_tecnica_verificada",
 )
+
+
+def _valor_auditable(valor):
+    if isinstance(valor, Decimal):
+        return str(valor)
+    if hasattr(valor, 'name'):
+        return valor.name
+    return valor
 
 
 @receiver(pre_save, sender=Producto)
@@ -25,6 +42,7 @@ def conservar_estado_anterior(sender, instance, **kwargs):
 @receiver(post_save, sender=Producto)
 def registrar_creacion_o_modificacion(sender, instance, created, **kwargs):
     responsable = obtener_responsable_actual()
+    motivo_reajuste = obtener_motivo_actual()
     if created:
         MovimientoInventario.objects.create(
             **datos_historicos_producto(instance),
@@ -46,9 +64,10 @@ def registrar_creacion_o_modificacion(sender, instance, created, **kwargs):
         return
     cambios = {}
     for campo in CAMPOS_AUDITADOS:
-        actual = getattr(instance, campo)
-        if anterior[campo] != actual:
-            cambios[campo] = {"anterior": anterior[campo], "nuevo": actual}
+        actual = _valor_auditable(getattr(instance, campo))
+        previo = _valor_auditable(anterior[campo])
+        if previo != actual:
+            cambios[campo] = {"anterior": previo, "nuevo": actual}
     if not cambios:
         return
 
@@ -56,7 +75,11 @@ def registrar_creacion_o_modificacion(sender, instance, created, **kwargs):
     diferencia_stock = instance.stock - stock_anterior
     MovimientoInventario.objects.create(
         **datos_historicos_producto(instance),
-        tipo=(MovimientoInventario.Tipo.AJUSTE if diferencia_stock else MovimientoInventario.Tipo.MODIFICACION),
+        tipo=(
+            MovimientoInventario.Tipo.AJUSTE if diferencia_stock
+            else MovimientoInventario.Tipo.REAJUSTE if motivo_reajuste
+            else MovimientoInventario.Tipo.MODIFICACION
+        ),
         estado=MovimientoInventario.Estado.APLICADO,
         origen=(MovimientoInventario.Origen.AJUSTE_MANUAL if diferencia_stock else MovimientoInventario.Origen.EDICION_PRODUCTO),
         cantidad_solicitada=abs(diferencia_stock),
@@ -65,7 +88,7 @@ def registrar_creacion_o_modificacion(sender, instance, created, **kwargs):
         salida=max(-diferencia_stock, 0),
         stock_anterior=stock_anterior,
         stock_resultante=instance.stock,
-        observacion="Producto actualizado desde el catálogo.",
+        observacion=motivo_reajuste or "Producto actualizado desde el catálogo.",
         cambios=cambios,
         responsable=responsable,
     )

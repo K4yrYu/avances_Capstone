@@ -55,8 +55,31 @@ class ProductoSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         if self.instance is not None and 'stock' in attrs and attrs['stock'] != self.instance.stock:
             raise serializers.ValidationError({
-                'stock': 'El stock no se edita desde Productos. Registra una recepción, venta o ajuste en Movimientos.'
+                'stock': 'El stock solo cambia mediante reposiciones, ventas o mermas registradas en Movimientos.'
             })
+        if self.instance is not None:
+            from movimientos.models import MovimientoInventario
+
+            tiene_operaciones = self.instance.movimientos_inventario.exclude(
+                tipo__in=[
+                    MovimientoInventario.Tipo.INICIAL,
+                    MovimientoInventario.Tipo.MODIFICACION,
+                    MovimientoInventario.Tipo.REAJUSTE,
+                ]
+            ).exists()
+            if tiene_operaciones:
+                protegidos = {
+                    'sku': 'El SKU no puede cambiar cuando el producto ya tiene operaciones.',
+                    'unidad_venta': 'La unidad de venta no puede cambiar cuando existen operaciones.',
+                    'contenido': 'El contenido no puede cambiar cuando existen operaciones.',
+                    'unidad_contenido': 'La unidad de contenido no puede cambiar cuando existen operaciones.',
+                }
+                errores = {
+                    campo: mensaje for campo, mensaje in protegidos.items()
+                    if campo in attrs and attrs[campo] != getattr(self.instance, campo)
+                }
+                if errores:
+                    raise serializers.ValidationError(errores)
         controla_vencimiento = attrs.get(
             'controla_vencimiento',
             self.instance.controla_vencimiento if self.instance else False,

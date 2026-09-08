@@ -90,6 +90,12 @@
   padding: 1.35rem;
 }
 
+.reajuste-reason-card {
+  grid-column: 1 / -1;
+  border-color: #e8c45a;
+  background: #fffaf0;
+}
+
 .form-card-heading {
   display: flex;
   align-items: center;

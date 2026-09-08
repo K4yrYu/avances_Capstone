@@ -14,7 +14,7 @@ from django.utils.dateparse import parse_date
 from productos.models import DetalleSolicitudReposicion, Producto
 
 from .models import LoteInventario, MovimientoInventario
-from .services import registrar_ajuste_stock
+from .services import registrar_merma_stock
 
 
 def es_administrador(user):
@@ -66,7 +66,7 @@ def lista_movimientos(request):
     parametros_filtro.pop("pagina", None)
     return render(request, "movimientos/lista.html", {
         "pagina": pagina, "totales": totales, "pendientes": pendientes, "alertas": alertas,
-        "productos": Producto.objects.filter(activo=True).order_by("nombre"),
+        "productos": Producto.objects.order_by("nombre"),
         "categorias": Producto.objects.order_by().values_list("categoria", flat=True).distinct(),
         "tipos": MovimientoInventario.Tipo.choices, "estados": MovimientoInventario.Estado.choices,
         "origenes": MovimientoInventario.Origen.choices,
@@ -81,20 +81,36 @@ def lista_movimientos(request):
 
 
 @user_passes_test(es_administrador, login_url="/usuarios/iniciosesion/")
-def registrar_ajuste(request):
+def registrar_merma(request):
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
     try:
         producto_id = int(request.POST.get("producto", ""))
-        nuevo_stock = int(request.POST.get("nuevo_stock", ""))
+        cantidad = int(request.POST.get("cantidad", ""))
         observacion = request.POST.get("observacion", "").strip()
         if len(observacion) < 10:
             raise ValidationError("La observación debe tener al menos 10 caracteres.")
-        movimiento = registrar_ajuste_stock(producto_id=producto_id, nuevo_stock=nuevo_stock, observacion=observacion, responsable=request.user)
+        movimiento = registrar_merma_stock(
+            producto_id=producto_id,
+            cantidad=cantidad,
+            observacion=observacion,
+            responsable=request.user,
+        )
     except (TypeError, ValueError, Producto.DoesNotExist):
-        messages.error(request, "Selecciona un producto y escribe un stock válido.")
+        messages.error(request, "Selecciona un producto y escribe una cantidad válida.")
     except ValidationError as error:
         messages.error(request, error.messages[0])
     else:
-        messages.success(request, f"Ajuste registrado. Nuevo stock: {movimiento.stock_resultante}.")
+        messages.success(request, f"Merma registrada. Stock resultante: {movimiento.stock_resultante}.")
     return redirect("movimientos:lista")
+
+
+@user_passes_test(es_administrador, login_url="/usuarios/iniciosesion/")
+def iniciar_reajuste(request):
+    try:
+        producto_id = int(request.GET.get("producto", ""))
+        producto = Producto.objects.get(pk=producto_id)
+    except (TypeError, ValueError, Producto.DoesNotExist):
+        messages.error(request, "Selecciona un producto válido para reajustar.")
+        return redirect("movimientos:lista")
+    return redirect("movimientos:reajustar_producto", id=producto.pk)
