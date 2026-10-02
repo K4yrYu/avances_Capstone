@@ -1,7 +1,6 @@
 (() => {
   "use strict";
 
-  const RUT_PATTERN = /^\d{7,8}-[\dkK]$/;
   const PHONE_PATTERN = /^\+?\d{9,15}$/;
 
   async function readJson(response) {
@@ -63,6 +62,9 @@
     fields.rut.addEventListener("input", () => {
       fields.rut.value = fields.rut.value.replace(/[.\s]/g, "").toUpperCase();
     });
+    fields.rut.addEventListener("blur", () => {
+      fields.rut.value = window.SFIRut?.normalizar(fields.rut.value) || fields.rut.value;
+    });
 
     fields.telefono.addEventListener("input", () => {
       const hasPlus = fields.telefono.value.trim().startsWith("+");
@@ -107,7 +109,7 @@
       const errors = {};
       if (!fields.first_name.value.trim()) errors.first_name = "Ingresa los nombres.";
       if (!fields.last_name.value.trim()) errors.last_name = "Ingresa los apellidos.";
-      if (!RUT_PATTERN.test(fields.rut.value.trim())) errors.rut = "Usa el formato 12345678-9, sin puntos.";
+      if (!window.SFIRut?.esValido(fields.rut.value)) errors.rut = "Ingresa un RUT válido; revisa el dígito verificador.";
       if (!PHONE_PATTERN.test(fields.telefono.value.trim())) errors.telefono = "Ingresa entre 9 y 15 dígitos, opcionalmente con +.";
       if (fields.username.value.trim().length < 3) errors.username = "El nombre de usuario debe tener al menos 3 caracteres.";
       if (!fields.email.validity.valid || !fields.email.value.trim()) errors.email = "Ingresa un correo electrónico válido.";
@@ -129,7 +131,7 @@
 
       const payload = Object.fromEntries(new FormData(form).entries());
       delete payload.csrfmiddlewaretoken;
-      payload.rut = payload.rut.trim().toUpperCase();
+      payload.rut = window.SFIRut.normalizar(payload.rut);
       payload.email = payload.email.trim().toLowerCase();
       payload.username = payload.username.trim();
       payload.first_name = payload.first_name.trim();

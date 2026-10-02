@@ -13,9 +13,10 @@ from rest_framework.authtoken.models import Token
 
 from .models import Usuario
 from .middleware import LimpiezaCuentasPendientesMiddleware
-from .serializers import RegistroUsuarioSerializer
+from .serializers import AdminUsuarioSerializer, RegistroUsuarioSerializer
 from .services import limpiar_cuentas_no_verificadas
 from .throttles import RegistroRateThrottle
+from .validators import calcular_digito_verificador_rut, validar_rut
 
 
 @override_settings(
@@ -66,6 +67,60 @@ class SeguridadUsuariosTests(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn('password', serializer.errors)
+
+    def test_calculo_modulo_11_del_rut(self):
+        self.assertEqual(calcular_digito_verificador_rut('12345678'), '5')
+        self.assertEqual(calcular_digito_verificador_rut('1000005'), 'K')
+        self.assertEqual(validar_rut('12.345.678-5'), '12345678-5')
+
+    def test_registro_publico_rechaza_rut_con_digito_incorrecto(self):
+        response = self.client.post(
+            reverse('api_registro'),
+            {**self.payload, 'rut': '12345678-9'},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('rut', response.json())
+        self.assertFalse(Usuario.objects.filter(username='cliente_seguro').exists())
+
+    def test_registro_publico_normaliza_rut_con_puntos(self):
+        response = self.client.post(
+            reverse('api_registro'),
+            {**self.payload, 'rut': '12.345.678-5'},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Usuario.objects.get(username='cliente_seguro').rut, '12345678-5')
+
+    def test_registro_administrativo_rechaza_rut_invalido(self):
+        serializer = AdminUsuarioSerializer(data={
+            **self.payload,
+            'rut': '12345678-9',
+            'username': 'creado_por_admin',
+            'email': 'creado-por-admin@example.com',
+            'is_staff': False,
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('rut', serializer.errors)
+
+    def test_edicion_conserva_rut_legacy_si_no_se_modifica(self):
+        usuario = Usuario.objects.create_user(
+            rut='11111111-1', username='legacy', email='legacy@example.com',
+            telefono='+56911111111', password=self.password,
+        )
+        serializer = AdminUsuarioSerializer(
+            usuario,
+            data={'rut': '11111111-1', 'first_name': 'Actualizado'},
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        actualizado = serializer.save()
+        self.assertEqual(actualizado.rut, '11111111-1')
+        self.assertEqual(actualizado.first_name, 'Actualizado')
 
     def test_registro_permite_diez_solicitudes_en_ventana_de_tres_minutos(self):
         throttle = RegistroRateThrottle()

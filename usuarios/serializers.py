@@ -3,10 +3,37 @@ from django.contrib.auth import get_user_model, authenticate
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.contrib.auth.password_validation import validate_password
+from .validators import normalizar_rut, validar_rut
 
 Usuario = get_user_model()
 
 class PasswordUsuarioMixin:
+    def validate_rut(self, value):
+        try:
+            normalizado_sin_validar = normalizar_rut(value)
+        except ValidationError as exc:
+            raise serializers.ValidationError(exc.messages[0]) from exc
+
+        if self.instance is not None:
+            try:
+                rut_actual = normalizar_rut(self.instance.rut)
+            except ValidationError:
+                rut_actual = str(self.instance.rut or '').strip().upper()
+            if normalizado_sin_validar == rut_actual:
+                return self.instance.rut
+
+        try:
+            normalizado = validar_rut(normalizado_sin_validar)
+        except ValidationError as exc:
+            raise serializers.ValidationError(exc.messages[0]) from exc
+
+        duplicado = Usuario.objects.filter(rut__iexact=normalizado)
+        if self.instance is not None:
+            duplicado = duplicado.exclude(pk=self.instance.pk)
+        if duplicado.exists():
+            raise serializers.ValidationError('Este RUT ya está registrado.')
+        return normalizado
+
     def validate(self, data):
         password = data.get('password')
         password2 = data.get('password2')
@@ -58,6 +85,7 @@ class PasswordUsuarioMixin:
 
 
 class RegistroUsuarioSerializer(PasswordUsuarioMixin, serializers.ModelSerializer):
+    rut = serializers.CharField(max_length=12, validators=[])
     password = serializers.CharField(write_only=True, style={'input_type': 'password'})
     password2 = serializers.CharField(write_only=True, style={'input_type': 'password'})
 
@@ -83,6 +111,7 @@ class RegistroUsuarioSerializer(PasswordUsuarioMixin, serializers.ModelSerialize
 
 
 class AdminUsuarioSerializer(PasswordUsuarioMixin, serializers.ModelSerializer):
+    rut = serializers.CharField(max_length=12, validators=[])
     password = serializers.CharField(write_only=True, required=False, style={'input_type': 'password'})
     password2 = serializers.CharField(write_only=True, required=False, style={'input_type': 'password'})
     is_staff = serializers.BooleanField(required=False)

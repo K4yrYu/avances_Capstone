@@ -23,10 +23,12 @@ from django.urls import reverse_lazy, reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
 from django.core.mail import send_mail
+from django.core.exceptions import ValidationError
 from django.template.loader import render_to_string
 from django.conf import settings
 from django.db import transaction
 from .services import limpiar_cuentas_no_verificadas
+from .validators import normalizar_rut
 
 signer = TimestampSigner()
 logger = logging.getLogger(__name__)
@@ -93,9 +95,14 @@ class RegistroAPIView(APIView):
     throttle_scope = 'register'
 
     def post(self, request):
+        rut_recibido = str(request.data.get('rut', '')).strip()
+        try:
+            rut_limpieza = normalizar_rut(rut_recibido)
+        except ValidationError:
+            rut_limpieza = rut_recibido
         limpiar_cuentas_no_verificadas(
             email=str(request.data.get('email', '')).strip(),
-            rut=str(request.data.get('rut', '')).strip(),
+            rut=rut_limpieza,
             username=str(request.data.get('username', '')).strip(),
         )
         serializer = RegistroUsuarioSerializer(data=request.data)
