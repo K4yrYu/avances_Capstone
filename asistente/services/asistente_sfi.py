@@ -12,7 +12,9 @@ from .recomendacion_colores import (
     detectar_contexto_pintura,
     pinturas_compatibles,
 )
-from .sinonimos_ferreteros import expandir_consulta
+from .sinonimos_ferreteros import (
+    anclas_semanticas, corregir_terminos, expandir_consulta,
+)
 from .planificador_proyectos import resolver_proyecto_generico
 
 
@@ -60,6 +62,50 @@ TODAS_LAS_COMUNAS = '__todas__'
 def _texto_normalizado(valor):
     texto = unicodedata.normalize('NFKD', str(valor or '').lower())
     return ''.join(caracter for caracter in texto if not unicodedata.combining(caracter))
+
+
+def _presupuesto_desde_texto(texto):
+    """Obtiene un presupuesto explícito sin depender de la interpretación externa."""
+    normalizado = _texto_normalizado(texto)
+    coincidencia = re.search(r'\b(\d+(?:[.,]\d+)?)\s*(?:lucas?|mil|k)\b', normalizado)
+    if coincidencia:
+        return int(float(coincidencia.group(1).replace(',', '.')) * 1000)
+
+    coincidencia = re.search(r'\$\s*([\d.]+)', normalizado)
+    if not coincidencia:
+        coincidencia = re.search(r'\b([\d.]+)\s*(?:pesos|clp)\b', normalizado)
+    if coincidencia:
+        return int(coincidencia.group(1).replace('.', ''))
+    return 0
+
+
+def _medidas_desde_texto(texto):
+    """Detecta medidas consultadas para no mezclar formatos incompatibles."""
+    patron = r'(?<!\w)(\d+(?:[.,]\d+)?)\s*(mm|cm|m|mts?|metros?|w|v|oz|kg|galones?|litros?|l|lts?)\b'
+    return [
+        f'{numero.replace(",", ".")}{unidad}'
+        for numero, unidad in re.findall(patron, _texto_normalizado(texto))
+    ]
+
+
+def _contiene_medida(texto, medida):
+    numero = re.match(r'\d+(?:\.\d+)?', medida)
+    unidad = medida[len(numero.group(0)):]
+    unidades_equivalentes = {
+        'm': ('m', 'mt', 'mts', 'metro', 'metros'),
+        'mt': ('m', 'mt', 'mts', 'metro', 'metros'),
+        'mts': ('m', 'mt', 'mts', 'metro', 'metros'),
+        'litro': ('l', 'lt', 'lts', 'litro', 'litros'),
+        'litros': ('l', 'lt', 'lts', 'litro', 'litros'),
+        'lts': ('l', 'lt', 'lts', 'litro', 'litros'),
+        'galon': ('galon', 'galones'),
+        'galones': ('galon', 'galones'),
+    }
+    opciones = unidades_equivalentes.get(unidad, (unidad,))
+    return any(
+        re.search(rf'(?<!\w){re.escape(numero.group(0))}\s*{re.escape(opcion)}\b', texto)
+        for opcion in opciones
+    )
 
 
 def _especialidad_desde_texto(texto):
@@ -387,6 +433,10 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
     ) or bool(re.search(r'\b\d[\d.]*\s*(?:mil|lucas?)\b', texto_usuario))
     if datos.get('presupuesto') and not presupuesto_expresado:
         datos['presupuesto'] = 0
+    elif presupuesto_expresado:
+        presupuesto_detectado = _presupuesto_desde_texto(texto_usuario)
+        if presupuesto_detectado:
+            datos['presupuesto'] = presupuesto_detectado
 
     texto_mensaje = _texto_normalizado(mensaje)
     indicadores_excluir_herramientas = (
@@ -1189,6 +1239,8 @@ def _buscar_productos(consulta, limite=6):
         'baratos', 'baratas', 'economico', 'economica', 'precio', 'precios',
         'cuanto', 'cuantos', 'cuesta', 'cuestan', 'vale', 'valen', 'valor',
         'valores', 'tiene', 'tienen', 'sale', 'salen', 'costo', 'costos',
+        'bajo', 'hasta', 'menos', 'maximo', 'maxima', 'tope', 'luca', 'lucas',
+        'mil', 'pesos', 'clp', 'quiero', 'necesito',
     }
     singulares_busqueda = {
         'pinturas': 'pintura',
@@ -1209,10 +1261,29 @@ def _buscar_productos(consulta, limite=6):
     if not palabras_originales:
         return []
 
-    # Expandir con sinónimos ferreteros
-    palabras_expandidas, sinonimos_agregados = expandir_consulta(palabras_originales)
+    productos_activos = list(Producto.objects.filter(activo=True))
+    vocabulario_catalogo = set()
+    for producto in productos_activos:
+        vocabulario_catalogo.update(re.findall(
+            r'[\wáéíóúñü-]+',
+            _texto_normalizado(
+                f'{producto.nombre} {producto.marca} {producto.modelo} {producto.categoria}'
+            ),
+        ))
+
+    palabras_corregidas = corregir_terminos(
+        palabras_originales, vocabulario_catalogo,
+    )
+    # Expandir con sinónimos ferreteros después de corregir un error inequívoco.
+    palabras_expandidas, sinonimos_agregados = expandir_consulta(palabras_corregidas)
+    sinonimos_agregados.update(
+        corregida for original, corregida in zip(palabras_originales, palabras_corregidas)
+        if original != corregida
+    )
+    anclas_requeridas = anclas_semanticas(palabras_corregidas)
 
     consulta_normalizada = _texto_normalizado(consulta)
+    medidas_solicitadas = _medidas_desde_texto(consulta)
     (
         color_solicitado,
         alias_color,
@@ -1228,7 +1299,7 @@ def _buscar_productos(consulta, limite=6):
         return bool(re.search(rf'\b{re.escape(palabra)}\w*', texto))
 
     resultados = []
-    for producto in Producto.objects.filter(activo=True):
+    for producto in productos_activos:
         nombre = _texto_normalizado(producto.nombre)
         identificacion = _texto_normalizado(
             ' '.join([producto.sku or '', producto.marca, producto.categoria, producto.color])
@@ -1247,6 +1318,16 @@ def _buscar_productos(consulta, limite=6):
         )
         texto_identidad = f'{nombre} {identificacion}'
         texto_filtrado = f'{texto_identidad} {detalle}'
+        if anclas_requeridas and not all(
+            re.search(rf'\b{re.escape(ancla)}\w*', texto_identidad)
+            for ancla in anclas_requeridas
+        ):
+            continue
+        if medidas_solicitadas and not all(
+            _contiene_medida(texto_filtrado, medida)
+            for medida in medidas_solicitadas
+        ):
+            continue
         if color_solicitado and not any(
             contiene(texto_filtrado, alias) for alias in alias_color
         ):

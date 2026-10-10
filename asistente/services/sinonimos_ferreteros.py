@@ -9,11 +9,56 @@ usuario antes de buscar, mejorando el recall sin sacrificar precisión.
 
 import re
 import unicodedata
+from difflib import SequenceMatcher
 
 
 def _normalizar(texto):
     texto = unicodedata.normalize('NFKD', str(texto).lower())
     return ''.join(c for c in texto if not unicodedata.combining(c))
+
+
+def corregir_terminos(palabras, vocabulario=()):
+    """Corrige solo errores tipográficos con una coincidencia inequívoca.
+
+    ``vocabulario`` se entrega desde el catálogo activo para que la corrección
+    nunca sugiera una marca o producto inexistente. Las frases de más de una
+    palabra no se usan como candidatos porque son ambiguas por sí solas.
+    """
+    candidatos = {
+        _normalizar(termino)
+        for termino in (*SINONIMOS.keys(), *vocabulario)
+        if ' ' not in _normalizar(termino) and len(_normalizar(termino)) >= 4
+    }
+    palabras_protegidas = {
+        palabra
+        for frase in SINONIMOS
+        for palabra in _normalizar(frase).split()
+    }
+    resultado = []
+    for palabra in palabras:
+        normalizada = _normalizar(palabra)
+        if (
+            len(normalizada) < 4
+            or normalizada in candidatos
+            or normalizada in palabras_protegidas
+        ):
+            resultado.append(palabra)
+            continue
+        coincidencias = sorted(
+            (
+                (SequenceMatcher(None, normalizada, candidato).ratio(), candidato)
+                for candidato in candidatos
+            ),
+            reverse=True,
+        )
+        mejor_ratio, mejor = coincidencias[0] if coincidencias else (0, '')
+        segundo_ratio = coincidencias[1][0] if len(coincidencias) > 1 else 0
+        # Exigimos similitud alta y diferencia clara frente a otra alternativa.
+        if mejor_ratio >= 0.84 and mejor_ratio - segundo_ratio >= 0.08:
+            resultado.append(mejor)
+        else:
+            resultado.append(palabra)
+    return resultado
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +182,36 @@ SINONIMOS: dict[str, tuple[str, ...]] = {
     'soporte':          ('escuadra',),
     'bracket':          ('escuadra',),
 }
+
+
+# Palabra que debe estar presente en el producto cuando un sinónimo puede
+# coincidir accidentalmente con otra categoría (por ejemplo, "métrica" en un
+# perno no convierte ese perno en una cinta métrica).
+ANCLAS_SEMANTICAS: dict[str, tuple[str, ...]] = {
+    'flexometro': ('cinta',),
+    'wincha': ('cinta',),
+    'huincha': ('cinta',),
+    'metro': ('cinta',),
+    'medir': ('cinta',),
+    'perforadora': ('taladro',),
+    'perforar': ('taladro',),
+    'rotomartillo': ('taladro',),
+    'combo': ('martillo',),
+    'mazo': ('martillo',),
+    'serrucho': ('sierra',),
+    'inodoro': ('sanitario',),
+    'excusado': ('sanitario',),
+    'wc': ('sanitario',),
+}
+
+
+def anclas_semanticas(palabras):
+    """Devuelve términos que deben aparecer en resultados de un sinónimo."""
+    return {
+        ancla
+        for palabra in palabras
+        for ancla in ANCLAS_SEMANTICAS.get(_normalizar(palabra), ())
+    }
 
 
 # ---------------------------------------------------------------------------

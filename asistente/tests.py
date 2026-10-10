@@ -1228,6 +1228,12 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
         self.assertIn('metrica', agregados)
         self.assertIn('wincha', expandidas)
 
+    def test_corrige_error_tipografico_solo_cuando_es_inequivoco(self):
+        from .services.sinonimos_ferreteros import corregir_terminos
+
+        self.assertEqual(corregir_terminos(['flesometro']), ['flexometro'])
+        self.assertEqual(corregir_terminos(['pituto']), ['pituto'])
+
     def test_expandir_flexometro_agrega_cinta_metrica(self):
         expandidas, agregados = expandir_consulta(['flexometro'])
         self.assertIn('cinta', agregados)
@@ -1479,6 +1485,20 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
         ids = [p.id for p in resultados]
         self.assertIn(self.taladro.id, ids)
 
+    def test_buscar_error_tipografico_encuentra_producto_real(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('taladroo Baukr')
+
+        self.assertIn(self.taladro.id, [producto.id for producto in resultados])
+
+    def test_flexometro_con_error_no_muestra_perno_metrico(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('flesometro')
+
+        ids = [producto.id for producto in resultados]
+        self.assertIn(self.cinta.id, ids)
+        self.assertNotIn(self.perno.id, ids)
+
     def test_busqueda_kit_ducha_no_muestra_productos_de_bano_irrelevantes(self):
         kit = Producto.objects.create(
             nombre='Kit ducha cromado', descripcion='Conjunto para ducha',
@@ -1632,6 +1652,31 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
         # Ambos deben encontrar el taladro
         self.assertIn(self.taladro.id, [p.id for p in directos])
         self.assertIn(self.taladro.id, [p.id for p in sinonimos])
+
+    def test_busqueda_por_marca_y_presupuesto_no_rompe_el_producto(self):
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('taladro Bauker bajo 60 lucas')
+
+        self.assertEqual([producto.id for producto in resultados], [self.taladro.id])
+
+    def test_presupuesto_coloqial_se_extrae_sin_confiar_en_gemini(self):
+        from .services.asistente_sfi import _presupuesto_desde_texto
+
+        self.assertEqual(_presupuesto_desde_texto('Taladro Bosch bajo 30 lucas'), 30000)
+
+    def test_busqueda_por_medida_no_mezcla_otro_formato(self):
+        cinta_corta = Producto.objects.create(
+            nombre='Cinta métrica Stanley Pro 5 m',
+            descripcion='Huincha retráctil de cinco metros.',
+            precio=9990, stock=12, categoria='Herramientas', marca='Stanley',
+            activo=True,
+        )
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('cinta métrica 8 m')
+
+        ids = [producto.id for producto in resultados]
+        self.assertIn(self.cinta.id, ids)
+        self.assertNotIn(cinta_corta.id, ids)
 
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
