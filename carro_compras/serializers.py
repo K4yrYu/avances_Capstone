@@ -73,6 +73,8 @@ class DespachoVentaSerializer(serializers.ModelSerializer):
     valor_despacho = serializers.SerializerMethodField()
     comprador_email = serializers.EmailField(source='venta.id_usuario.email', read_only=True)
     comprador_telefono = serializers.CharField(source='venta.id_usuario.telefono', read_only=True)
+    repartidor_nombre = serializers.SerializerMethodField()
+    eventos = serializers.SerializerMethodField()
 
     class Meta:
         model = DespachoVenta
@@ -91,6 +93,8 @@ class DespachoVentaSerializer(serializers.ModelSerializer):
             'id_usuario',
             'comprador_email',
             'comprador_telefono',
+            'repartidor_nombre', 'tomado_en', 'salida_en', 'entregado_en',
+            'motivo_incidencia', 'comentario_incidencia', 'evidencia_entrega', 'eventos',
             'detalles',
         ]
 
@@ -112,6 +116,16 @@ class DespachoVentaSerializer(serializers.ModelSerializer):
             asignacion.detalle.precio_unitario * asignacion.cantidad
             for asignacion in obj.detalles_despacho.all()
         )
+
+    def get_repartidor_nombre(self, obj):
+        return (obj.repartidor.get_full_name() or obj.repartidor.username) if obj.repartidor_id else ''
+
+    def get_eventos(self, obj):
+        return [
+            {'evento': e.evento, 'estado_anterior': e.estado_anterior, 'estado_nuevo': e.estado_nuevo,
+             'detalle': e.detalle, 'responsable': (e.responsable.get_full_name() or e.responsable.username) if e.responsable_id else 'Sistema', 'fecha': e.creado_en}
+            for e in obj.eventos.all()
+        ]
 
 
 class CantidadProductoSerializer(serializers.Serializer):

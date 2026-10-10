@@ -8,11 +8,13 @@
     const dateFilter = document.getElementById("filtro-fecha-repartidor");
     const statusFilter = document.getElementById("filtro-estado-repartidor");
     const toast = document.getElementById("mensaje-repartidor");
+    const agendaDates = document.getElementById("fechas-agenda-repartidor");
     const security = window.FerremasSecurity;
     if (!panel || !list || !security) return;
 
     const {escapeHtml} = security;
     let dispatches = [];
+    let calendarFilter = "";
 
     const cookie = (name) => {
       const prefix = `${name}=`;
@@ -27,6 +29,7 @@
     const formattedDate = (value) => new Intl.DateTimeFormat("es-CL", {weekday: "long", day: "2-digit", month: "long", year: "numeric"}).format(new Date(`${value}T12:00:00`));
     const statusLabel = (item) => ({programado: "Programado", preparacion: "En preparación", en_ruta: "En ruta", entregado: "Entregado"})[item.estado] || item.estado;
     const statusUrl = (id) => panel.dataset.statusUrl.replace(/\/0\/estado\/$/, `/${id}/estado/`);
+    const takeUrl = (id) => panel.dataset.takeUrl.replace(/\/0\/tomar\/$/, `/${id}/tomar/`);
     const isCompleted = (item) => item.estado === "entregado";
     const isOverdue = (item) => !isCompleted(item) && item.fecha_programada < panel.dataset.today;
 
@@ -43,6 +46,19 @@
       document.getElementById("resumen-hoy").textContent = dispatches.filter(item => item.fecha_programada === today && !isCompleted(item)).length;
       document.getElementById("resumen-ruta").textContent = dispatches.filter(item => item.estado === "en_ruta").length;
       document.getElementById("resumen-entregados").textContent = dispatches.filter(isCompleted).length;
+      document.getElementById("agenda-atrasadas").textContent = dispatches.filter(isOverdue).length;
+      document.getElementById("agenda-hoy").textContent = dispatches.filter(item => item.fecha_programada === today && !isCompleted(item)).length;
+    }
+
+    function renderAgenda() {
+      if (!agendaDates) return;
+      const fechas = [...new Set(dispatches.map(item => item.fecha_programada))].sort();
+      agendaDates.innerHTML = fechas.length ? fechas.map(fecha => {
+        const items = dispatches.filter(item => item.fecha_programada === fecha);
+        const atrasado = items.some(isOverdue);
+        const formato = new Intl.DateTimeFormat("es-CL", {weekday: "short", day: "2-digit", month: "short", year: "numeric"}).format(new Date(`${fecha}T12:00:00`));
+        return `<button type="button" class="${atrasado ? "is-overdue" : ""} ${calendarFilter === fecha ? "is-selected" : ""}" data-agenda-date="${fecha}"><small>${escapeHtml(formato)}</small><b>${items.length} despacho(s)</b><em>${atrasado ? "Con atraso" : fecha === panel.dataset.today ? "Hoy" : "Ver ruta"}</em></button>`;
+      }).join("") : '<span>No hay fechas de entrega programadas.</span>';
     }
 
     function productList(item) {
@@ -56,10 +72,14 @@
       const phone = String(item.comprador_telefono || "");
       const safePhone = phone.replace(/[^+\d]/g, "");
       const email = String(item.comprador_email || "");
-      const nextAction = ["programado", "preparacion"].includes(item.estado)
+      const nextAction = !item.repartidor_nombre && ["programado", "preparacion"].includes(item.estado)
+        ? `<button data-take-id="${Number(item.id)}"><i class="fa-solid fa-hand"></i> Tomar despacho</button>`
+        : ["programado", "preparacion"].includes(item.estado)
         ? `<button data-status-id="${Number(item.id)}" data-next-status="en_ruta"><i class="fa-solid fa-route"></i> Iniciar ruta</button>`
         : item.estado === "en_ruta"
-          ? `<button class="complete" data-status-id="${Number(item.id)}" data-next-status="entregado"><i class="fa-solid fa-check"></i> Marcar entregado</button>`
+          ? `<section class="driver-evidence"><div><i class="fa-solid fa-camera"></i><span><b>Evidencia de entrega</b><small>Opcional · Imagen de hasta 5 MB.</small></span></div><label><i class="fa-solid fa-paperclip"></i><span>Adjuntar fotografía</span><input type="file" accept="image/*" data-evidence-id="${Number(item.id)}"></label></section><div class="driver-actions"><button class="complete" data-status-id="${Number(item.id)}" data-next-status="entregado"><i class="fa-solid fa-check"></i> Marcar entregado</button><button class="secondary" data-status-id="${Number(item.id)}" data-next-status="incidencia"><i class="fa-solid fa-triangle-exclamation"></i> Reportar incidencia</button></div>`
+          : item.estado === "incidencia"
+            ? `<button data-status-id="${Number(item.id)}" data-next-status="en_ruta"><i class="fa-solid fa-route"></i> Retomar ruta</button>`
           : '<span class="delivery-complete"><i class="fa-solid fa-circle-check"></i> Entrega completada</span>';
       const overdueFlag = isOverdue(item) ? '<span class="overdue-flag"><i class="fa-solid fa-triangle-exclamation"></i> Atrasado</span>' : "";
       return `<article class="driver-card${isOverdue(item) ? " is-overdue" : ""}">
@@ -76,6 +96,8 @@
       return dispatches.filter(item => {
         const content = `${item.venta_id} ${customerName(item)} ${item.direccion_despacho} ${item.comprador_telefono} ${item.comprador_email}`;
         return (!query || normalize(content).includes(query))
+          && (calendarFilter !== "overdue" || isOverdue(item))
+          && (!calendarFilter || calendarFilter === "overdue" || item.fecha_programada === calendarFilter)
           && (!dateFilter.value || item.fecha_programada === dateFilter.value)
           && (!statusFilter.value || item.estado === statusFilter.value);
       }).sort((a, b) => a.fecha_programada.localeCompare(b.fecha_programada) || Number(a.numero) - Number(b.numero));
@@ -117,19 +139,52 @@
     async function updateStatus(button) {
       button.disabled = true;
       try {
+        const payload = {estado: button.dataset.nextStatus};
+        if (payload.estado === "incidencia") {
+          payload.motivo_incidencia = window.prompt("Motivo de la incidencia:", "") || "";
+          payload.comentario_incidencia = window.prompt("Describe brevemente lo ocurrido:", "") || "";
+          if (!payload.motivo_incidencia || !payload.comentario_incidencia) {
+            button.disabled = false;
+            return;
+          }
+        }
+        const evidence = document.querySelector(`[data-evidence-id="${button.dataset.statusId}"]`);
+        const body = evidence && evidence.files && evidence.files[0]
+          ? (() => { const form = new FormData(); Object.entries(payload).forEach(([key, value]) => form.append(key, value)); form.append("evidencia", evidence.files[0]); return form; })()
+          : JSON.stringify(payload);
+        const headers = {Accept: "application/json", "X-CSRFToken": cookie("csrftoken")};
+        if (!(body instanceof FormData)) headers["Content-Type"] = "application/json";
         const response = await fetch(statusUrl(button.dataset.statusId), {
           method: "PATCH",
           credentials: "same-origin",
-          headers: {"Content-Type": "application/json", Accept: "application/json", "X-CSRFToken": cookie("csrftoken")},
-          body: JSON.stringify({estado: button.dataset.nextStatus}),
+          headers,
+          body,
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || "No fue posible actualizar el despacho.");
         const item = dispatches.find(dispatch => Number(dispatch.id) === Number(button.dataset.statusId));
         if (item) item.estado = data.estado;
         updateSummary();
+        renderAgenda();
         render();
         notify(data.mensaje || "Estado actualizado.");
+      } catch (error) {
+        button.disabled = false;
+        notify(error.message, true);
+      }
+    }
+
+    async function takeDispatch(button) {
+      button.disabled = true;
+      try {
+        const response = await fetch(takeUrl(button.dataset.takeId), {
+          method: "POST", credentials: "same-origin",
+          headers: {Accept: "application/json", "X-CSRFToken": cookie("csrftoken")},
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "No fue posible tomar el despacho.");
+        await load();
+        notify(data.mensaje || "Despacho tomado.");
       } catch (error) {
         button.disabled = false;
         notify(error.message, true);
@@ -158,9 +213,27 @@
     search.addEventListener("input", render);
     dateFilter.addEventListener("change", render);
     statusFilter.addEventListener("change", render);
+    document.querySelector(".driver-agenda")?.addEventListener("click", event => {
+      const dateButton = event.target.closest("[data-agenda-date]");
+      const quickFilter = event.target.closest("[data-agenda-filter]");
+      if (dateButton) {
+        calendarFilter = calendarFilter === dateButton.dataset.agendaDate ? "" : dateButton.dataset.agendaDate;
+      } else if (quickFilter) {
+        calendarFilter = calendarFilter === quickFilter.dataset.agendaFilter ? "" : quickFilter.dataset.agendaFilter;
+        if (calendarFilter === "all") calendarFilter = "";
+        if (calendarFilter === "today") {
+          calendarFilter = panel.dataset.today;
+        }
+      } else return;
+      dateFilter.value = "";
+      renderAgenda();
+      render();
+    });
     list.addEventListener("click", event => {
       const button = event.target.closest("[data-status-id]");
       if (button) updateStatus(button);
+      const takeButton = event.target.closest("[data-take-id]");
+      if (takeButton) takeDispatch(takeButton);
     });
     load();
   });

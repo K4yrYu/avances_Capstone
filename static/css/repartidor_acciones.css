@@ -1,0 +1,13 @@
+/* Acciones operativas del repartidor: evidencia separada de los botones. */
+.driver-card footer{display:grid;gap:.7rem}
+.driver-evidence{display:grid;gap:.6rem;padding:.75rem;background:#fff;border:1px solid #d8e5ec;border-radius:11px}
+.driver-evidence>div{display:flex;align-items:center;gap:.55rem}
+.driver-evidence>div>i{display:grid;width:30px;height:30px;color:#17638a;background:#e7f2f8;border-radius:8px;place-items:center}
+.driver-evidence span{display:grid;gap:.08rem}
+.driver-evidence b{font-size:.7rem}
+.driver-evidence small{color:#647b8c;font-size:.61rem}
+.driver-evidence label{display:flex;align-items:center;justify-content:center;gap:.4rem;min-height:34px;color:#17638a;border:1px dashed #8bb5cc;border-radius:8px;cursor:pointer;font-size:.66rem;font-weight:800}
+.driver-evidence input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;clip-path:inset(50%)}
+.driver-actions{display:grid;grid-template-columns:1fr 1fr;gap:.55rem}
+.driver-card footer button.secondary{color:#9a6510;background:#fff;border:1px solid #f0c45a}
+@media(max-width:430px){.driver-actions{grid-template-columns:1fr}}

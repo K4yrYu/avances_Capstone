@@ -98,6 +98,7 @@ class DespachoVenta(models.Model):
         PROGRAMADO = 'programado', 'Programado'
         PREPARACION = 'preparacion', 'En preparación'
         EN_RUTA = 'en_ruta', 'En ruta'
+        INCIDENCIA = 'incidencia', 'Con incidencia'
         ENTREGADO = 'entregado', 'Entregado'
         CANCELADO = 'cancelado', 'Cancelado'
 
@@ -111,6 +112,16 @@ class DespachoVenta(models.Model):
         default=Estado.RESERVADO,
     )
     cargo = models.PositiveIntegerField(default=0)
+    repartidor = models.ForeignKey(
+        'usuarios.Usuario', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='despachos_tomados',
+    )
+    tomado_en = models.DateTimeField(null=True, blank=True)
+    salida_en = models.DateTimeField(null=True, blank=True)
+    entregado_en = models.DateTimeField(null=True, blank=True)
+    motivo_incidencia = models.CharField(max_length=80, blank=True)
+    comentario_incidencia = models.TextField(blank=True)
+    evidencia_entrega = models.ImageField(upload_to='despachos/evidencias/', null=True, blank=True)
     reserva_expira_en = models.DateTimeField(null=True, blank=True)
     creado_en = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)
@@ -130,6 +141,19 @@ class DespachoVenta(models.Model):
 
     def __str__(self):
         return f'Venta #{self.venta_id} · despacho {self.numero}'
+
+
+class EventoDespacho(models.Model):
+    despacho = models.ForeignKey(DespachoVenta, on_delete=models.CASCADE, related_name='eventos')
+    responsable = models.ForeignKey('usuarios.Usuario', null=True, blank=True, on_delete=models.SET_NULL)
+    evento = models.CharField(max_length=40)
+    estado_anterior = models.CharField(max_length=20, blank=True)
+    estado_nuevo = models.CharField(max_length=20, blank=True)
+    detalle = models.TextField(blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['creado_en', 'id']
 
 
 class DetalleDespacho(models.Model):

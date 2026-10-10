@@ -41,6 +41,7 @@ urlpatterns = [
     path('api/retiros/', views.api_retiros, name='api_retiros'),
     path('api/retiros/confirmar/<int:venta_id>/', views.api_confirmar_retiro, name='api_confirmar_retiro'),
     path('api/despachos/', views.api_despachos, name='api_despachos'),
+    path('api/repartidor/despachos/<int:despacho_id>/tomar/', views.api_tomar_despacho, name='api_tomar_despacho'),
     path('api/repartidor/despachos/<int:despacho_id>/estado/', views.api_actualizar_estado_despacho, name='api_actualizar_estado_despacho'),
     path('api/despachos/disponibilidad/', views.api_disponibilidad_despachos, name='api_disponibilidad_despachos'),
     path('api/despachos/confirmar/<int:venta_id>/', views.api_confirmar_despacho, name='api_confirmar_despacho'),

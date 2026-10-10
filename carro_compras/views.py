@@ -8,7 +8,7 @@ from urllib.parse import urlencode, urlsplit
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required, user_passes_test
-from django.db import transaction
+from django.db import models, transaction
 from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -29,7 +29,7 @@ from productos.models import Producto
 from productos.services import calcular_producto_pintura
 from maestros.chile import COMUNA_REGION, REGIONES_COMUNAS, REGIONES_CHOICES
 from usuarios.models import Usuario
-from .models import ConfiguracionDespacho, DespachoVenta, Detalle, FechaDespacho, Venta
+from .models import ConfiguracionDespacho, DespachoVenta, Detalle, EventoDespacho, FechaDespacho, Venta
 from .services import configurar_transbank_tls
 from .services_despachos import (
     DespachoInvalidoError,
@@ -984,11 +984,40 @@ def api_despachos(request):
         venta__estado_venta='pagado',
     ).exclude(
         estado=DespachoVenta.Estado.CANCELADO,
-    ).select_related('venta__id_usuario').prefetch_related(
-        'detalles_despacho__detalle'
-    ).order_by('fecha_programada', 'numero')
+    ).select_related('venta__id_usuario', 'repartidor').prefetch_related(
+        'detalles_despacho__detalle', 'eventos__responsable'
+    )
+    if not request.user.is_staff:
+        despachos = despachos.filter(
+            models.Q(repartidor=request.user) | models.Q(repartidor__isnull=True)
+        )
+    despachos = despachos.order_by('fecha_programada', 'numero')
     serializer = DespachoVentaSerializer(despachos, many=True)
     return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([EsRepartidorOAdmin])
+def api_tomar_despacho(request, despacho_id):
+    with transaction.atomic():
+        despacho = get_object_or_404(
+            DespachoVenta.objects.select_for_update().select_related('venta'),
+            id=despacho_id,
+            venta__tipo_entrega='despacho',
+            venta__estado_venta='pagado',
+        )
+        if despacho.estado not in {DespachoVenta.Estado.PROGRAMADO, DespachoVenta.Estado.PREPARACION}:
+            return Response({'detail': 'Este despacho ya no está disponible para ser tomado.'}, status=status.HTTP_400_BAD_REQUEST)
+        if despacho.repartidor_id:
+            return Response({'detail': 'Este despacho ya fue tomado por otro repartidor.'}, status=status.HTTP_409_CONFLICT)
+        despacho.repartidor = request.user
+        despacho.tomado_en = timezone.now()
+        despacho.save(update_fields=['repartidor', 'tomado_en', 'actualizado_en'])
+        EventoDespacho.objects.create(
+            despacho=despacho, responsable=request.user, evento='tomado',
+            detalle='Despacho tomado para reparto.',
+        )
+    return Response({'mensaje': f'Despacho #{despacho.id} tomado correctamente.'})
 
 
 @api_view(['PATCH'])
@@ -1002,18 +1031,48 @@ def api_actualizar_estado_despacho(request, despacho_id):
             venta__tipo_entrega='despacho',
             venta__estado_venta='pagado',
         )
+        if not request.user.is_staff and despacho.repartidor_id != request.user.id:
+            return Response({'detail': 'Debes tomar este despacho antes de actualizarlo.'}, status=status.HTTP_403_FORBIDDEN)
         transiciones = {
             DespachoVenta.Estado.PROGRAMADO: {DespachoVenta.Estado.EN_RUTA},
             DespachoVenta.Estado.PREPARACION: {DespachoVenta.Estado.EN_RUTA},
-            DespachoVenta.Estado.EN_RUTA: {DespachoVenta.Estado.ENTREGADO},
+            DespachoVenta.Estado.EN_RUTA: {DespachoVenta.Estado.ENTREGADO, DespachoVenta.Estado.INCIDENCIA},
+            DespachoVenta.Estado.INCIDENCIA: {DespachoVenta.Estado.EN_RUTA},
         }
         if nuevo_estado not in transiciones.get(despacho.estado, set()):
             return Response(
                 {'detail': f'No se puede cambiar un despacho {despacho.get_estado_display()} a ese estado.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        estado_anterior = despacho.estado
+        update_fields = ['estado', 'actualizado_en']
         despacho.estado = nuevo_estado
-        despacho.save(update_fields=['estado', 'actualizado_en'])
+        if nuevo_estado == DespachoVenta.Estado.EN_RUTA:
+            despacho.salida_en = despacho.salida_en or timezone.now()
+            update_fields.append('salida_en')
+        elif nuevo_estado == DespachoVenta.Estado.ENTREGADO:
+            despacho.entregado_en = timezone.now()
+            update_fields.append('entregado_en')
+            evidencia = request.FILES.get('evidencia')
+            if evidencia:
+                if evidencia.size > 5 * 1024 * 1024 or not str(evidencia.content_type).startswith('image/'):
+                    return Response({'detail': 'La evidencia debe ser una imagen de máximo 5 MB.'}, status=status.HTTP_400_BAD_REQUEST)
+                despacho.evidencia_entrega = evidencia
+                update_fields.append('evidencia_entrega')
+        elif nuevo_estado == DespachoVenta.Estado.INCIDENCIA:
+            motivo = str(request.data.get('motivo_incidencia') or '').strip()
+            comentario = str(request.data.get('comentario_incidencia') or '').strip()
+            if not motivo or not comentario:
+                return Response({'detail': 'Indica motivo y comentario para registrar una incidencia.'}, status=status.HTTP_400_BAD_REQUEST)
+            despacho.motivo_incidencia = motivo[:80]
+            despacho.comentario_incidencia = comentario
+            update_fields.extend(['motivo_incidencia', 'comentario_incidencia'])
+        despacho.save(update_fields=update_fields)
+        EventoDespacho.objects.create(
+            despacho=despacho, responsable=request.user, evento=nuevo_estado,
+            estado_anterior=estado_anterior, estado_nuevo=nuevo_estado,
+            detalle=despacho.comentario_incidencia if nuevo_estado == DespachoVenta.Estado.INCIDENCIA else '',
+        )
         actualizar_estado_general_venta(despacho.venta)
     return Response({
         'mensaje': f'Despacho #{despacho.id} actualizado a {despacho.get_estado_display()}.',

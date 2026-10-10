@@ -28,6 +28,7 @@
         const toast = new bootstrap.Toast(toastElemento, {delay: 3500});
         let operaciones = [];
         let operacionPendiente = null;
+        let mostrarCompletados = false;
 
         function numeroSeguro(valor) {
             const numero = Number(valor);
@@ -161,15 +162,26 @@
                 if (esRetiro) {
                     tabla.innerHTML = visibles.map(filaOperacion).join("");
                 } else {
-                    let fechaAnterior = "";
-                    tabla.innerHTML = visibles.map(item => {
-                        const fechaActual = fechaIso(item);
-                        const separador = fechaActual !== fechaAnterior
-                            ? `<tr class="dispatch-date-group"><td colspan="8"><i class="fa-solid fa-calendar-day"></i><strong>${escapeHtml(fechaFormateada(`${fechaActual}T12:00:00`).fecha)}</strong><span>${visibles.filter(despacho => fechaIso(despacho) === fechaActual).length} despacho(s)</span></td></tr>`
-                            : "";
-                        fechaAnterior = fechaActual;
-                        return separador + filaOperacion(item);
-                    }).join("");
+                    const agruparPorFecha = items => {
+                        let fechaAnterior = "";
+                        return items.map(item => {
+                            const fechaActual = fechaIso(item);
+                            const separador = fechaActual !== fechaAnterior
+                                ? `<tr class="dispatch-date-group"><td colspan="8"><i class="fa-solid fa-calendar-day"></i><strong>${escapeHtml(fechaFormateada(`${fechaActual}T12:00:00`).fecha)}</strong><span>${items.filter(despacho => fechaIso(despacho) === fechaActual).length} despacho(s)</span></td></tr>`
+                                : "";
+                            fechaAnterior = fechaActual;
+                            return separador + filaOperacion(item);
+                        }).join("");
+                    };
+                    const activos = visibles.filter(item => item.estado_entrega !== "completado");
+                    const completados = visibles.filter(item => item.estado_entrega === "completado");
+                    const filtroSoloCompletados = filtroEstado.value === "completado";
+                    const resumenCompletados = completados.length
+                        ? `<tr class="completed-operations-toggle"><td colspan="8"><button type="button" data-toggle-completed><i class="fa-solid fa-circle-check"></i><span>Entregas completadas</span><b>${completados.length}</b><small>${mostrarCompletados || filtroSoloCompletados ? "Ocultar historial" : "Ver historial"}</small><i class="fa-solid ${mostrarCompletados || filtroSoloCompletados ? "fa-chevron-up" : "fa-chevron-down"}"></i></button></td></tr>`
+                        : "";
+                    tabla.innerHTML = agruparPorFecha(activos)
+                        + resumenCompletados
+                        + ((mostrarCompletados || filtroSoloCompletados) ? agruparPorFecha(completados) : "");
                 }
             }
             tabla.setAttribute("aria-busy", "false");
@@ -180,7 +192,7 @@
             filtroEstado.value = "";
             fechaDesde.value = "";
             fechaHasta.value = "";
-            selectorOrden.value = esRetiro ? "recientes" : "fecha-asc";
+            selectorOrden.value = esRetiro ? "recientes" : "fecha-desc";
             renderizar();
             buscador.focus();
         }
@@ -195,18 +207,47 @@
             const telefono = document.getElementById("telefonoModalOperacion");
             const correo = document.getElementById("correoModalOperacion");
             const telefonoLimpio = String(item.comprador_telefono || "").replace(/[^+\d]/g, "");
+            if (telefono && correo) {
             telefono.querySelector("b").textContent = item.comprador_telefono || "Sin teléfono registrado";
             telefono.href = telefonoLimpio ? `tel:${telefonoLimpio}` : "#";
             telefono.classList.toggle("is-disabled", !telefonoLimpio);
             correo.querySelector("b").textContent = item.comprador_email || "Sin correo registrado";
             correo.href = item.comprador_email ? `mailto:${encodeURIComponent(item.comprador_email)}` : "#";
             correo.classList.toggle("is-disabled", !item.comprador_email);
+            }
             const productos = Array.isArray(item.detalles) ? item.detalles : [];
-            document.getElementById("productosModalOperacion").innerHTML = productos.length
+            const productosModal = document.getElementById("productosModalOperacion");
+            if (productosModal) productosModal.innerHTML = productos.length
                 ? productos.map(detalle => `<li><span>${escapeHtml(detalle.nombre_producto || "Producto")}</span><b>× ${Math.max(0, Math.trunc(numeroSeguro(detalle.cantidad_producto)))}</b></li>`).join("")
                 : "<li><span>Sin productos detallados</span></li>";
+            const historial = document.getElementById("historialDespachoOperacion");
+            if (historial) {
+                const eventos = Array.isArray(item.eventos) ? item.eventos : [];
+                historial.hidden = !esDespacho;
+                if (esDespacho) {
+                    document.getElementById("resumenRepartidorOperacion").textContent = `Responsable actual: ${item.repartidor_nombre || "Aún no tomado por un repartidor"}.`;
+                    const textoEvento = evento => ({
+                        tomado: {titulo: "Despacho tomado", detalle: "El repartidor asumió esta entrega."},
+                        en_ruta: {titulo: "Ruta iniciada", detalle: "El repartidor registró la salida a destino."},
+                        entregado: {titulo: "Entrega confirmada", detalle: "El despacho fue marcado como entregado."},
+                        incidencia: {titulo: "Incidencia reportada", detalle: "Se registró una situación que requiere revisión."},
+                    })[evento.evento] || {titulo: "Actualización registrada", detalle: "Se actualizó el seguimiento del despacho."};
+                    document.getElementById("eventosDespachoOperacion").innerHTML = eventos.length
+                        ? eventos.map(evento => {
+                            const fecha = evento.fecha ? new Intl.DateTimeFormat("es-CL", {dateStyle: "short", timeStyle: "short"}).format(new Date(evento.fecha)) : "Fecha no registrada";
+                            const etiqueta = textoEvento(evento);
+                            const detalle = evento.detalle || etiqueta.detalle;
+                            return `<li><div><strong>${escapeHtml(etiqueta.titulo)}</strong><small>${escapeHtml(evento.responsable || "Sistema")} · ${escapeHtml(fecha)}</small><small>${escapeHtml(detalle)}</small></div></li>`;
+                        }).join("")
+                        : "<li><div><strong>Sin movimientos operativos</strong><small>El despacho aún no ha sido tomado.</small></div></li>";
+                    const evidencia = document.getElementById("evidenciaDespachoOperacion");
+                    evidencia.hidden = !item.evidencia_entrega;
+                    evidencia.href = item.evidencia_entrega || "#";
+                }
+            }
             document.getElementById("tituloModalOperacion").textContent = soloDetalles ? "Detalle del despacho" : "Completar despacho";
-            document.getElementById("textoModalOperacion").textContent = soloDetalles
+            const textoModal = document.getElementById("textoModalOperacion");
+            if (textoModal) textoModal.textContent = soloDetalles
                 ? "Usa estos datos únicamente para coordinar la entrega o resolver un problema con este pedido."
                 : "Confirma únicamente cuando todos los productos de este despacho hayan sido entregados al cliente.";
             const confirmar = document.getElementById("confirmarOperacion");
@@ -290,6 +331,12 @@
         [buscador, filtroEstado, fechaDesde, fechaHasta, selectorOrden].forEach(control => control.addEventListener(control === buscador ? "input" : "change", renderizar));
         botonLimpiar.addEventListener("click", limpiarFiltros);
         tabla.addEventListener("click", function (evento) {
+            const alternarCompletados = evento.target.closest("[data-toggle-completed]");
+            if (alternarCompletados) {
+                mostrarCompletados = !mostrarCompletados;
+                renderizar();
+                return;
+            }
             const boton = evento.target.closest("[data-confirm-operation], [data-view-operation]");
             if (!boton) return;
             const id = numeroSeguro(boton.dataset.confirmOperation || boton.dataset.viewOperation);

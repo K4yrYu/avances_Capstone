@@ -9,6 +9,8 @@
   <link rel="preconnect" href="https://cdnjs.cloudflare.com">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="{% static 'css/repartidor_despachos.css' %}">
+  <link rel="stylesheet" href="{% static 'css/repartidor_acciones.css' %}">
+  <link rel="stylesheet" href="{% static 'css/repartidor_agenda.css' %}">
 </head>
 <body>
   <header class="driver-header">
@@ -16,7 +18,7 @@
     <div class="driver-user"><span>{{ user.first_name|default:user.username|first|upper }}</span><div><b>{{ user.get_full_name|default:user.username }}</b><small>{% if user.is_staff %}Administrador{% else %}Repartidor{% endif %}</small></div><form method="post" action="{% url 'cerrar_sesion' %}">{% csrf_token %}<button type="submit" title="Cerrar sesión"><i class="fa-solid fa-right-from-bracket"></i></button></form></div>
   </header>
 
-  <main id="panel-repartidor" data-api-url="{% url 'api_despachos' %}" data-status-url="{% url 'api_actualizar_estado_despacho' 0 %}" data-today="{% now 'Y-m-d' %}">
+  <main id="panel-repartidor" data-api-url="{% url 'api_despachos' %}" data-status-url="{% url 'api_actualizar_estado_despacho' 0 %}" data-take-url="{% url 'api_tomar_despacho' 0 %}" data-today="{% now 'Y-m-d' %}">
     <section class="driver-hero">
       <div><span><i class="fa-solid fa-truck-fast"></i> RUTA DE ENTREGA</span><h1>Despachos programados</h1><p>Revisa las entregas por fecha, contacta al comprador y registra el avance de cada despacho.</p></div>
       {% if user.is_staff %}<a href="{% url 'vista_despachos' %}"><i class="fa-solid fa-arrow-left"></i> Volver a administración</a>{% endif %}
@@ -31,8 +33,13 @@
 
     <section class="driver-tools">
       <label><i class="fa-solid fa-magnifying-glass"></i><input id="buscar-despacho-repartidor" type="search" placeholder="Buscar cliente, dirección o pedido"></label>
-      <select id="filtro-fecha-repartidor" aria-label="Filtrar por fecha"><option value="">Todas las fechas</option></select>
+      <select id="filtro-fecha-repartidor" aria-label="Filtrar por fecha" hidden><option value="">Todas las fechas</option></select>
       <select id="filtro-estado-repartidor" aria-label="Filtrar por estado"><option value="">Todos los estados</option><option value="programado">Programados</option><option value="en_ruta">En ruta</option><option value="entregado">Entregados</option></select>
+    </section>
+    <section class="driver-agenda" aria-label="Agenda de entregas">
+      <header><div><span><i class="fa-solid fa-route"></i> AGENDA OPERATIVA</span><strong>Prioriza tu ruta y elige una fecha con despachos</strong></div><button type="button" data-agenda-filter="all"><i class="fa-solid fa-list"></i> Ver todo</button></header>
+      <div class="driver-agenda-priority"><button type="button" data-agenda-filter="overdue"><i class="fa-solid fa-triangle-exclamation"></i><span><small>Requieren atención</small><b>Atrasadas</b></span><em id="agenda-atrasadas">0</em></button><button type="button" data-agenda-filter="today"><i class="fa-solid fa-calendar-day"></i><span><small>Jornada actual</small><b>Hoy</b></span><em id="agenda-hoy">0</em></button></div>
+      <div class="driver-agenda-dates" id="fechas-agenda-repartidor"></div>
     </section>
 
     <div id="lista-despachos-repartidor" class="driver-schedule" aria-live="polite"><div class="driver-loading"><i class="fa-solid fa-spinner fa-spin"></i> Cargando despachos…</div></div>
@@ -40,6 +47,6 @@
 
   <div id="mensaje-repartidor" class="driver-toast" role="status" hidden></div>
   <script src="{% static 'js/security.js' %}"></script>
-  <script src="{% static 'js/repartidor_despachos.js' %}"></script>
+  <script src="{% static 'js/repartidor_despachos.js' %}?v=20261010-agenda-operativa"></script>
 </body>
 </html>

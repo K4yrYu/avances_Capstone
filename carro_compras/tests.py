@@ -882,6 +882,9 @@ class ProgramacionDespachosTests(TestCase):
         self.usuario.rol = Usuario.Rol.REPARTIDOR
         self.usuario.save(update_fields=['rol'])
 
+        tomar = self.client.post(reverse('api_tomar_despacho', args=[despacho.id]))
+        self.assertEqual(tomar.status_code, 200)
+
         salto_invalido = self.client.patch(
             reverse('api_actualizar_estado_despacho', args=[despacho.id]),
             {'estado': 'entregado'}, content_type='application/json',
@@ -903,6 +906,47 @@ class ProgramacionDespachosTests(TestCase):
         self.venta.refresh_from_db()
         self.assertEqual(despacho.estado, DespachoVenta.Estado.ENTREGADO)
         self.assertEqual(self.venta.estado_entrega, 'completado')
+
+    def test_repartidor_no_puede_actualizar_despacho_tomado_por_otro(self):
+        self.venta.estado_venta = 'pagado'
+        self.venta.tipo_entrega = 'despacho'
+        self.venta.save(update_fields=['estado_venta', 'tipo_entrega'])
+        despacho = DespachoVenta.objects.create(
+            venta=self.venta, numero=1, fecha_programada=self.fecha_1,
+            direccion='Calle Prueba 123, Santiago', estado=DespachoVenta.Estado.PROGRAMADO,
+        )
+        otro = Usuario.objects.create_user(
+            username='otro_repartidor', password='clave123', email='otro-repartidor@example.com',
+            rut='87654321-0', telefono='+56911112222', rol=Usuario.Rol.REPARTIDOR,
+        )
+        self.usuario.rol = Usuario.Rol.REPARTIDOR
+        self.usuario.save(update_fields=['rol'])
+        self.assertEqual(self.client.post(reverse('api_tomar_despacho', args=[despacho.id])).status_code, 200)
+
+        self.client.force_login(otro)
+        respuesta = self.client.patch(
+            reverse('api_actualizar_estado_despacho', args=[despacho.id]),
+            {'estado': 'en_ruta'}, content_type='application/json',
+        )
+        self.assertEqual(respuesta.status_code, 403)
+
+    def test_tomar_despacho_registra_responsable_y_evento(self):
+        self.venta.estado_venta = 'pagado'
+        self.venta.tipo_entrega = 'despacho'
+        self.venta.save(update_fields=['estado_venta', 'tipo_entrega'])
+        despacho = DespachoVenta.objects.create(
+            venta=self.venta, numero=1, fecha_programada=self.fecha_1,
+            direccion='Calle Prueba 123, Santiago', estado=DespachoVenta.Estado.PROGRAMADO,
+        )
+        self.usuario.rol = Usuario.Rol.REPARTIDOR
+        self.usuario.save(update_fields=['rol'])
+
+        respuesta = self.client.post(reverse('api_tomar_despacho', args=[despacho.id]))
+        self.assertEqual(respuesta.status_code, 200)
+        despacho.refresh_from_db()
+        self.assertEqual(despacho.repartidor, self.usuario)
+        self.assertIsNotNone(despacho.tomado_en)
+        self.assertTrue(despacho.eventos.filter(evento='tomado', responsable=self.usuario).exists())
 
     def test_encargado_retiros_accede_a_retiros_pero_no_a_despachos(self):
         self.usuario.rol = Usuario.Rol.RETIROS

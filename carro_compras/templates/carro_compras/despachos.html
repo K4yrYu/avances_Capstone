@@ -12,6 +12,8 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}?v=20260823-topbar-actions">
   <link rel="stylesheet" href="{% static 'css/operaciones_entrega.css' %}?v=20261009-panel-reparto">
+  <link rel="stylesheet" href="{% static 'css/operaciones_historial.css' %}">
+  <link rel="stylesheet" href="{% static 'css/operaciones_admin_lista.css' %}">
 </head>
 <body>
   <a class="skip-link" href="#contenido-operaciones">Saltar al contenido</a>
@@ -128,7 +130,7 @@
             <label class="operation-filter" for="filtro-estado-operacion"><span>Estado</span><select class="form-select" id="filtro-estado-operacion"><option value="">Todos</option><option value="pendiente">Por despachar</option><option value="completado">Entregados</option></select></label>
             <label class="operation-filter" for="fecha-desde-operacion"><span>Desde</span><input type="date" id="fecha-desde-operacion" class="form-control"></label>
             <label class="operation-filter" for="fecha-hasta-operacion"><span>Hasta</span><input type="date" id="fecha-hasta-operacion" class="form-control"></label>
-            <label class="operation-filter" for="orden-operaciones"><span>Ordenar</span><select class="form-select" id="orden-operaciones"><option value="fecha-asc">Próximos despachos</option><option value="fecha-desc">Fechas más lejanas</option><option value="total-desc">Mayor total</option></select></label>
+            <label class="operation-filter" for="orden-operaciones"><span>Ordenar</span><select class="form-select" id="orden-operaciones"><option value="fecha-desc">Más recientes primero</option><option value="fecha-asc">Más antiguas primero</option><option value="total-desc">Mayor total</option></select></label>
             <button class="clear-operation-filters" id="limpiar-filtros-operaciones" type="button"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Limpiar</span></button>
           </div>
           <div class="operations-table-wrap">
@@ -146,7 +148,7 @@
 
   <div class="modal fade" id="modalConfirmarOperacion" tabindex="-1" aria-labelledby="tituloModalOperacion" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered"><div class="modal-content operation-modal">
-      <div class="modal-header"><span class="operation-modal-icon dispatch"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i></span><div><span>Confirmar operación</span><h2 class="modal-title" id="tituloModalOperacion">Completar despacho</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+      <div class="modal-header"><span class="operation-modal-icon dispatch"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i></span><div><span>SEGUIMIENTO DEL DESPACHO</span><h2 class="modal-title" id="tituloModalOperacion">Detalle del despacho</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
       <div class="modal-body">
         <p id="textoModalOperacion">Revisa los datos del comprador, el destino y los productos incluidos en este despacho.</p>
         <div class="modal-operation-summary"><span id="avatarModalOperacion">C</span><div><strong id="nombreModalOperacion"></strong><small id="ventaModalOperacion"></small></div></div>
@@ -156,6 +158,12 @@
           <div><a id="telefonoModalOperacion" href="#"><i class="fa-solid fa-phone"></i><b></b></a><a id="correoModalOperacion" href="#"><i class="fa-solid fa-envelope"></i><b></b></a></div>
         </div>
         <div class="modal-products-summary"><span>Productos de este despacho</span><ul id="productosModalOperacion"></ul></div>
+        <section class="dispatch-history" id="historialDespachoOperacion" hidden aria-labelledby="tituloHistorialDespacho">
+          <div class="dispatch-history-heading"><span><i class="fa-solid fa-clock-rotate-left"></i></span><div><small>SEGUIMIENTO OPERATIVO</small><h3 id="tituloHistorialDespacho">Historial del despacho</h3></div></div>
+          <p id="resumenRepartidorOperacion"></p>
+          <ol id="eventosDespachoOperacion"></ol>
+          <a id="evidenciaDespachoOperacion" target="_blank" rel="noopener" hidden><i class="fa-solid fa-image"></i> Ver evidencia de entrega</a>
+        </section>
         <div class="modal-inline-error" id="errorModalOperacion" role="alert"></div>
       </div>
       <div class="modal-footer"><button type="button" class="operation-modal-cancel" data-bs-dismiss="modal">Cancelar</button><button type="button" class="operation-modal-confirm" id="confirmarOperacion">Marcar como entregado</button></div>
@@ -166,6 +174,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script src="{% static 'js/security.js' %}"></script>
-  <script src="{% static 'js/operaciones_entrega.js' %}"></script>
+  <script src="{% static 'js/operaciones_entrega.js' %}?v=20261010-historial-claro"></script>
 </body>
 </html>
