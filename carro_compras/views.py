@@ -2,6 +2,7 @@ import logging
 import re
 import secrets
 import time
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode, urlsplit
 
@@ -16,7 +17,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import BasePermission, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from transbank.common.integration_api_keys import IntegrationApiKeys
 from transbank.common.integration_commerce_codes import IntegrationCommerceCodes
@@ -26,13 +27,23 @@ from transbank.webpay.webpay_plus.transaction import Transaction
 
 from productos.models import Producto
 from productos.services import calcular_producto_pintura
+from maestros.chile import COMUNA_REGION, REGIONES_COMUNAS, REGIONES_CHOICES
 from usuarios.models import Usuario
-from .models import Detalle, Venta
+from .models import ConfiguracionDespacho, DespachoVenta, Detalle, FechaDespacho, Venta
 from .services import configurar_transbank_tls
+from .services_despachos import (
+    DespachoInvalidoError,
+    actualizar_estado_general_venta,
+    confirmar_reservas_despacho,
+    crear_reservas_despacho,
+    fechas_disponibles,
+    liberar_reservas_despacho,
+)
 from .serializers import (
     CantidadProductoSerializer,
     DetalleCarritoEntradaSerializer,
     RecomendacionPinturaCarritoSerializer,
+    DespachoVentaSerializer,
     VentaSerializer,
 )
 
@@ -201,6 +212,7 @@ def _reembolsar_y_reabrir_carrito(tx, token, amount, venta_id, reason):
         venta = Venta.objects.select_for_update().get(id=venta_id)
         if refunded:
             venta.estado_venta = 'carrito'
+            liberar_reservas_despacho(venta)
             _limpiar_datos_webpay(venta, payment_status=f'refunded:{reason}')
         else:
             venta.estado_venta = 'pago_error'
@@ -211,6 +223,30 @@ def _reembolsar_y_reabrir_carrito(tx, token, amount, venta_id, reason):
 
 def _es_admin(user):
     return user.is_authenticated and user.is_staff
+
+
+def _es_repartidor_o_admin(user):
+    return user.is_authenticated and (
+        user.is_staff
+        or user.rol == Usuario.Rol.REPARTIDOR
+        or user.groups.filter(name='Repartidores').exists()
+    )
+
+
+def _es_retiros_o_admin(user):
+    return user.is_authenticated and (
+        user.is_staff or user.rol == Usuario.Rol.RETIROS
+    )
+
+
+class EsRepartidorOAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return _es_repartidor_o_admin(request.user)
+
+
+class EsRetirosOAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return _es_retiros_o_admin(request.user)
 
 
 
@@ -242,8 +278,16 @@ def vista_carrito(request):
             return render(request, 'carro_compras/carrito.html', {
                 'detalles': detalles,
                 'total_carrito': total_carrito,
+                'configuracion_despacho': ConfiguracionDespacho.cargar(),
+                'total_unidades': sum(d.cantidad_producto for d in detalles),
                 'productos_eliminados': productos_eliminados,
                 'aviso': request.GET.get('mensaje', '')[:180],
+                'regiones_despacho': REGIONES_CHOICES,
+                'comunas_despacho': [
+                    {'nombre': comuna, 'region': codigo}
+                    for codigo, (_, comunas) in REGIONES_COMUNAS.items()
+                    for comuna in comunas
+                ],
             })
         else:
             # 👇 Mostrar vista sin productos, sin mensaje personalizado
@@ -482,13 +526,27 @@ def disminuir_cantidad_producto(request, detalle_id):
 @permission_classes([IsAuthenticated])
 def iniciar_pago_webpay(request):
     tipo_entrega = str(request.data.get('tipo_entrega', '')).strip().lower()
-    direccion_despacho = str(request.data.get('direccion_despacho', '')).strip()
+    direccion_despacho = ''
     if tipo_entrega not in {'retiro', 'despacho'}:
         return Response({'error': 'Selecciona un tipo de entrega válido.'}, status=status.HTTP_400_BAD_REQUEST)
-    if tipo_entrega == 'despacho' and not (10 <= len(direccion_despacho) <= 500):
-        return Response({'error': 'Ingresa una dirección de despacho válida.'}, status=status.HTTP_400_BAD_REQUEST)
-    if tipo_entrega == 'retiro':
-        direccion_despacho = ''
+    if tipo_entrega == 'despacho':
+        region = str(request.data.get('region_despacho', '')).strip()
+        comuna = str(request.data.get('comuna_despacho', '')).strip()
+        calle = ' '.join(str(request.data.get('calle_despacho', '')).split())
+        numero = str(request.data.get('numero_despacho', '')).strip()
+        referencia = ' '.join(str(request.data.get('referencia_despacho', '')).split())
+        if region not in REGIONES_COMUNAS or COMUNA_REGION.get(comuna) != region:
+            return Response({'error': 'Selecciona una región y comuna válidas de Chile.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not (3 <= len(calle) <= 120) or not re.search(r'[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]', calle):
+            return Response({'error': 'Ingresa un nombre de calle válido.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not re.fullmatch(r'\d{1,6}[A-Za-z]?(?:-\d{1,4})?', numero):
+            return Response({'error': 'Ingresa un número de dirección válido.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(referencia) > 180:
+            return Response({'error': 'La referencia de la dirección es demasiado extensa.'}, status=status.HTTP_400_BAD_REQUEST)
+        nombre_region = REGIONES_COMUNAS[region][0]
+        direccion_despacho = f'{calle} {numero}, {comuna}, Región: {nombre_region}'
+        if referencia:
+            direccion_despacho += f'. Referencia: {referencia}'
 
     try:
         with transaction.atomic():
@@ -499,20 +557,34 @@ def iniciar_pago_webpay(request):
             if not venta:
                 return Response({'error': 'No tienes un carrito activo.'}, status=status.HTTP_404_NOT_FOUND)
 
-            _, total = _sincronizar_carrito_para_pago(venta)
+            detalles, subtotal_productos = _sincronizar_carrito_para_pago(venta)
+            if tipo_entrega == 'despacho':
+                cargo_despacho = crear_reservas_despacho(
+                    venta,
+                    detalles,
+                    request.data,
+                    direccion_despacho,
+                )
+            else:
+                liberar_reservas_despacho(venta)
+                cargo_despacho = 0
+            total = subtotal_productos + cargo_despacho
             buy_order = f"F{venta.id}-{int(time.time())}"[:26]
             session_id = secrets.token_urlsafe(24)[:61]
             venta.total_venta = total
             venta.tipo_entrega = tipo_entrega
             venta.direccion_despacho = direccion_despacho
+            venta.cargo_despacho = cargo_despacho
             venta.estado_venta = 'pago_pendiente'
             venta.webpay_amount = total
             venta.webpay_buy_order = buy_order
             venta.webpay_session_id = session_id
             venta.webpay_payment_status = 'initializing'
             venta.save()
-    except CarritoNoPagableError as exc:
-        return Response({'error': exc.mensaje}, status=exc.status_code)
+    except (CarritoNoPagableError, DespachoInvalidoError) as exc:
+        mensaje = exc.mensaje if isinstance(exc, CarritoNoPagableError) else str(exc)
+        codigo = exc.status_code if isinstance(exc, CarritoNoPagableError) else status.HTTP_400_BAD_REQUEST
+        return Response({'error': mensaje}, status=codigo)
 
     tx = _webpay_transaction()
     token = None
@@ -534,6 +606,7 @@ def iniciar_pago_webpay(request):
             venta = Venta.objects.select_for_update().get(id=venta.id)
             if venta.estado_venta == 'pago_pendiente' and venta.webpay_buy_order == buy_order:
                 venta.estado_venta = 'carrito'
+                liberar_reservas_despacho(venta)
                 _limpiar_datos_webpay(venta, payment_status='create_failed')
                 venta.save()
         return Response({'error': 'No fue posible iniciar el pago. Intenta nuevamente.'}, status=status.HTTP_502_BAD_GATEWAY)
@@ -571,6 +644,7 @@ def cancelar_pago_webpay(request):
             return Response({'cancelled': False})
 
         venta.estado_venta = 'carrito'
+        liberar_reservas_despacho(venta)
         _limpiar_datos_webpay(venta, payment_status='cancelled_by_navigation')
         venta.save()
 
@@ -592,6 +666,7 @@ def respuesta_pago_webpay(request):
                 ).first()
                 if venta:
                     venta.estado_venta = 'carrito'
+                    liberar_reservas_despacho(venta)
                     _limpiar_datos_webpay(venta, payment_status='cancelled')
                     venta.save()
         return redirect('/carrito/?mensaje=Transacción cancelada.')
@@ -629,6 +704,7 @@ def respuesta_pago_webpay(request):
             venta = Venta.objects.select_for_update().get(id=venta_previa.id)
             if venta.estado_venta == 'pago_pendiente' and venta.webpay_transaction_id == token:
                 venta.estado_venta = 'carrito'
+                liberar_reservas_despacho(venta)
                 _limpiar_datos_webpay(venta, payment_status='rejected')
                 venta.save()
         request.session.pop('venta_webpay_pendiente', None)
@@ -665,7 +741,8 @@ def respuesta_pago_webpay(request):
                 raise PagoInvalidoError('Estado o token inesperado')
 
             detalles = list(venta.detalles.select_related('producto').all())
-            if not detalles or sum(d.subtotal_venta for d in detalles) != venta.webpay_amount:
+            total_esperado = sum(d.subtotal_venta for d in detalles) + venta.cargo_despacho
+            if not detalles or total_esperado != venta.webpay_amount:
                 raise PagoInvalidoError('El carrito cambió durante el pago')
 
             productos = {
@@ -710,6 +787,7 @@ def respuesta_pago_webpay(request):
                 card_detail = {}
             venta.ultimos_digitos = str(card_detail.get('card_number', ''))[-4:]
             venta.total_venta = int(venta.webpay_amount)
+            confirmar_reservas_despacho(venta)
             venta.save()
     except PagoInvalidoError:
         logger.warning('Pago autorizado revertido por validación local en venta %s', venta_previa.id)
@@ -730,7 +808,9 @@ def respuesta_pago_webpay(request):
 @login_required
 def ver_boleta(request, venta_id):
     venta = get_object_or_404(
-        Venta.objects.select_related('id_usuario'),
+        Venta.objects.select_related('id_usuario').prefetch_related(
+            'despachos__detalles_despacho__detalle'
+        ),
         id=venta_id,
         estado_venta='pagado',
     )
@@ -754,13 +834,67 @@ def ver_boleta(request, venta_id):
 
 #############
 
-@user_passes_test(_es_admin, login_url='/usuarios/iniciosesion/')
+@user_passes_test(_es_retiros_o_admin, login_url='/usuarios/iniciosesion/')
 def vista_retiros(request):
     return render(request, 'carro_compras/retiros.html')
 
 @user_passes_test(_es_admin, login_url='/usuarios/iniciosesion/')
 def vista_despachos(request):
-    return render(request, 'carro_compras/despachos.html')
+    error_configuracion = ''
+    if request.method == 'POST':
+        accion = str(request.POST.get('accion') or '')
+        try:
+            if accion == 'configuracion':
+                configuracion = ConfiguracionDespacho.cargar()
+                cargo = int(request.POST.get('cargo_segundo_despacho', -1))
+                capacidad = int(request.POST.get('capacidad_diaria', 0))
+                anticipacion = int(request.POST.get('dias_anticipacion_minima', -1))
+                horizonte = int(request.POST.get('dias_horizonte', 0))
+                if not 0 <= cargo <= 1000000:
+                    raise ValueError('El cargo adicional debe estar entre $0 y $1.000.000.')
+                if not 1 <= capacidad <= 500:
+                    raise ValueError('La capacidad diaria debe estar entre 1 y 500.')
+                if not 0 <= anticipacion <= 30:
+                    raise ValueError('La anticipación debe estar entre 0 y 30 días.')
+                if not anticipacion < horizonte <= 365:
+                    raise ValueError('El horizonte debe ser mayor que la anticipación y no superar 365 días.')
+                configuracion.cargo_segundo_despacho = cargo
+                configuracion.capacidad_diaria = capacidad
+                configuracion.dias_anticipacion_minima = anticipacion
+                configuracion.dias_horizonte = horizonte
+                configuracion.despachos_activos = request.POST.get('despachos_activos') == 'on'
+                configuracion.save()
+                return redirect(f"{reverse('vista_despachos')}?guardado=configuracion")
+            if accion == 'fecha':
+                fecha = date.fromisoformat(str(request.POST.get('fecha') or ''))
+                capacidad_texto = str(request.POST.get('capacidad_override') or '').strip()
+                capacidad = int(capacidad_texto) if capacidad_texto else None
+                if capacidad is not None and not 0 <= capacidad <= 500:
+                    raise ValueError('La capacidad especial debe estar entre 0 y 500.')
+                FechaDespacho.objects.update_or_create(
+                    fecha=fecha,
+                    defaults={
+                        'capacidad_override': capacidad,
+                        'cerrada': request.POST.get('cerrada') == 'on',
+                        'motivo': str(request.POST.get('motivo') or '').strip()[:180],
+                    },
+                )
+                return redirect(f"{reverse('vista_despachos')}?guardado=fecha")
+        except (TypeError, ValueError) as exc:
+            error_configuracion = str(exc) or 'Revisa los valores ingresados.'
+
+    configuracion, calendario = fechas_disponibles()
+    return render(request, 'carro_compras/despachos.html', {
+        'configuracion_despacho': configuracion,
+        'calendario_despachos': calendario,
+        'configuracion_guardada': request.GET.get('guardado', ''),
+        'error_configuracion': error_configuracion,
+    })
+
+
+@user_passes_test(_es_repartidor_o_admin, login_url='/usuarios/iniciosesion/')
+def vista_repartidor_despachos(request):
+    return render(request, 'carro_compras/repartidor_despachos.html')
 
 
 @user_passes_test(_es_admin, login_url='/usuarios/iniciosesion/')
@@ -773,11 +907,15 @@ def mi_historial_compras(request):
         id_usuario=request.user,
         estado_venta='pagado',
         eliminado=False,
-    ).prefetch_related('detalles__producto').order_by('-fecha_compra'))
+    ).prefetch_related(
+        'detalles__producto',
+        'despachos__detalles_despacho__detalle',
+    ).order_by('-fecha_compra'))
 
     total_unidades = 0
     for venta in ventas:
         venta.detalles_list = list(venta.detalles.all())
+        venta.despachos_list = list(venta.despachos.all())
         venta.cantidad_unidades = sum(detalle.cantidad_producto for detalle in venta.detalles_list)
         total_unidades += venta.cantidad_unidades
 
@@ -794,19 +932,22 @@ def mi_historial_compras(request):
 def api_historial_ventas(request):
     ventas = Venta.objects.filter(estado_venta='pagado').select_related(
         'id_usuario'
-    ).prefetch_related('detalles').order_by('-fecha_compra')
+    ).prefetch_related('detalles', 'despachos').order_by('-fecha_compra')
     serializer = VentaSerializer(ventas, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def api_mis_compras(request):
-    ventas = Venta.objects.filter(id_usuario=request.user, estado_venta='pagado').order_by('-fecha_compra')
+    ventas = Venta.objects.filter(
+        id_usuario=request.user,
+        estado_venta='pagado',
+    ).prefetch_related('detalles', 'despachos').order_by('-fecha_compra')
     serializer = VentaSerializer(ventas, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([EsRetirosOAdmin])
 def api_retiros(request):
     retiros = Venta.objects.filter(
         tipo_entrega='retiro', estado_venta='pagado'
@@ -816,7 +957,7 @@ def api_retiros(request):
 
 # Confirmar retiro (admin)
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([EsRetirosOAdmin])
 def api_confirmar_retiro(request, venta_id):
     rut = str(request.data.get('rut') or '').replace('.', '').replace(' ', '').upper()
     venta = get_object_or_404(
@@ -836,32 +977,99 @@ def api_confirmar_retiro(request, venta_id):
     return Response({'mensaje': f"Retiro confirmado para la venta #{venta.id}."})
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([EsRepartidorOAdmin])
 def api_despachos(request):
-    despachos = Venta.objects.filter(
-        tipo_entrega='despacho', estado_venta='pagado'
-    ).select_related('id_usuario').prefetch_related('detalles').order_by('-fecha_compra')
-    serializer = VentaSerializer(despachos, many=True)
+    despachos = DespachoVenta.objects.filter(
+        venta__tipo_entrega='despacho',
+        venta__estado_venta='pagado',
+    ).exclude(
+        estado=DespachoVenta.Estado.CANCELADO,
+    ).select_related('venta__id_usuario').prefetch_related(
+        'detalles_despacho__detalle'
+    ).order_by('fecha_programada', 'numero')
+    serializer = DespachoVentaSerializer(despachos, many=True)
     return Response(serializer.data)
+
+
+@api_view(['PATCH'])
+@permission_classes([EsRepartidorOAdmin])
+def api_actualizar_estado_despacho(request, despacho_id):
+    nuevo_estado = str(request.data.get('estado') or '').strip().lower()
+    with transaction.atomic():
+        despacho = get_object_or_404(
+            DespachoVenta.objects.select_for_update().select_related('venta'),
+            id=despacho_id,
+            venta__tipo_entrega='despacho',
+            venta__estado_venta='pagado',
+        )
+        transiciones = {
+            DespachoVenta.Estado.PROGRAMADO: {DespachoVenta.Estado.EN_RUTA},
+            DespachoVenta.Estado.PREPARACION: {DespachoVenta.Estado.EN_RUTA},
+            DespachoVenta.Estado.EN_RUTA: {DespachoVenta.Estado.ENTREGADO},
+        }
+        if nuevo_estado not in transiciones.get(despacho.estado, set()):
+            return Response(
+                {'detail': f'No se puede cambiar un despacho {despacho.get_estado_display()} a ese estado.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        despacho.estado = nuevo_estado
+        despacho.save(update_fields=['estado', 'actualizado_en'])
+        actualizar_estado_general_venta(despacho.venta)
+    return Response({
+        'mensaje': f'Despacho #{despacho.id} actualizado a {despacho.get_estado_display()}.',
+        'estado': despacho.estado,
+        'estado_display': despacho.get_estado_display(),
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def api_disponibilidad_despachos(request):
+    configuracion, fechas = fechas_disponibles()
+    return Response({
+        'despachos_activos': configuracion.despachos_activos,
+        'cargo_segundo_despacho': configuracion.cargo_segundo_despacho,
+        'fechas': [
+            {
+                **estado,
+                'fecha': estado['fecha'].isoformat(),
+            }
+            for estado in fechas
+        ],
+    })
 
 @api_view(['POST'])
 @permission_classes([IsAdminUser])
 def api_confirmar_despacho(request, venta_id):
-    venta = get_object_or_404(
-        Venta,
+    despacho = get_object_or_404(
+        DespachoVenta.objects.select_related('venta'),
         id=venta_id,
-        tipo_entrega='despacho',
-        estado_venta='pagado',
-        estado_entrega='pendiente',
+        venta__tipo_entrega='despacho',
+        venta__estado_venta='pagado',
+        estado__in=[
+            DespachoVenta.Estado.PROGRAMADO,
+            DespachoVenta.Estado.PREPARACION,
+            DespachoVenta.Estado.EN_RUTA,
+        ],
     )
-    venta.estado_entrega = 'completado'
-    venta.save()
-    return Response({'mensaje': f"Despacho confirmado para la venta #{venta.id}."})
+    despacho.estado = DespachoVenta.Estado.ENTREGADO
+    despacho.save(update_fields=['estado', 'actualizado_en'])
+    actualizar_estado_general_venta(despacho.venta)
+    return Response({
+        'mensaje': (
+            f'Despacho {despacho.numero} de la venta #{despacho.venta_id} '
+            'confirmado correctamente.'
+        )
+    })
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def api_boleta(request, id):
-    venta = get_object_or_404(Venta, id=id, estado_venta='pagado')
+    venta = get_object_or_404(
+        Venta.objects.prefetch_related('detalles', 'despachos'),
+        id=id,
+        estado_venta='pagado',
+    )
 
     # Seguridad: solo el dueño o un admin puede verla
     if request.user != venta.id_usuario and not request.user.is_staff:

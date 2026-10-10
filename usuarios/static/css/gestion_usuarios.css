@@ -361,6 +361,13 @@
   background: #fff2c4;
 }
 
+.role-badge.repartidor { color:#075b80; background:#e3f2f8; }
+.role-badge.retiros { color:#765600; background:#fff1bf; }
+.role-badge.maestro { color:#176d4a; background:#e2f4e9; }
+.user-avatar.repartidor { color:#075b80; background:#dff0f7; }
+.user-avatar.retiros { color:#765600; background:#ffedaa; }
+.user-avatar.maestro { color:#176d4a; background:#dff3e7; }
+
 .verification-badge {
   color: #286047;
   background: #e6f5ed;

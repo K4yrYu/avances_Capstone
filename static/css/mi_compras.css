@@ -313,6 +313,20 @@
   background: #e2f4eb;
 }
 
+.purchase-dispatches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: 1rem 0; }
+.purchase-dispatches article { display: flex; align-items: center; gap: .7rem; padding: .8rem; border: 1px solid #d5e2ea; border-radius: 13px; background: #f6fafc; }
+.purchase-dispatches article > span { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; color: #073653; background: #ffdda0; }
+.purchase-dispatches article div { display: grid; }
+.purchase-dispatches small,
+.purchase-dispatches em { color: #6b7f90; font-size: .72rem; font-style: normal; }
+.purchase-dispatches p { grid-column: 1 / -1; margin: 0; color: #496175; font-size: .8rem; }
+.purchase-dispatches ul { display: grid; gap: .18rem; margin: .55rem 0 0; padding: .5rem 0 0 1rem; border-top: 1px solid #dce7ed; color: #496175; font-size: .72rem; }
+.purchase-dispatches li b { color: #073653; }
+.purchase-dispatches .dispatch-status { width: fit-content; margin-top: .25rem; padding: .18rem .45rem; border-radius: 999px; background: #e9f1f6; color: #315a73; font-weight: 800; }
+.purchase-dispatches .dispatch-status-entregado { background: #e2f5ea; color: #16734a; }
+.purchase-dispatches .dispatch-status-en_ruta { background: #fff1c9; color: #805b00; }
+.purchase-dispatches .dispatch-status-cancelado { background: #fde8ea; color: #9b3040; }
+
 .order-total {
   text-align: right;
 }

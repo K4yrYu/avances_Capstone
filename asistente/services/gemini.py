@@ -200,6 +200,17 @@ Reglas obligatorias:
 - Usa incluir_herramientas=true si el cliente pide o requiere incluir también las herramientas para el proyecto.
 - Usa "buscar_maestro" solo cuando el cliente solicite directamente contratar o buscar a un
   profesional, o cuando acepte una oferta de buscarlo presente en el historial reciente.
+- Una recomendación o mención previa del asistente a un maestro no inicia por sí sola ese
+  flujo. Consultas como "necesito pintura roja" o "muéstrame taladros" siguen siendo búsquedas
+  de productos, aunque el historial mencione pintores u otros profesionales.
+- En buscar_producto conserva en consulta_producto los calificadores decisivos indicados por
+  el cliente, como color, piscina, interior, exterior, superficie, medida o tipo de artefacto.
+  Una respuesta breve como "para piscina" completa el producto mencionado en el historial;
+  no la conviertas en una búsqueda genérica de toda la categoría.
+- Nunca sustituyas el producto pedido por otro distinto solo porque pueda tener un uso
+  relacionado. Por ejemplo, un martillo carpintero no es un mazo, una sierra no es un
+  serrucho y un taladro no es una broca. Si no existe el producto exacto en el catálogo,
+  informa que SFI no lo tiene disponible sin inventarlo ni presentar otra cosa como equivalente.
 - En "buscar_maestro" extrae especialidad_maestro, comuna_maestro y descripcion_trabajo.
   Usa cadenas vacías si falta información y nunca inventes una comuna. Si el cliente no
   indicó ubicación, Django le permitirá elegir entre filtrar por comuna o ver todos.

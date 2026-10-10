@@ -81,9 +81,7 @@
                 const coincideTexto = !texto || normalizar(
                     `${usuario.id} ${nombreCompleto(usuario)} ${usuario.username || ""} ${usuario.email || ""} ${usuario.rut || ""} ${usuario.telefono || ""}`
                 ).includes(texto);
-                const coincideRol = !rol
-                    || (rol === "admin" && usuario.is_staff)
-                    || (rol === "cliente" && !usuario.is_staff);
+                const coincideRol = !rol || usuario.rol === rol;
                 const coincideEstado = !estado || estadoUsuario(usuario) === estado;
                 const coincideVerificacion = !verificacion
                     || (verificacion === "verificado" && usuario.email_confirmado)
@@ -125,6 +123,14 @@
             const telefono = escapeHtml(usuario.telefono || "Sin teléfono");
             const rut = escapeHtml(usuario.rut || "Sin RUT");
             const avatar = escapeHtml(iniciales(usuario));
+            const roles = {
+                administrador: {label: "Administrador", icon: "fa-shield-halved", css: "admin"},
+                repartidor: {label: "Repartidor", icon: "fa-truck-fast", css: "repartidor"},
+                retiros: {label: "Encargado de retiros", icon: "fa-store", css: "retiros"},
+                maestro: {label: "Maestro", icon: "fa-user-gear", css: "maestro"},
+                cliente: {label: "Cliente", icon: "fa-user", css: "cliente"},
+            };
+            const role = roles[usuario.rol] || roles.cliente;
             const editar = activo && !esActual
                 ? `<a class="user-action edit" href="${crearUrl(editUrlBase, id)}"><i class="fa-solid fa-pen" aria-hidden="true"></i> Editar</a>`
                 : "";
@@ -140,13 +146,13 @@
                 <tr>
                     <td>
                         <div class="user-cell">
-                            <span class="user-avatar ${usuario.is_staff ? "admin" : ""}">${avatar}</span>
+                            <span class="user-avatar ${role.css}">${avatar}</span>
                             <div><strong>${nombre}</strong><small>@${username} · ID #${id}</small></div>
                         </div>
                     </td>
                     <td><span class="rut-value">${rut}</span></td>
                     <td><div class="contact-user-cell"><strong>${email}</strong><small>${telefono}</small></div></td>
-                    <td><span class="role-badge ${usuario.is_staff ? "admin" : ""}"><i class="fa-solid ${usuario.is_staff ? "fa-shield-halved" : "fa-user"}" aria-hidden="true"></i> ${usuario.is_staff ? "Administrador" : "Cliente"}</span></td>
+                    <td><span class="role-badge ${role.css}"><i class="fa-solid ${role.icon}" aria-hidden="true"></i> ${role.label}</span></td>
                     <td><span class="verification-badge ${usuario.email_confirmado ? "" : "pending"}"><i class="fa-solid fa-circle" aria-hidden="true"></i> ${usuario.email_confirmado ? "Verificado" : "Sin verificar"}</span></td>
                     <td>${etiquetaEstado(usuario, esActual)}</td>
                     <td>

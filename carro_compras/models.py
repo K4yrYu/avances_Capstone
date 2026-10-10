@@ -36,6 +36,7 @@ class Venta(models.Model):
         default='retiro'
     )
     direccion_despacho = models.TextField(blank=True, null=True)
+    cargo_despacho = models.PositiveIntegerField(default=0)
 
     # Estado de la entrega: pendiente o completado
     estado_entrega = models.CharField(
@@ -53,6 +54,107 @@ class Venta(models.Model):
     class Meta:
         constraints = [
             models.CheckConstraint(condition=Q(total_venta__gte=0), name='venta_total_no_negativo'),
+        ]
+
+
+class ConfiguracionDespacho(models.Model):
+    cargo_segundo_despacho = models.PositiveIntegerField(default=5990)
+    capacidad_diaria = models.PositiveIntegerField(default=20)
+    dias_anticipacion_minima = models.PositiveIntegerField(default=1)
+    dias_horizonte = models.PositiveIntegerField(default=30)
+    despachos_activos = models.BooleanField(default=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def cargar(cls):
+        configuracion, _ = cls.objects.get_or_create(pk=1)
+        return configuracion
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return 'Configuración general de despachos'
+
+
+class FechaDespacho(models.Model):
+    fecha = models.DateField(unique=True)
+    capacidad_override = models.PositiveIntegerField(null=True, blank=True)
+    cerrada = models.BooleanField(default=False)
+    motivo = models.CharField(max_length=180, blank=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['fecha']
+
+    def __str__(self):
+        return f'{self.fecha:%d-%m-%Y}'
+
+
+class DespachoVenta(models.Model):
+    class Estado(models.TextChoices):
+        RESERVADO = 'reservado', 'Reservado para pago'
+        PROGRAMADO = 'programado', 'Programado'
+        PREPARACION = 'preparacion', 'En preparación'
+        EN_RUTA = 'en_ruta', 'En ruta'
+        ENTREGADO = 'entregado', 'Entregado'
+        CANCELADO = 'cancelado', 'Cancelado'
+
+    venta = models.ForeignKey(Venta, on_delete=models.CASCADE, related_name='despachos')
+    numero = models.PositiveSmallIntegerField()
+    fecha_programada = models.DateField()
+    direccion = models.TextField()
+    estado = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.RESERVADO,
+    )
+    cargo = models.PositiveIntegerField(default=0)
+    reserva_expira_en = models.DateTimeField(null=True, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['fecha_programada', 'numero']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['venta', 'numero'],
+                name='despacho_numero_unico_por_venta',
+            ),
+            models.CheckConstraint(
+                condition=Q(numero__in=[1, 2]),
+                name='despacho_numero_valido',
+            ),
+        ]
+
+    def __str__(self):
+        return f'Venta #{self.venta_id} · despacho {self.numero}'
+
+
+class DetalleDespacho(models.Model):
+    despacho = models.ForeignKey(
+        DespachoVenta,
+        on_delete=models.CASCADE,
+        related_name='detalles_despacho',
+    )
+    detalle = models.ForeignKey(
+        'Detalle',
+        on_delete=models.CASCADE,
+        related_name='asignaciones_despacho',
+    )
+    cantidad = models.PositiveIntegerField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['despacho', 'detalle'],
+                name='detalle_unico_por_despacho',
+            ),
+            models.CheckConstraint(
+                condition=Q(cantidad__gt=0),
+                name='cantidad_despacho_positiva',
+            ),
         ]
     
     

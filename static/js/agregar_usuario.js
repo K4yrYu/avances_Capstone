@@ -93,9 +93,9 @@
       });
     });
 
-    form.querySelectorAll('[name="is_staff"]').forEach((radio) => {
+    form.querySelectorAll('[name="rol"]').forEach((radio) => {
       radio.addEventListener("change", () => {
-        adminWarning.hidden = form.elements.is_staff.value !== "true";
+        adminWarning.hidden = form.elements.rol.value !== "administrador";
       });
     });
 
@@ -137,7 +137,6 @@
       payload.first_name = payload.first_name.trim();
       payload.last_name = payload.last_name.trim();
       payload.telefono = payload.telefono.trim();
-      payload.is_staff = payload.is_staff === "true";
 
       submitButton.disabled = true;
       submitButton.querySelector("span").textContent = "Creando usuario…";

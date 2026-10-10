@@ -11,7 +11,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="{% static 'css/panel_admin.css' %}?v=20260823-topbar-actions">
-  <link rel="stylesheet" href="{% static 'css/operaciones_entrega.css' %}">
+  <link rel="stylesheet" href="{% static 'css/operaciones_entrega.css' %}?v=20261009-panel-reparto">
 </head>
 <body>
   <a class="skip-link" href="#contenido-operaciones">Saltar al contenido</a>
@@ -65,16 +65,53 @@
         id="contenido-operaciones"
         data-operation="despacho"
         data-api-url="{% url 'api_despachos' %}"
-        data-confirm-url="{% url 'api_confirmar_despacho' 0 %}"
-        data-receipt-url="{% url 'ver_boleta' 0 %}"
       >
         <section class="operations-heading">
           <div>
             <span class="operations-kicker"><i class="fa-solid fa-circle" aria-hidden="true"></i> Entrega a domicilio</span>
             <h1>Gestión de despachos</h1>
-            <p>Organiza los pedidos a domicilio y registra cada entrega completada.</p>
+            <p>Revisa el estado y los datos de cada despacho. La actualización de entregas se realiza desde el Panel de reparto.</p>
           </div>
-          <a class="switch-operation-action" href="{% url 'vista_retiros' %}"><i class="fa-solid fa-store" aria-hidden="true"></i> Ir a retiros</a>
+          <div class="operations-heading-actions"><a class="switch-operation-action route-panel-action" href="{% url 'vista_repartidor_despachos' %}"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i><span><strong>Panel de reparto</strong><small>Gestionar entregas y rutas</small></span><i class="fa-solid fa-arrow-right route-panel-arrow" aria-hidden="true"></i></a><a class="switch-operation-action" href="{% url 'vista_retiros' %}"><i class="fa-solid fa-store" aria-hidden="true"></i> Ir a retiros</a></div>
+        </section>
+
+        {% if configuracion_guardada %}<div class="dispatch-admin-message success"><i class="fa-solid fa-circle-check"></i> Configuración guardada correctamente.</div>{% endif %}
+        {% if error_configuracion %}<div class="dispatch-admin-message error"><i class="fa-solid fa-circle-exclamation"></i> {{ error_configuracion }}</div>{% endif %}
+
+        <section class="dispatch-admin-grid" aria-label="Configuración de despachos">
+          <form method="post" class="dispatch-admin-card">
+            {% csrf_token %}<input type="hidden" name="accion" value="configuracion">
+            <div class="dispatch-admin-card-heading"><span><i class="fa-solid fa-sliders"></i></span><div><small>REGLAS GENERALES</small><h2>Configuración de despachos</h2></div></div>
+            <div class="dispatch-admin-fields">
+              <label>Cargo por segundo despacho<input class="form-control" type="number" name="cargo_segundo_despacho" min="0" max="1000000" value="{{ configuracion_despacho.cargo_segundo_despacho }}" required><small>Se congela en la venta al iniciar Webpay.</small></label>
+              <label>Capacidad diaria<input class="form-control" type="number" name="capacidad_diaria" min="1" max="500" value="{{ configuracion_despacho.capacidad_diaria }}" required></label>
+              <label>Anticipación mínima<input class="form-control" type="number" name="dias_anticipacion_minima" min="0" max="30" value="{{ configuracion_despacho.dias_anticipacion_minima }}" required></label>
+              <label>Horizonte disponible<input class="form-control" type="number" name="dias_horizonte" min="1" max="365" value="{{ configuracion_despacho.dias_horizonte }}" required></label>
+            </div>
+            <label class="dispatch-admin-check"><input type="checkbox" name="despachos_activos" {% if configuracion_despacho.despachos_activos %}checked{% endif %}><span><strong>Despachos habilitados</strong><small>Al desactivar, no se aceptarán nuevas programaciones.</small></span></label>
+            <button class="dispatch-admin-save" type="submit"><i class="fa-solid fa-floppy-disk"></i> Guardar configuración</button>
+          </form>
+
+          <form method="post" class="dispatch-admin-card">
+            {% csrf_token %}<input type="hidden" name="accion" value="fecha">
+            <div class="dispatch-admin-card-heading"><span><i class="fa-solid fa-calendar-xmark"></i></span><div><small>CONTROL DE CUPOS</small><h2>Ajustar una fecha</h2></div></div>
+            <div class="dispatch-admin-fields date-settings">
+              <label>Fecha<input class="form-control" type="date" name="fecha" required></label>
+              <label>Capacidad especial<input class="form-control" type="number" name="capacidad_override" min="0" max="500" placeholder="Usar capacidad general"><small>Déjalo vacío para usar la capacidad general.</small></label>
+              <label class="wide">Motivo<input class="form-control" type="text" name="motivo" maxlength="180" placeholder="Ej. feriado o falta de transporte"></label>
+            </div>
+            <label class="dispatch-admin-check warning"><input type="checkbox" name="cerrada"><span><strong>Cerrar para nuevos despachos</strong><small>Las entregas ya pagadas conservan su programación.</small></span></label>
+            <button class="dispatch-admin-save" type="submit"><i class="fa-solid fa-calendar-check"></i> Guardar fecha</button>
+          </form>
+        </section>
+
+        <section class="dispatch-capacity-card">
+          <div class="operations-card-heading"><div><span>PRÓXIMAS FECHAS</span><h2>Capacidad de despacho</h2></div><strong>{{ configuracion_despacho.capacidad_diaria }} cupos base</strong></div>
+          <div class="dispatch-capacity-list">
+            {% for dia in calendario_despachos|slice:":14" %}
+              <article class="{% if dia.cerrada or not dia.disponibles %}is-closed{% endif %}"><time datetime="{{ dia.fecha|date:'Y-m-d' }}"><strong>{{ dia.fecha|date:"d M" }}</strong><small>{{ dia.fecha|date:"l" }}</small></time><div><span>{{ dia.ocupados }} ocupados de {{ dia.capacidad }}</span><progress max="{{ dia.capacidad|default:1 }}" value="{{ dia.ocupados }}"></progress></div><b>{% if dia.cerrada %}Cerrada{% elif not dia.disponibles %}Completa{% else %}{{ dia.disponibles }} libres{% endif %}</b></article>
+            {% endfor %}
+          </div>
         </section>
 
         <section class="operations-metrics" aria-label="Resumen de despachos">
@@ -91,7 +128,7 @@
             <label class="operation-filter" for="filtro-estado-operacion"><span>Estado</span><select class="form-select" id="filtro-estado-operacion"><option value="">Todos</option><option value="pendiente">Por despachar</option><option value="completado">Entregados</option></select></label>
             <label class="operation-filter" for="fecha-desde-operacion"><span>Desde</span><input type="date" id="fecha-desde-operacion" class="form-control"></label>
             <label class="operation-filter" for="fecha-hasta-operacion"><span>Hasta</span><input type="date" id="fecha-hasta-operacion" class="form-control"></label>
-            <label class="operation-filter" for="orden-operaciones"><span>Ordenar</span><select class="form-select" id="orden-operaciones"><option value="recientes">Más recientes</option><option value="antiguas">Más antiguas</option><option value="total-desc">Mayor total</option></select></label>
+            <label class="operation-filter" for="orden-operaciones"><span>Ordenar</span><select class="form-select" id="orden-operaciones"><option value="fecha-asc">Próximos despachos</option><option value="fecha-desc">Fechas más lejanas</option><option value="total-desc">Mayor total</option></select></label>
             <button class="clear-operation-filters" id="limpiar-filtros-operaciones" type="button"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Limpiar</span></button>
           </div>
           <div class="operations-table-wrap">
@@ -111,9 +148,14 @@
     <div class="modal-dialog modal-dialog-centered"><div class="modal-content operation-modal">
       <div class="modal-header"><span class="operation-modal-icon dispatch"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i></span><div><span>Confirmar operación</span><h2 class="modal-title" id="tituloModalOperacion">Completar despacho</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
       <div class="modal-body">
-        <p>Confirma únicamente cuando el pedido haya sido entregado al cliente.</p>
+        <p id="textoModalOperacion">Revisa los datos del comprador, el destino y los productos incluidos en este despacho.</p>
         <div class="modal-operation-summary"><span id="avatarModalOperacion">C</span><div><strong id="nombreModalOperacion"></strong><small id="ventaModalOperacion"></small></div></div>
         <div class="modal-address-summary"><span>Dirección de entrega</span><strong id="direccionModalOperacion"></strong></div>
+        <div class="modal-contact-summary">
+          <span>Contacto del comprador</span>
+          <div><a id="telefonoModalOperacion" href="#"><i class="fa-solid fa-phone"></i><b></b></a><a id="correoModalOperacion" href="#"><i class="fa-solid fa-envelope"></i><b></b></a></div>
+        </div>
+        <div class="modal-products-summary"><span>Productos de este despacho</span><ul id="productosModalOperacion"></ul></div>
         <div class="modal-inline-error" id="errorModalOperacion" role="alert"></div>
       </div>
       <div class="modal-footer"><button type="button" class="operation-modal-cancel" data-bs-dismiss="modal">Cancelar</button><button type="button" class="operation-modal-confirm" id="confirmarOperacion">Marcar como entregado</button></div>

@@ -18,6 +18,7 @@
         const {escapeHtml} = seguridad;
         const operacion = pagina.dataset.operation;
         const esRetiro = operacion === "retiro";
+        const esDespacho = operacion === "despacho";
         const apiUrl = pagina.dataset.apiUrl;
         const confirmUrlBase = pagina.dataset.confirmUrl;
         const receiptUrlBase = pagina.dataset.receiptUrl;
@@ -57,7 +58,7 @@
         }
 
         function fechaIso(venta) {
-            return String(venta.fecha_compra || "").slice(0, 10);
+            return String((esRetiro ? venta.fecha_compra : venta.fecha_programada) || "").slice(0, 10);
         }
 
         function fechaFormateada(valor) {
@@ -89,7 +90,7 @@
             document.getElementById("metrica-operaciones-pendientes").textContent = pendientes.length;
             document.getElementById("metrica-operaciones-completadas").textContent = operaciones.filter(item => item.estado_entrega === "completado").length;
             document.getElementById("metrica-operaciones-valor").textContent = precioClp(
-                pendientes.reduce((total, item) => total + numeroSeguro(item.total_venta), 0)
+                pendientes.reduce((total, item) => total + numeroSeguro(item.valor_despacho || item.total_venta), 0)
             );
         }
 
@@ -100,7 +101,7 @@
             const hasta = fechaHasta.value;
             const filtradas = operaciones.filter(item => {
                 const usuario = item.id_usuario || {};
-                const textoItem = `${item.id} ${nombreCliente(item)} ${usuario.username || ""} ${usuario.rut || ""} ${item.direccion_despacho || ""}`;
+                const textoItem = `${item.id} ${item.venta_id || ""} ${nombreCliente(item)} ${usuario.username || ""} ${usuario.rut || ""} ${item.direccion_despacho || ""}`;
                 const fecha = fechaIso(item);
                 return (!texto || normalizar(textoItem).includes(texto))
                     && (!estado || item.estado_entrega === estado)
@@ -108,8 +109,10 @@
                     && (!hasta || fecha <= hasta);
             });
             return filtradas.sort((a, b) => {
-                const fechaA = fechaValida(a.fecha_compra)?.getTime() || 0;
-                const fechaB = fechaValida(b.fecha_compra)?.getTime() || 0;
+                const fechaA = fechaValida(esRetiro ? a.fecha_compra : `${a.fecha_programada}T12:00:00`)?.getTime() || 0;
+                const fechaB = fechaValida(esRetiro ? b.fecha_compra : `${b.fecha_programada}T12:00:00`)?.getTime() || 0;
+                if (selectorOrden.value === "fecha-asc") return fechaA - fechaB || numeroSeguro(a.numero) - numeroSeguro(b.numero);
+                if (selectorOrden.value === "fecha-desc") return fechaB - fechaA || numeroSeguro(a.numero) - numeroSeguro(b.numero);
                 if (selectorOrden.value === "antiguas") return fechaA - fechaB;
                 if (selectorOrden.value === "total-desc") return numeroSeguro(b.total_venta) - numeroSeguro(a.total_venta) || fechaB - fechaA;
                 return fechaB - fechaA;
@@ -121,25 +124,28 @@
             const usuario = item.id_usuario || {};
             const nombre = escapeHtml(nombreCliente(item));
             const username = escapeHtml(usuario.username || "Sin usuario");
-            const fecha = fechaFormateada(item.fecha_compra);
+            const fecha = fechaFormateada(esRetiro ? item.fecha_compra : `${item.fecha_programada}T12:00:00`);
             const completado = item.estado_entrega === "completado";
             const unidades = Math.trunc(cantidadProductos(item));
             const direccion = escapeHtml(item.direccion_despacho || "Dirección no especificada");
-            const accion = completado
+            const accionPrincipal = esDespacho
+                ? ""
+                : completado
                 ? '<span class="delivered-label"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Entregado</span>'
                 : `<button class="operation-action confirm" type="button" data-confirm-operation="${id}"><i class="fa-solid ${esRetiro ? "fa-id-card" : "fa-circle-check"}" aria-hidden="true"></i> ${esRetiro ? "Validar retiro" : "Confirmar entrega"}</button>`;
+            const detalleAccion = esRetiro ? "" : `<button class="operation-action details" type="button" data-view-operation="${id}"><i class="fa-solid fa-eye" aria-hidden="true"></i> Ver detalles</button>`;
             const columnaDireccion = esRetiro ? "" : `<td><div class="operation-address"><strong title="${direccion}">${direccion}</strong><small>Destino del pedido</small></div></td>`;
 
             return `
                 <tr>
-                    <td><strong class="operation-number">#${id}</strong></td>
+                    <td><strong class="operation-number">#${esRetiro ? id : Math.max(0, Math.trunc(numeroSeguro(item.venta_id)))}</strong>${esRetiro ? "" : `<small class="dispatch-number">Despacho ${numeroSeguro(item.numero)}</small>`}</td>
                     <td><div class="operation-customer"><span>${escapeHtml(iniciales(item))}</span><div><strong>${nombre}</strong><small>@${username}</small></div></div></td>
                     ${columnaDireccion}
                     <td><div class="operation-date"><strong>${escapeHtml(fecha.fecha)}</strong><small>${escapeHtml(fecha.hora)}</small></div></td>
                     <td><span class="products-count"><i class="fa-solid fa-box" aria-hidden="true"></i> ${unidades} ${unidades === 1 ? "unidad" : "unidades"}</span></td>
-                    <td><strong class="operation-total">${escapeHtml(precioClp(item.total_venta))}</strong></td>
+                    <td><strong class="operation-total">${escapeHtml(precioClp(item.valor_despacho || item.total_venta))}</strong></td>
                     <td><span class="operation-status ${completado ? "completed" : ""}"><i class="fa-solid fa-circle" aria-hidden="true"></i> ${completado ? "Completado" : (esRetiro ? "Por retirar" : "Por despachar")}</span></td>
-                    <td><div class="operation-actions">${accion}<a class="operation-action receipt" href="${crearUrl(receiptUrlBase, id)}"><i class="fa-solid fa-file-invoice" aria-hidden="true"></i> Boleta</a></div></td>
+                    <td><div class="operation-actions">${detalleAccion}${accionPrincipal}${esRetiro ? `<a class="operation-action receipt" href="${crearUrl(receiptUrlBase, id)}"><i class="fa-solid fa-file-invoice" aria-hidden="true"></i> Boleta</a>` : ""}</div></td>
                 </tr>
             `;
         }
@@ -152,7 +158,19 @@
             if (!visibles.length) {
                 tabla.innerHTML = `<tr class="empty-operations-row"><td colspan="${columnas}"><div class="empty-operations"><i class="fa-solid ${esRetiro ? "fa-store" : "fa-truck-fast"}" aria-hidden="true"></i><strong>No encontramos ${esRetiro ? "retiros" : "despachos"}</strong><span>Prueba cambiando o limpiando los filtros.</span></div></td></tr>`;
             } else {
-                tabla.innerHTML = visibles.map(filaOperacion).join("");
+                if (esRetiro) {
+                    tabla.innerHTML = visibles.map(filaOperacion).join("");
+                } else {
+                    let fechaAnterior = "";
+                    tabla.innerHTML = visibles.map(item => {
+                        const fechaActual = fechaIso(item);
+                        const separador = fechaActual !== fechaAnterior
+                            ? `<tr class="dispatch-date-group"><td colspan="8"><i class="fa-solid fa-calendar-day"></i><strong>${escapeHtml(fechaFormateada(`${fechaActual}T12:00:00`).fecha)}</strong><span>${visibles.filter(despacho => fechaIso(despacho) === fechaActual).length} despacho(s)</span></td></tr>`
+                            : "";
+                        fechaAnterior = fechaActual;
+                        return separador + filaOperacion(item);
+                    }).join("");
+                }
             }
             tabla.setAttribute("aria-busy", "false");
         }
@@ -162,18 +180,37 @@
             filtroEstado.value = "";
             fechaDesde.value = "";
             fechaHasta.value = "";
-            selectorOrden.value = "recientes";
+            selectorOrden.value = esRetiro ? "recientes" : "fecha-asc";
             renderizar();
             buscador.focus();
         }
 
-        function prepararConfirmacion(item) {
+        function prepararConfirmacion(item, soloDetalles = false) {
             operacionPendiente = item;
             document.getElementById("avatarModalOperacion").textContent = iniciales(item);
             document.getElementById("nombreModalOperacion").textContent = nombreCliente(item);
-            document.getElementById("ventaModalOperacion").textContent = `Venta #${item.id} · ${precioClp(item.total_venta)}`;
+            document.getElementById("ventaModalOperacion").textContent = `Venta #${esRetiro ? item.id : item.venta_id}${esRetiro ? "" : ` · Despacho ${item.numero}`} · ${precioClp(item.valor_despacho || item.total_venta)}`;
             const direccion = document.getElementById("direccionModalOperacion");
             if (direccion) direccion.textContent = item.direccion_despacho || "Dirección no especificada";
+            const telefono = document.getElementById("telefonoModalOperacion");
+            const correo = document.getElementById("correoModalOperacion");
+            const telefonoLimpio = String(item.comprador_telefono || "").replace(/[^+\d]/g, "");
+            telefono.querySelector("b").textContent = item.comprador_telefono || "Sin teléfono registrado";
+            telefono.href = telefonoLimpio ? `tel:${telefonoLimpio}` : "#";
+            telefono.classList.toggle("is-disabled", !telefonoLimpio);
+            correo.querySelector("b").textContent = item.comprador_email || "Sin correo registrado";
+            correo.href = item.comprador_email ? `mailto:${encodeURIComponent(item.comprador_email)}` : "#";
+            correo.classList.toggle("is-disabled", !item.comprador_email);
+            const productos = Array.isArray(item.detalles) ? item.detalles : [];
+            document.getElementById("productosModalOperacion").innerHTML = productos.length
+                ? productos.map(detalle => `<li><span>${escapeHtml(detalle.nombre_producto || "Producto")}</span><b>× ${Math.max(0, Math.trunc(numeroSeguro(detalle.cantidad_producto)))}</b></li>`).join("")
+                : "<li><span>Sin productos detallados</span></li>";
+            document.getElementById("tituloModalOperacion").textContent = soloDetalles ? "Detalle del despacho" : "Completar despacho";
+            document.getElementById("textoModalOperacion").textContent = soloDetalles
+                ? "Usa estos datos únicamente para coordinar la entrega o resolver un problema con este pedido."
+                : "Confirma únicamente cuando todos los productos de este despacho hayan sido entregados al cliente.";
+            const confirmar = document.getElementById("confirmarOperacion");
+            confirmar.hidden = esDespacho || (soloDetalles && item.estado_entrega === "completado");
             const rut = document.getElementById("rut-confirmacion");
             if (rut) rut.value = "";
             const error = document.getElementById("errorModalOperacion");
@@ -218,6 +255,7 @@
                 if (!respuesta.ok) throw new Error(datos.detail || "No fue posible confirmar la entrega.");
 
                 operacionPendiente.estado_entrega = "completado";
+                operacionPendiente.estado = "entregado";
                 actualizarMetricas();
                 renderizar();
                 modal.hide();
@@ -252,11 +290,11 @@
         [buscador, filtroEstado, fechaDesde, fechaHasta, selectorOrden].forEach(control => control.addEventListener(control === buscador ? "input" : "change", renderizar));
         botonLimpiar.addEventListener("click", limpiarFiltros);
         tabla.addEventListener("click", function (evento) {
-            const boton = evento.target.closest("[data-confirm-operation]");
+            const boton = evento.target.closest("[data-confirm-operation], [data-view-operation]");
             if (!boton) return;
-            const id = numeroSeguro(boton.dataset.confirmOperation);
+            const id = numeroSeguro(boton.dataset.confirmOperation || boton.dataset.viewOperation);
             const item = operaciones.find(venta => numeroSeguro(venta.id) === id);
-            if (item) prepararConfirmacion(item);
+            if (item) prepararConfirmacion(item, Boolean(boton.dataset.viewOperation));
         });
         document.getElementById("confirmarOperacion").addEventListener("click", confirmarOperacion);
         modalElemento.addEventListener("shown.bs.modal", function () {

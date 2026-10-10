@@ -1,0 +1,45 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Ruta de despachos | SFI</title>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/repartidor_despachos.css' %}">
+</head>
+<body>
+  <header class="driver-header">
+    <a href="{% if user.is_staff %}{% url 'vista_despachos' %}{% else %}{% url 'index' %}{% endif %}" class="driver-brand"><img src="{% static 'img/sfi-logo.png' %}" alt="SFI"><span><b>Operaciones SFI</b><small>Panel de repartos</small></span></a>
+    <div class="driver-user"><span>{{ user.first_name|default:user.username|first|upper }}</span><div><b>{{ user.get_full_name|default:user.username }}</b><small>{% if user.is_staff %}Administrador{% else %}Repartidor{% endif %}</small></div><form method="post" action="{% url 'cerrar_sesion' %}">{% csrf_token %}<button type="submit" title="Cerrar sesión"><i class="fa-solid fa-right-from-bracket"></i></button></form></div>
+  </header>
+
+  <main id="panel-repartidor" data-api-url="{% url 'api_despachos' %}" data-status-url="{% url 'api_actualizar_estado_despacho' 0 %}" data-today="{% now 'Y-m-d' %}">
+    <section class="driver-hero">
+      <div><span><i class="fa-solid fa-truck-fast"></i> RUTA DE ENTREGA</span><h1>Despachos programados</h1><p>Revisa las entregas por fecha, contacta al comprador y registra el avance de cada despacho.</p></div>
+      {% if user.is_staff %}<a href="{% url 'vista_despachos' %}"><i class="fa-solid fa-arrow-left"></i> Volver a administración</a>{% endif %}
+    </section>
+
+    <section class="driver-summary">
+      <article class="summary-overdue"><span><i class="fa-solid fa-triangle-exclamation"></i></span><div><small>Con atraso</small><strong id="resumen-atrasados">—</strong></div></article>
+      <article><span><i class="fa-solid fa-calendar-day"></i></span><div><small>Para hoy</small><strong id="resumen-hoy">—</strong></div></article>
+      <article><span class="route"><i class="fa-solid fa-route"></i></span><div><small>En ruta</small><strong id="resumen-ruta">—</strong></div></article>
+      <article class="summary-done"><span class="done"><i class="fa-solid fa-circle-check"></i></span><div><small>Completados</small><strong id="resumen-entregados">—</strong></div></article>
+    </section>
+
+    <section class="driver-tools">
+      <label><i class="fa-solid fa-magnifying-glass"></i><input id="buscar-despacho-repartidor" type="search" placeholder="Buscar cliente, dirección o pedido"></label>
+      <select id="filtro-fecha-repartidor" aria-label="Filtrar por fecha"><option value="">Todas las fechas</option></select>
+      <select id="filtro-estado-repartidor" aria-label="Filtrar por estado"><option value="">Todos los estados</option><option value="programado">Programados</option><option value="en_ruta">En ruta</option><option value="entregado">Entregados</option></select>
+    </section>
+
+    <div id="lista-despachos-repartidor" class="driver-schedule" aria-live="polite"><div class="driver-loading"><i class="fa-solid fa-spinner fa-spin"></i> Cargando despachos…</div></div>
+  </main>
+
+  <div id="mensaje-repartidor" class="driver-toast" role="status" hidden></div>
+  <script src="{% static 'js/security.js' %}"></script>
+  <script src="{% static 'js/repartidor_despachos.js' %}"></script>
+</body>
+</html>

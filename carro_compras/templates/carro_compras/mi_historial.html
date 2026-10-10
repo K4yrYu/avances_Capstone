@@ -165,6 +165,29 @@
                     <a class="receipt-button" href="{% url 'ver_boleta' venta.id %}?origen=mis-compras"><i class="fa-solid fa-file-invoice" aria-hidden="true"></i> Ver boleta</a>
                   </div>
 
+                  {% if venta.tipo_entrega == 'despacho' and venta.despachos_list %}
+                    <div class="purchase-dispatches">
+                      {% for despacho in venta.despachos_list %}
+                        <article>
+                          <span><i class="fa-solid fa-truck-fast"></i></span>
+                          <div>
+                            <small>Despacho {{ despacho.numero }}</small>
+                            <strong>{{ despacho.fecha_programada|date:"d/m/Y" }}</strong>
+                            <em class="dispatch-status dispatch-status-{{ despacho.estado }}">{{ despacho.get_estado_display }}</em>
+                            <ul>
+                              {% for asignacion in despacho.detalles_despacho.all %}
+                                <li>{{ asignacion.detalle.nombre_producto }} <b>× {{ asignacion.cantidad }}</b></li>
+                              {% empty %}
+                                <li>Productos no detallados</li>
+                              {% endfor %}
+                            </ul>
+                          </div>
+                        </article>
+                      {% endfor %}
+                      {% if venta.cargo_despacho %}<p>Cargo por segundo despacho: <strong class="money-value" data-clp="{{ venta.cargo_despacho }}">${{ venta.cargo_despacho }}</strong></p>{% endif %}
+                    </div>
+                  {% endif %}
+
                   <div class="order-products">
                     <div class="order-products-title">
                       <strong>Productos de esta compra</strong>

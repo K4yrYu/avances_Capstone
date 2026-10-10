@@ -3,9 +3,15 @@ from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 
 class Usuario(AbstractUser):
+    class Rol(models.TextChoices):
+        CLIENTE = 'cliente', 'Cliente'
+        REPARTIDOR = 'repartidor', 'Repartidor'
+        RETIROS = 'retiros', 'Encargado de retiros'
+        ADMINISTRADOR = 'administrador', 'Administrador'
     # Heredamos de AbstractUser que ya tiene campos como username, first_name, last_name, email, password, etc.
     
     email = models.EmailField(unique=True)
+    rol = models.CharField(max_length=20, choices=Rol.choices, default=Rol.CLIENTE)
 
     # Añadimos campos adicionales
     rut = models.CharField(
@@ -36,6 +42,17 @@ class Usuario(AbstractUser):
     
     # Campos requeridos
     REQUIRED_FIELDS = ['rut', 'email', 'telefono']
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and (self.is_staff or self.is_superuser):
+            self.rol = self.Rol.ADMINISTRADOR
+        if self.rol == self.Rol.ADMINISTRADOR:
+            self.is_staff = True
+        elif not self.is_superuser:
+            self.is_staff = False
+        if kwargs.get('update_fields') and 'rol' in kwargs['update_fields']:
+            kwargs['update_fields'] = set(kwargs['update_fields']) | {'is_staff'}
+        super().save(*args, **kwargs)
     
     def __str__(self):
         return f"{self.get_full_name()} ({self.rut})"

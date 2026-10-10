@@ -80,6 +80,8 @@
     id="contenido-carrito"
     class="cart-page"
     data-cancel-payment-url="{% url 'cancelar_pago_webpay' %}"
+    data-dispatch-availability-url="{% url 'api_disponibilidad_despachos' %}"
+    data-second-dispatch-fee="{{ configuracion_despacho.cargo_segundo_despacho|default:0 }}"
     data-placeholder-url="{% static 'img/sfi-logo.png' %}"
   >
     <section class="cart-hero">
@@ -223,7 +225,11 @@
                 </div>
                 <div class="summary-line">
                   <span>Entrega</span>
-                  <strong>A coordinar</strong>
+                  <strong id="resumen-entrega">A coordinar</strong>
+                </div>
+                <div class="summary-line" id="cargo-segundo-despacho-line" hidden>
+                  <span>Cargo segundo despacho</span>
+                  <strong id="cargo-segundo-despacho">$0</strong>
                 </div>
                 <div class="summary-total">
                   <span>Total</span>
@@ -254,10 +260,41 @@
                 </fieldset>
 
                 <div class="delivery-address" id="direccion-despacho-wrapper" hidden>
-                  <label for="direccion-despacho">Dirección de despacho</label>
-                  <textarea id="direccion-despacho" name="direccion_despacho" class="form-control" rows="3" minlength="10" maxlength="500" placeholder="Calle, número, comuna y referencia"></textarea>
-                  <small>Incluye calle, número y comuna.</small>
+                  <div class="delivery-address-heading"><span><i class="fa-solid fa-location-dot"></i></span><div><strong>Dirección de despacho</strong><small>Selecciona una zona válida de Chile y completa la ubicación.</small></div></div>
+                  <div class="delivery-address-grid">
+                    <label>Región<select id="region-despacho" name="region_despacho" class="form-select"><option value="">Selecciona una región</option>{% for codigo, nombre in regiones_despacho %}<option value="{{ codigo }}">{{ nombre }}</option>{% endfor %}</select></label>
+                    <label>Comuna<select id="comuna-despacho" name="comuna_despacho" class="form-select" disabled><option value="">Primero selecciona una región</option>{% for item in comunas_despacho %}<option value="{{ item.nombre }}" data-region="{{ item.region }}" hidden>{{ item.nombre }}</option>{% endfor %}</select></label>
+                    <label class="delivery-street">Calle o avenida<input id="calle-despacho" name="calle_despacho" class="form-control" maxlength="120" autocomplete="address-line1" placeholder="Ej.: Avenida Providencia"></label>
+                    <label>Número<input id="numero-despacho" name="numero_despacho" class="form-control" maxlength="11" inputmode="numeric" autocomplete="address-line2" placeholder="Ej.: 1234"></label>
+                    <label class="delivery-reference">Depto., casa o referencia <span>(opcional)</span><input id="referencia-despacho" name="referencia_despacho" class="form-control" maxlength="180" placeholder="Ej.: Depto. 502, torre B"></label>
+                  </div>
+                  <div class="delivery-address-notice"><i class="fa-solid fa-circle-info"></i><span>Verificaremos que región y comuna coincidan. Confirma que la calle y numeración estén escritas correctamente.</span></div>
                 </div>
+
+                <section class="dispatch-scheduler" id="programacion-despacho" hidden aria-labelledby="titulo-programacion-despacho">
+                  <div class="dispatch-scheduler-heading">
+                    <span><i class="fa-solid fa-calendar-days" aria-hidden="true"></i></span>
+                    <div><strong id="titulo-programacion-despacho">Programa tu entrega</strong><small>Las fechas sin cupos no estarán disponibles.</small></div>
+                  </div>
+                  <fieldset class="dispatch-count-options">
+                    <legend>Número de despachos</legend>
+                    <label><input type="radio" name="cantidad_despachos" value="1" checked> <span><strong>Un despacho</strong><small>Todos los productos en una fecha.</small></span></label>
+                    <label class="{% if detalles|length < 2 %}is-disabled{% endif %}"><input type="radio" name="cantidad_despachos" value="2" {% if detalles|length < 2 %}disabled{% endif %}> <span><strong>Dos despachos</strong><small>Separa tus productos en dos fechas. Cargo adicional de ${{ configuracion_despacho.cargo_segundo_despacho }}.</small></span></label>
+                  </fieldset>
+                  <div class="dispatch-date-grid">
+                    <label>Fecha del primer despacho<select name="fecha_despacho_1" id="fecha-despacho-1" class="form-select"><option value="">Cargando fechas…</option></select></label>
+                    <label id="fecha-despacho-2-wrapper" hidden>Fecha del segundo despacho<select name="fecha_despacho_2" id="fecha-despacho-2" class="form-select"><option value="">Selecciona una fecha</option></select></label>
+                  </div>
+                  <div class="dispatch-split" id="distribucion-despachos" hidden>
+                    <div class="dispatch-split-heading"><strong>Resumen de tus dos despachos</strong><small>Puedes volver a editar qué productos llegarán en cada fecha.</small></div>
+                    <div class="dispatch-preview-grid">
+                      <article class="dispatch-preview-card"><span>Despacho 1</span><strong data-summary-date="1">Selecciona una fecha</strong><ul data-summary-products="1"></ul></article>
+                      <article class="dispatch-preview-card"><span>Despacho 2</span><strong data-summary-date="2">Selecciona una fecha</strong><ul data-summary-products="2"></ul></article>
+                    </div>
+                    <button type="button" class="dispatch-edit-button" id="editar-distribucion-despachos"><i class="fa-solid fa-boxes-stacked"></i> Elegir productos de cada despacho</button>
+                  </div>
+                  <p class="dispatch-availability-message" id="mensaje-disponibilidad-despacho" role="status"></p>
+                </section>
 
                 <div class="payment-error" id="payment-error" role="alert" aria-live="assertive" hidden></div>
 
@@ -269,6 +306,26 @@
                 <div class="payment-trust">
                   <i class="fa-solid fa-lock" aria-hidden="true"></i>
                   <span><strong>Pago seguro</strong> Serás redirigido a Webpay para finalizar.</span>
+                </div>
+
+                <div class="dispatch-modal" id="modal-distribucion-despachos" hidden>
+                  <div class="dispatch-modal-backdrop" data-close-dispatch-modal></div>
+                  <section class="dispatch-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="titulo-modal-despachos">
+                    <header><div><span>ORGANIZA TU COMPRA</span><h2 id="titulo-modal-despachos">Productos del primer despacho</h2><p>Marca lo que quieres recibir primero. Todo lo que dejes sin marcar llegará en el segundo despacho.</p></div><button type="button" aria-label="Cerrar" data-close-dispatch-modal><i class="fa-solid fa-xmark"></i></button></header>
+                    <div class="dispatch-modal-dates"><span><b>Despacho 1</b><em data-modal-date="1">Sin fecha</em></span><i class="fa-solid fa-arrow-right"></i><span><b>Despacho 2</b><em data-modal-date="2">Sin fecha</em></span></div>
+                    <div class="dispatch-product-list">
+                      {% for detalle in detalles %}
+                        <label class="dispatch-product-option" data-split-item data-total="{{ detalle.cantidad_producto }}" data-product-name="{{ detalle.nombre_producto }}">
+                          <input type="checkbox" data-dispatch-product {% if forloop.first %}checked{% endif %}>
+                          <input type="hidden" name="detalle_{{ detalle.id }}_despacho_1" value="{% if forloop.first %}{{ detalle.cantidad_producto }}{% else %}0{% endif %}">
+                          <span class="dispatch-product-check"><i class="fa-solid fa-check"></i></span>
+                          <span class="dispatch-product-copy"><strong>{{ detalle.nombre_producto }}</strong><small>{{ detalle.cantidad_producto }} unidad{{ detalle.cantidad_producto|pluralize:"es" }} · <b data-dispatch-label>{% if forloop.first %}Despacho 1{% else %}Despacho 2{% endif %}</b></small></span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                    <p class="dispatch-modal-error" id="error-modal-despachos" hidden></p>
+                    <footer><button type="button" class="dispatch-modal-cancel" data-close-dispatch-modal>Cancelar</button><button type="button" class="dispatch-modal-save" id="guardar-distribucion-despachos">Confirmar distribución</button></footer>
+                  </section>
                 </div>
               </form>
             </aside>

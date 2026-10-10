@@ -34,12 +34,15 @@ urlpatterns = [
 
     path('retiros/', views.vista_retiros, name='vista_retiros'),
     path('despachos/', views.vista_despachos, name='vista_despachos'),
+    path('repartidor/despachos/', views.vista_repartidor_despachos, name='vista_repartidor_despachos'),
     path('mis-compras/', views.mi_historial_compras, name='mi_historial_compras'),
     path('api/historial-ventas/', views.api_historial_ventas, name='api_historial_ventas'),
     path('api/mis-compras/', views.api_mis_compras, name='api_mis_compras'),
     path('api/retiros/', views.api_retiros, name='api_retiros'),
     path('api/retiros/confirmar/<int:venta_id>/', views.api_confirmar_retiro, name='api_confirmar_retiro'),
     path('api/despachos/', views.api_despachos, name='api_despachos'),
+    path('api/repartidor/despachos/<int:despacho_id>/estado/', views.api_actualizar_estado_despacho, name='api_actualizar_estado_despacho'),
+    path('api/despachos/disponibilidad/', views.api_disponibilidad_despachos, name='api_disponibilidad_despachos'),
     path('api/despachos/confirmar/<int:venta_id>/', views.api_confirmar_despacho, name='api_confirmar_despacho'),
     path('api/boleta/<int:id>/', views.api_boleta, name='api_boleta'),
 

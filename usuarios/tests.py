@@ -14,6 +14,8 @@ from rest_framework.authtoken.models import Token
 from .models import Usuario
 from .middleware import LimpiezaCuentasPendientesMiddleware
 from .serializers import AdminUsuarioSerializer, RegistroUsuarioSerializer
+from .serializers import UsuarioListaSerializer
+from maestros.models import PerfilMaestro
 from .services import limpiar_cuentas_no_verificadas
 from .throttles import RegistroRateThrottle
 from .validators import calcular_digito_verificador_rut, validar_rut
@@ -40,7 +42,7 @@ class SeguridadUsuariosTests(TestCase):
         }
 
     def test_registro_publico_no_puede_crear_administrador(self):
-        payload = {**self.payload, 'is_staff': True, 'is_superuser': True, 'is_active': True}
+        payload = {**self.payload, 'rol': 'administrador', 'is_staff': True, 'is_superuser': True, 'is_active': True}
 
         response = self.client.post(reverse('api_registro'), payload, content_type='application/json')
 
@@ -50,6 +52,7 @@ class SeguridadUsuariosTests(TestCase):
         self.assertFalse(usuario.is_superuser)
         self.assertFalse(usuario.is_active)
         self.assertFalse(usuario.email_confirmado)
+        self.assertEqual(usuario.rol, Usuario.Rol.CLIENTE)
         self.assertIsNotNone(usuario.correo_activacion_enviado_en)
         self.assertIsNotNone(usuario.activacion_expira_en)
         self.assertAlmostEqual(
@@ -105,6 +108,42 @@ class SeguridadUsuariosTests(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn('rut', serializer.errors)
+
+    def test_admin_puede_crear_perfiles_operativos_separados(self):
+        casos = (
+            ('11111111-1', Usuario.Rol.REPARTIDOR),
+            ('22222222-2', Usuario.Rol.RETIROS),
+        )
+        for indice, (rut, rol) in enumerate(casos, start=1):
+            serializer = AdminUsuarioSerializer(data={
+                **self.payload,
+                'rut': rut,
+                'username': f'operativo_{indice}',
+                'email': f'operativo-{indice}@example.com',
+                'rol': rol,
+            })
+            self.assertTrue(serializer.is_valid(), serializer.errors)
+            usuario = serializer.save()
+            self.assertEqual(usuario.rol, rol)
+            self.assertFalse(usuario.is_staff)
+
+    def test_listado_clasifica_como_maestro_a_quien_tiene_perfil(self):
+        usuario = Usuario.objects.create_user(
+            rut='11111111-1', username='maestro_listado', email='maestro-listado@example.com',
+            telefono='+56911111111', password=self.password,
+        )
+        PerfilMaestro.objects.create(
+            usuario=usuario,
+            descripcion_profesional='Maestro de prueba',
+            anos_experiencia=5,
+            region='RM',
+            comuna='Santiago',
+            zonas_trabajo='Santiago',
+        )
+
+        datos = UsuarioListaSerializer(usuario).data
+
+        self.assertEqual(datos['rol'], 'maestro')
 
     def test_edicion_conserva_rut_legacy_si_no_se_modifica(self):
         usuario = Usuario.objects.create_user(

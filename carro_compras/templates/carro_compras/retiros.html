@@ -17,7 +17,7 @@
   <a class="skip-link" href="#contenido-operaciones">Saltar al contenido</a>
 
   <div class="admin-shell">
-    {% include 'includes/admin_sidebar.html' %}
+    {% if user.is_staff %}{% include 'includes/admin_sidebar.html' %}{% endif %}
     {% comment %}
     <aside class="offcanvas-lg offcanvas-start admin-sidebar" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
       <div class="offcanvas-header sidebar-mobile-header">
@@ -58,13 +58,13 @@
     <div class="admin-main">
       <header class="admin-topbar">
         <div class="topbar-title">
-          <button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-controls="adminSidebar" aria-label="Abrir menú"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
+          {% if user.is_staff %}<button class="sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-controls="adminSidebar" aria-label="Abrir menú"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>{% endif %}
           <div><span>Operaciones</span><strong>Retiros en tienda</strong></div>
         </div>
-        {% include 'includes/admin_topbar_actions.html' %}
+        {% if user.is_staff %}{% include 'includes/admin_topbar_actions.html' %}{% endif %}
         <div class="admin-profile">
           <span class="profile-avatar">{{ user.username|first|upper }}</span>
-          <div><strong>{{ user.get_full_name|default:user.username }}</strong><span>Administrador</span></div>
+          <div><strong>{{ user.get_full_name|default:user.username }}</strong><span>{% if user.is_staff %}Administrador{% else %}Encargado de retiros{% endif %}</span></div>
         </div>
       </header>
 
@@ -82,7 +82,7 @@
             <h1>Retiros en tienda</h1>
             <p>Valida la identidad del cliente y registra la entrega segura de cada pedido.</p>
           </div>
-          <a class="switch-operation-action" href="{% url 'vista_despachos' %}"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Ir a despachos</a>
+          {% if user.is_staff %}<a class="switch-operation-action" href="{% url 'vista_despachos' %}"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Ir a despachos</a>{% else %}<form method="post" action="{% url 'cerrar_sesion' %}">{% csrf_token %}<button class="switch-operation-action" type="submit"><i class="fa-solid fa-right-from-bracket"></i> Cerrar sesión</button></form>{% endif %}
         </section>
 
         <section class="operations-metrics" aria-label="Resumen de retiros">

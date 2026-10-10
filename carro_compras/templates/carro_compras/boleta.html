@@ -126,6 +126,18 @@
                 <dt>{% if venta.tipo_entrega == 'despacho' %}Dirección{% else %}Entrega{% endif %}</dt>
                 <dd>{% if venta.tipo_entrega == 'despacho' %}{{ venta.direccion_despacho|default:"Dirección no registrada" }}{% else %}Retiro coordinado en tienda{% endif %}</dd>
               </div>
+              {% if venta.tipo_entrega == 'despacho' %}
+                {% for despacho in venta.despachos.all %}
+                  <div>
+                    <dt>Despacho {{ despacho.numero }}</dt>
+                    <dd>
+                      {{ despacho.fecha_programada|date:"d/m/Y" }} · {{ despacho.get_estado_display }}
+                      {% for asignacion in despacho.detalles_despacho.all %}<br><small>{{ asignacion.detalle.nombre_producto }} × {{ asignacion.cantidad }}</small>{% endfor %}
+                    </dd>
+                  </div>
+                {% endfor %}
+                {% if venta.cargo_despacho %}<div><dt>Cargo segundo despacho</dt><dd>${{ venta.cargo_despacho }}</dd></div>{% endif %}
+              {% endif %}
             </dl>
           </div>
         </section>
@@ -169,6 +181,7 @@
             <p><strong>Comprobante generado por SFI</strong>Conserva este documento como respaldo de tu compra.</p>
           </div>
           <div class="receipt-total">
+            {% if venta.cargo_despacho %}<span>Incluye ${{ venta.cargo_despacho }} por segundo despacho</span>{% endif %}
             <span>Total pagado</span>
             <strong class="money-value" data-clp="{{ venta.total_venta }}">${{ venta.total_venta }}</strong>
             <small>Pago realizado en CLP</small>

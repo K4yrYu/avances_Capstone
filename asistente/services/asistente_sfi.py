@@ -102,6 +102,8 @@ def _es_solicitud_directa_maestro(mensaje):
         'necesito alguien', 'busco alguien', 'que lo haga alguien',
         'algun maestro', 'alguna maestra', 'un maestro que me ayude',
         'una maestra que me ayude', 'profesional que me ayude',
+        'necesito maestros', 'necesito maestras', 'necesito profesionales',
+        'busco maestros', 'busco maestras', 'busco profesionales',
     ))
     accion_con_profesional = any(indicador in texto for indicador in (
         'necesito un ', 'necesito una ', 'busco un ', 'busco una ',
@@ -142,6 +144,38 @@ def _pide_listado_especialidad(mensaje):
         'cuales maestros', 'maestros disponibles', 'profesionales disponibles',
         'ver maestros', 'mostrar maestros',
     ))
+
+
+def _historial_autoriza_flujo_maestro(historial):
+    """Solo conserva el flujo si el cliente lo inició o aceptó expresamente."""
+    ofrecio_busqueda = False
+    for item in historial[-6:]:
+        contenido = str(item.get('content') or '')
+        if item.get('role') == 'assistant':
+            normalizado = _texto_normalizado(contenido)
+            menciona_profesional = (
+                'maestro' in normalizado or 'profesional' in normalizado
+            )
+            if menciona_profesional and (
+                'no encontre' in normalizado or 'encontre maestro' in normalizado
+                or 'encontre profesional' in normalizado
+            ):
+                return True
+            ofrecio_busqueda = (
+                ('buscar' in normalizado or 'busque' in normalizado)
+                and menciona_profesional
+            )
+            continue
+        if item.get('role') != 'user':
+            continue
+        normalizado = ' '.join(
+            re.sub(r'[^a-z0-9 ]+', ' ', _texto_normalizado(contenido)).split()
+        )
+        if _es_solicitud_directa_maestro(contenido) or _pide_listado_especialidad(contenido):
+            return True
+        if normalizado in ACEPTACIONES_MAESTRO and ofrecio_busqueda:
+            return True
+    return False
 
 
 def _contexto_maestro(historial):
@@ -228,20 +262,48 @@ def _completar_intencion_maestro(datos, mensaje, historial):
         'buscar por comuna', 'filtrar por comuna', 'elegir comuna',
     ))
     listado_especialidad = _pide_listado_especialidad(mensaje)
-    cambio_especialidad_contextual = bool(especialidad_mensaje and en_flujo_maestro)
+    flujo_autorizado = _historial_autoriza_flujo_maestro(historial)
+    acepto_oferta_actual = aceptacion and ofrecio_busqueda
+    contexto_autorizado = flujo_autorizado or acepto_oferta_actual
+    resultados_producto = []
+    if not solicitud_directa and not listado_especialidad:
+        resultados_producto = _buscar_productos(mensaje)
+    consulta_producto_evidente = bool(resultados_producto)
+    cambio_especialidad_contextual = bool(
+        especialidad_mensaje and en_flujo_maestro and contexto_autorizado
+        and not consulta_producto_evidente
+    )
 
-    if (
+    activar_busqueda_maestro = (
         solicitud_directa
         or listado_especialidad
-        or (aceptacion and ofrecio_busqueda)
-        or (pidio_comuna and comuna_mensaje)
-        or (pidio_especialidad and especialidad_mensaje)
-        or ((en_flujo_maestro or pidio_comuna) and (
+        or acepto_oferta_actual
+        or (contexto_autorizado and pidio_comuna and comuna_mensaje)
+        or (
+            contexto_autorizado and pidio_especialidad and especialidad_mensaje
+            and not consulta_producto_evidente
+        )
+        or (contexto_autorizado and (en_flujo_maestro or pidio_comuna) and (
             todas_las_comunas or otra_comuna or buscar_por_comuna
         ))
         or cambio_especialidad_contextual
-    ):
+    )
+    if activar_busqueda_maestro:
         datos['intencion'] = 'buscar_maestro'
+    elif datos.get('intencion') == 'buscar_maestro':
+        # Gemini puede confundir un producto con un oficio (pintura/pintor).
+        # Sin una petición expresa del cliente nunca se muestran maestros.
+        datos['especialidad_maestro'] = ''
+        datos['comuna_maestro'] = ''
+        if resultados_producto or _buscar_productos(mensaje):
+            datos['intencion'] = 'buscar_producto'
+            datos['consulta_producto'] = mensaje
+        else:
+            datos['intencion'] = 'orientacion_general'
+            datos['respuesta'] = (
+                'Puedo ayudarte a buscar productos o analizar tu proyecto. '
+                'Solo buscaré maestros cuando me lo pidas expresamente.'
+            )
 
     if datos.get('intencion') != 'buscar_maestro':
         return datos
@@ -253,7 +315,7 @@ def _completar_intencion_maestro(datos, mensaje, historial):
         aceptacion,
         pidio_comuna,
         pidio_especialidad,
-        en_flujo_maestro,
+        contexto_autorizado,
         todas_las_comunas,
         otra_comuna,
     ))
@@ -1050,19 +1112,100 @@ def _resolver_proyecto(datos):
     )
 
 
+COLORES_BUSQUEDA = {
+    'blanco': ('blanco', 'blanca', 'white'),
+    'negro': ('negro', 'negra', 'black'),
+    'gris': ('gris', 'gray', 'grey'),
+    'azul': ('azul', 'blue'),
+    'rojo': ('rojo', 'roja', 'red'),
+    'verde': ('verde', 'green'),
+    'amarillo': ('amarillo', 'amarilla', 'yellow'),
+    'beige': ('beige',),
+    'cafe': ('cafe', 'marron', 'brown'),
+    'naranjo': ('naranjo', 'naranja', 'orange'),
+    'transparente': ('transparente', 'incoloro', 'clear'),
+}
+
+FAMILIAS_ESTRICTAS_BUSQUEDA = {
+    'sanitario': ('sanitario', 'inodoro', 'excusado', 'wc'),
+    'piscina': ('piscina', 'estanque'),
+    'mazo': ('mazo',),
+    'combo': ('combo',),
+    'maceta': ('maceta',),
+    'atornillador': ('atornillador',),
+    'destornillador': ('destornillador',),
+    'broca': ('broca',),
+    'serrucho': ('serrucho',),
+    'disco': ('disco',),
+    'tina': ('tina',),
+    'perno': ('perno', 'bulon'),
+    'latex': ('latex',),
+    'oleo': ('oleo',),
+}
+
+
+def _filtros_explicitos_busqueda(consulta):
+    texto = f' {_texto_normalizado(consulta)} '
+    color_solicitado = ''
+    alias_color = ()
+    for color, alias in COLORES_BUSQUEDA.items():
+        if any(re.search(rf'\b{re.escape(item)}s?\b', texto) for item in alias):
+            color_solicitado = color
+            alias_color = alias
+            break
+
+    familia_solicitada = ''
+    alias_familia = ()
+    for familia, alias in FAMILIAS_ESTRICTAS_BUSQUEDA.items():
+        if any(re.search(rf'\b{re.escape(item)}s?\b', texto) for item in alias):
+            familia_solicitada = familia
+            alias_familia = alias
+            break
+    return color_solicitado, alias_color, familia_solicitada, alias_familia
+
+
+def _mensaje_busqueda_precisa(consulta, cantidad):
+    color, _, familia, _ = _filtros_explicitos_busqueda(consulta)
+    if color and any(termino in _texto_normalizado(consulta) for termino in (
+        'pintura', 'latex', 'esmalte',
+    )):
+        sustantivo = 'pintura disponible' if cantidad == 1 else 'pinturas disponibles'
+        return f'Encontré {cantidad} {sustantivo} en color {color}.'
+    if familia == 'sanitario':
+        sustantivo = 'sanitario disponible' if cantidad == 1 else 'sanitarios disponibles'
+        return f'Encontré {cantidad} {sustantivo} que coincide con tu búsqueda.'
+    if familia == 'piscina':
+        sustantivo = 'pintura formulada' if cantidad == 1 else 'pinturas formuladas'
+        return f'Encontré {cantidad} {sustantivo} para piscina.'
+    return f'Encontré {cantidad} producto(s) relacionados con “{consulta}”.'
+
+
 def _buscar_productos(consulta, limite=6):
     palabras_omitidas = {
         'para', 'con', 'una', 'uno', 'unos', 'unas', 'por', 'del', 'las', 'los',
         'que', 'quiero', 'necesito', 'busco', 'producto', 'productos',
+        'muestra', 'muestrame', 'muestreme', 'mostrar', 'ver', 'dame',
         'algo', 'como', 'mas', 'caro', 'cara', 'caros', 'caras', 'barato', 'barata',
         'baratos', 'baratas', 'economico', 'economica', 'precio', 'precios',
         'cuanto', 'cuantos', 'cuesta', 'cuestan', 'vale', 'valen', 'valor',
         'valores', 'tiene', 'tienen', 'sale', 'salen', 'costo', 'costos',
     }
-    palabras_originales = [
-        palabra for palabra in re.findall(r'[\wáéíóúñü-]+', _texto_normalizado(consulta))
-        if len(palabra) >= 3 and palabra not in palabras_omitidas
-    ][:8]
+    singulares_busqueda = {
+        'pinturas': 'pintura',
+        'piscinas': 'piscina',
+        'sanitarios': 'sanitario',
+        'inodoros': 'inodoro',
+        'taladros': 'taladro',
+        'sierras': 'sierra',
+        'martillos': 'martillo',
+    }
+    palabras_originales = []
+    for palabra in re.findall(r'[\wáéíóúñü-]+', _texto_normalizado(consulta)):
+        if len(palabra) < 3 or palabra in palabras_omitidas:
+            continue
+        palabras_originales.append(singulares_busqueda.get(palabra, palabra))
+        if len(palabras_originales) == 8:
+            break
     if not palabras_originales:
         return []
 
@@ -1070,6 +1213,12 @@ def _buscar_productos(consulta, limite=6):
     palabras_expandidas, sinonimos_agregados = expandir_consulta(palabras_originales)
 
     consulta_normalizada = _texto_normalizado(consulta)
+    (
+        color_solicitado,
+        alias_color,
+        familia_solicitada,
+        alias_familia,
+    ) = _filtros_explicitos_busqueda(consulta)
 
     def contiene(texto, palabra):
         # "metro" es una medida coloquial para cinta métrica, pero no debe
@@ -1089,8 +1238,24 @@ def _buscar_productos(consulta, limite=6):
                 producto.descripcion,
                 producto.uso_recomendado,
                 str(producto.especificaciones or {}),
+                producto.ambiente_uso,
+                str(producto.superficies_compatibles or []),
+                producto.tipo_pintura,
+                producto.terminacion,
+                str(producto.propiedades_pintura or []),
             ])
         )
+        texto_identidad = f'{nombre} {identificacion}'
+        texto_filtrado = f'{texto_identidad} {detalle}'
+        if color_solicitado and not any(
+            contiene(texto_filtrado, alias) for alias in alias_color
+        ):
+            continue
+        texto_familia = texto_filtrado if familia_solicitada == 'piscina' else texto_identidad
+        if familia_solicitada and not any(
+            contiene(texto_familia, alias) for alias in alias_familia
+        ):
+            continue
         puntaje = 8 if consulta_normalizada in nombre else 0
         texto_completo = f'{nombre} {identificacion} {detalle}'
 
@@ -1497,9 +1662,28 @@ def resolver_interpretacion(datos):
                 'sugerencias': ['Busco un taladro', 'Necesito pintura blanca', 'Muéstrame maderas'],
             }
         if not productos:
+            color_solicitado, _, familia_solicitada, _ = _filtros_explicitos_busqueda(
+                consulta
+            )
+            if color_solicitado and any(
+                termino in _texto_normalizado(consulta)
+                for termino in ('pintura', 'latex', 'esmalte')
+            ):
+                mensaje_sin_resultados = (
+                    f'No encontré pinturas activas en color {color_solicitado}. '
+                    'Puedo mostrarte otros colores disponibles.'
+                )
+            elif familia_solicitada:
+                mensaje_sin_resultados = (
+                    f'No encontré {familia_solicitada}s activos que coincidan con tu búsqueda.'
+                )
+            else:
+                mensaje_sin_resultados = (
+                    f'No encontré productos activos relacionados con “{consulta}”.'
+                )
             return {
                 'tipo': 'sin_resultados',
-                'mensaje': f'No encontré productos activos relacionados con “{consulta}”.',
+                'mensaje': mensaje_sin_resultados,
                 'productos': [],
                 'sugerencias': ['Ver pinturas', 'Buscar herramientas', 'Buscar materiales'],
             }
@@ -1523,7 +1707,7 @@ def resolver_interpretacion(datos):
                     f'{_formatear_clp(diferencia)}.'
                 )
         else:
-            mensaje = f'Encontré {len(productos)} producto(s) relacionados con “{consulta}”.'
+            mensaje = _mensaje_busqueda_precisa(consulta, len(productos))
         orden_producto = datos.get('orden_producto')
         if orden_producto == 'precio_desc' and productos:
             productos = [max(productos, key=lambda producto: producto.precio)]

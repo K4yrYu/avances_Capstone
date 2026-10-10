@@ -178,6 +178,13 @@ class LoginAPIView(APIView):
                 require_https=request.is_secure(),
             ):
                 next_url = '/'
+            if next_url == '/':
+                if user.rol == Usuario.Rol.REPARTIDOR:
+                    next_url = reverse('vista_repartidor_despachos')
+                elif user.rol == Usuario.Rol.RETIROS:
+                    next_url = reverse('vista_retiros')
+                elif user.rol == Usuario.Rol.ADMINISTRADOR or user.is_staff:
+                    next_url = reverse('panel_administracion')
             return Response({
                 'status': 'success',
                 'message': 'Inicio de sesión exitoso',
@@ -190,7 +197,7 @@ class LoginAPIView(APIView):
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def api_lista_usuarios(request):
-    usuarios = Usuario.objects.all()
+    usuarios = Usuario.objects.select_related('perfil_maestro').all()
     serializer = UsuarioListaSerializer(usuarios, many=True)
     return Response(serializer.data)
 

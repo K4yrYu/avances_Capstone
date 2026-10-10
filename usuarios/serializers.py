@@ -106,6 +106,7 @@ class RegistroUsuarioSerializer(PasswordUsuarioMixin, serializers.ModelSerialize
         validated_data['is_active'] = False
         validated_data['is_staff'] = False
         validated_data['is_superuser'] = False
+        validated_data['rol'] = Usuario.Rol.CLIENTE
         validated_data['email_confirmado'] = False
         return Usuario.objects.create_user(**validated_data)
 
@@ -114,13 +115,13 @@ class AdminUsuarioSerializer(PasswordUsuarioMixin, serializers.ModelSerializer):
     rut = serializers.CharField(max_length=12, validators=[])
     password = serializers.CharField(write_only=True, required=False, style={'input_type': 'password'})
     password2 = serializers.CharField(write_only=True, required=False, style={'input_type': 'password'})
-    is_staff = serializers.BooleanField(required=False)
+    is_staff = serializers.BooleanField(required=False, write_only=True)
 
     class Meta:
         model = Usuario
         fields = [
             'rut', 'username', 'first_name', 'last_name',
-            'email', 'telefono', 'is_staff', 'password', 'password2'
+            'email', 'telefono', 'rol', 'is_staff', 'password', 'password2'
         ]
         extra_kwargs = {
             'first_name': {'required': True},
@@ -130,11 +131,22 @@ class AdminUsuarioSerializer(PasswordUsuarioMixin, serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop('password2', None)
+        rol = validated_data.get('rol')
+        if not rol and 'is_staff' in validated_data:
+            rol = Usuario.Rol.ADMINISTRADOR if validated_data['is_staff'] else Usuario.Rol.CLIENTE
+        validated_data['rol'] = rol or Usuario.Rol.CLIENTE
+        validated_data['is_staff'] = validated_data['rol'] == Usuario.Rol.ADMINISTRADOR
         validated_data.setdefault('is_active', True)
         validated_data.setdefault('email_confirmado', True)
         return Usuario.objects.create_user(**validated_data)
 
     def update(self, instance, validated_data):
+        rol = validated_data.get('rol')
+        if not rol and 'is_staff' in validated_data:
+            rol = Usuario.Rol.ADMINISTRADOR if validated_data['is_staff'] else Usuario.Rol.CLIENTE
+        if rol:
+            validated_data['rol'] = rol
+            validated_data['is_staff'] = rol == Usuario.Rol.ADMINISTRADOR
         return self._update_usuario(instance, validated_data)
 
 
@@ -151,9 +163,16 @@ class LoginSerializer(serializers.Serializer):
 
 
 class UsuarioListaSerializer(serializers.ModelSerializer):
+    rol = serializers.SerializerMethodField()
+
+    def get_rol(self, obj):
+        if obj.rol == Usuario.Rol.CLIENTE and hasattr(obj, 'perfil_maestro'):
+            return 'maestro'
+        return obj.rol
+
     class Meta:
         model = Usuario
         fields = [
             'id', 'rut', 'username', 'first_name', 'last_name',
-            'email', 'telefono', 'is_staff', 'is_active', 'email_confirmado'
+            'email', 'telefono', 'rol', 'is_staff', 'is_active', 'email_confirmado'
         ]

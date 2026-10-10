@@ -10,6 +10,7 @@
     const errorBox = document.getElementById("chat-error");
     const submit = document.getElementById("send-assistant-message");
     const clear = document.getElementById("clear-chat");
+    const readConversation = document.getElementById("read-conversation");
     const security = window.FerremasSecurity;
     if (!root || !form || !input || !messages || !security) return;
 
@@ -33,6 +34,9 @@
     let conversationEntries = [];
     let calculations = new Map();
     let cartItems = new Map();
+    const speechSupported = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+    let speechGeneration = 0;
+    let activeSpeechButton = null;
 
     function saveConversation() {
       try {
@@ -84,6 +88,112 @@
       messages.scrollTo({top: messages.scrollHeight, behavior: "smooth"});
     }
 
+    function setSpeechButtonState(button, active) {
+      if (!button) return;
+      const icon = button.querySelector("i");
+      const label = button.querySelector("span");
+      button.classList.toggle("speaking", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      const description = active
+        ? "Detener lectura"
+        : button.id === "read-conversation"
+          ? "Leer conversación completa"
+          : "Leer mensaje de SFI";
+      button.setAttribute("aria-label", description);
+      button.title = description;
+      if (icon) {
+        icon.className = active ? "fa-solid fa-stop" : "fa-solid fa-volume-high";
+      }
+      if (label && button.id === "read-conversation") {
+        label.textContent = active ? "Detener lectura" : "Leer conversación";
+      }
+    }
+
+    function stopSpeech() {
+      speechGeneration += 1;
+      window.speechSynthesis?.cancel();
+      setSpeechButtonState(activeSpeechButton, false);
+      activeSpeechButton = null;
+    }
+
+    function speechChunks(text) {
+      const clean = String(text || "").replace(/\s+/g, " ").trim();
+      if (!clean) return [];
+      const sentences = clean.match(/[^.!?]+[.!?]?/g) || [clean];
+      const chunks = [];
+      let current = "";
+      sentences.forEach(sentence => {
+        const next = `${current} ${sentence.trim()}`.trim();
+        if (current && next.length > 700) {
+          chunks.push(current);
+          current = sentence.trim();
+        } else {
+          current = next;
+        }
+      });
+      if (current) chunks.push(current);
+      return chunks;
+    }
+
+    function preferredSpanishVoice() {
+      const voices = window.speechSynthesis?.getVoices?.() || [];
+      return voices.find(voice => voice.lang.toLowerCase() === "es-cl")
+        || voices.find(voice => voice.lang.toLowerCase().startsWith("es"))
+        || null;
+    }
+
+    function startSpeech(texts, button) {
+      if (!speechSupported) return;
+      if (activeSpeechButton === button) {
+        stopSpeech();
+        return;
+      }
+      stopSpeech();
+      const queue = texts.flatMap(speechChunks);
+      if (!queue.length) return;
+
+      const generation = speechGeneration;
+      activeSpeechButton = button;
+      setSpeechButtonState(button, true);
+      let index = 0;
+
+      const speakNext = () => {
+        if (generation !== speechGeneration) return;
+        if (index >= queue.length) {
+          setSpeechButtonState(activeSpeechButton, false);
+          activeSpeechButton = null;
+          return;
+        }
+        const utterance = new SpeechSynthesisUtterance(queue[index]);
+        index += 1;
+        utterance.lang = "es-CL";
+        utterance.rate = 1;
+        const voice = preferredSpanishVoice();
+        if (voice) utterance.voice = voice;
+        utterance.addEventListener("end", speakNext, {once: true});
+        utterance.addEventListener("error", () => {
+          if (generation !== speechGeneration) return;
+          setSpeechButtonState(activeSpeechButton, false);
+          activeSpeechButton = null;
+        }, {once: true});
+        window.speechSynthesis.speak(utterance);
+      };
+      speakNext();
+    }
+
+    function attachMessageSpeechButton(article, paragraph) {
+      if (!speechSupported || !paragraph?.textContent.trim()) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "message-speech-button";
+      button.setAttribute("aria-label", "Leer mensaje de SFI");
+      button.setAttribute("aria-pressed", "false");
+      button.title = "Leer mensaje de SFI";
+      button.innerHTML = '<i class="fa-solid fa-volume-high" aria-hidden="true"></i>';
+      button.addEventListener("click", () => startSpeech([paragraph.textContent], button));
+      article.querySelector(".message-content")?.appendChild(button);
+    }
+
     function addMessage(role, text) {
       const article = document.createElement("article");
       article.className = `chat-message ${role === "user" ? "user-message" : "assistant-message"}`;
@@ -98,6 +208,7 @@
       paragraph.textContent = text;
       content.appendChild(paragraph);
       article.append(avatar, content);
+      if (role === "assistant") attachMessageSpeechButton(article, paragraph);
       messages.appendChild(article);
       scrollToLatest();
       return article;
@@ -289,7 +400,24 @@
       }
     });
 
+    if (!speechSupported && readConversation) readConversation.hidden = true;
+    messages.querySelectorAll(".assistant-message").forEach(article => {
+      attachMessageSpeechButton(article, article.querySelector(".message-content p"));
+    });
+    readConversation?.addEventListener("click", () => {
+      const conversation = [...messages.querySelectorAll(".chat-message")]
+        .map(article => {
+          const text = article.querySelector(".message-content p")?.textContent.trim();
+          if (!text) return "";
+          const speaker = article.classList.contains("user-message") ? "Tú" : "Asistente SFI";
+          return `${speaker}: ${text}`;
+        })
+        .filter(Boolean);
+      startSpeech(conversation, readConversation);
+    });
+
     clear.addEventListener("click", () => {
+      stopSpeech();
       history = [];
       conversationEntries = [];
       sessionStorage.removeItem(conversationStorageKey);
@@ -338,5 +466,6 @@
     }
 
     restoreConversation();
+    window.addEventListener("pagehide", stopSpeech);
   });
 })();

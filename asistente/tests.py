@@ -53,6 +53,8 @@ class AsistenteSfiTests(TestCase):
 
         self.assertEqual(pagina.status_code, 200)
         self.assertContains(pagina, 'id="assistant-form"')
+        self.assertContains(pagina, 'id="read-conversation"')
+        self.assertContains(pagina, 'aria-label="Leer conversación completa"')
         self.assertContains(pagina, 'id="paint-workbench"')
         self.assertContains(pagina, 'id="attach-paint-photo"')
         self.assertNotContains(pagina, 'id="catalog-paint-colors"')
@@ -953,6 +955,70 @@ class AsistenteSfiTests(TestCase):
         self.assertNotEqual(resultado['tipo'], 'maestros')
         self.assertFalse(resultado.get('maestros', []))
 
+    def test_mencion_previa_de_maestros_no_convierte_producto_en_profesional(self):
+        pintura_roja = Producto.objects.create(
+            nombre='Pintura látex roja interior',
+            descripcion='Pintura roja para muros interiores',
+            precio=22990,
+            stock=6,
+            categoria='Pinturas',
+            marca='SFI',
+            color='Rojo',
+            activo=True,
+        )
+        historial = [
+            {'role': 'user', 'content': 'Hola, necesito una ducha'},
+            {
+                'role': 'assistant',
+                'content': (
+                    'Encontré productos para la ducha. Para las conexiones conviene '
+                    'un gasfíter y para revestimientos un maestro ceramista.'
+                ),
+            },
+        ]
+
+        resultado = self.consultar_maestro(
+            'Necesito pintura roja',
+            historial,
+            intencion='buscar_maestro',
+            respuesta='Puedo buscar profesionales de Pintura.',
+            especialidad_maestro='Pintura',
+        )
+
+        self.assertEqual(resultado['tipo'], 'productos')
+        self.assertFalse(resultado.get('maestros', []))
+        self.assertIn(pintura_roja.id, [item['id'] for item in resultado['productos']])
+
+    def test_consulta_de_producto_cierra_un_flujo_anterior_de_maestros(self):
+        pintura_roja = Producto.objects.create(
+            nombre='Esmalte rojo para metal',
+            descripcion='Pintura roja de terminación brillante',
+            precio=18990,
+            stock=4,
+            categoria='Pinturas',
+            marca='SFI',
+            color='Rojo',
+            activo=True,
+        )
+        historial = [
+            {'role': 'user', 'content': 'Necesito un maestro carpintero en Quilicura'},
+            {
+                'role': 'assistant',
+                'content': 'No encontré maestros de Carpintería en Quilicura.',
+            },
+        ]
+
+        resultado = self.consultar_maestro(
+            'Necesito pintura roja',
+            historial,
+            intencion='buscar_maestro',
+            especialidad_maestro='Pintura',
+        )
+
+        self.assertEqual(resultado['tipo'], 'productos')
+        self.assertFalse(resultado.get('maestros', []))
+        self.assertIn(pintura_roja.id, [item['id'] for item in resultado['productos']])
+
     def test_listado_de_especialidad_funciona_sin_comuna(self):
         resultado = self.consultar_maestro(
             '¿Qué maestros de pintura están disponibles?'
@@ -1278,11 +1344,116 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
         ids = [p.id for p in resultados]
         self.assertIn(self.sanitario.id, ids)
 
-    def test_buscar_combo_encuentra_martillo(self):
+    def test_buscar_sanitario_no_mezcla_kit_de_lavamanos(self):
+        from .services.asistente_sfi import _buscar_productos
+        kit_lavamanos = Producto.objects.create(
+            nombre='Kit conexión lavamanos con sifón y desagüe',
+            descripcion='Kit para completar la instalación de un lavamanos.',
+            precio=15990,
+            stock=5,
+            categoria='Gasfitería',
+            marca='SFI',
+            activo=True,
+        )
+
+        resultados = _buscar_productos(
+            'Sanitario dos piezas doble descarga con kit de instalación'
+        )
+        ids = [producto.id for producto in resultados]
+
+        self.assertIn(self.sanitario.id, ids)
+        self.assertNotIn(kit_lavamanos.id, ids)
+
+    def test_buscar_pintura_roja_excluye_otros_colores_y_aclara_respuesta(self):
+        from .services.asistente_sfi import _buscar_productos
+        pintura_roja = Producto.objects.create(
+            nombre='Látex interior rojo colonial',
+            descripcion='Pintura para muros interiores.',
+            precio=22990,
+            stock=5,
+            categoria='Pinturas',
+            marca='SFI',
+            color='Rojo Colonial',
+            activo=True,
+        )
+        pintura_blanca = Producto.objects.create(
+            nombre='Látex interior blanco invierno',
+            descripcion='Pintura para muros interiores.',
+            precio=21990,
+            stock=5,
+            categoria='Pinturas',
+            marca='SFI',
+            color='Blanco Invierno',
+            activo=True,
+        )
+
+        resultados = _buscar_productos('quiero pintura roja')
+        ids = [producto.id for producto in resultados]
+        respuesta = resolver_interpretacion({
+            'intencion': 'buscar_producto',
+            'consulta_producto': 'pintura roja',
+            'presupuesto': 0,
+        })
+
+        self.assertIn(pintura_roja.id, ids)
+        self.assertNotIn(pintura_blanca.id, ids)
+        self.assertIn('pinturas disponibles en color rojo', respuesta['mensaje'])
+
+    def test_buscar_pinturas_para_piscina_excluye_pinturas_genericas(self):
+        pintura_piscina = Producto.objects.create(
+            nombre='Pintura para piscina azul',
+            descripcion='Revestimiento de caucho clorado para piscinas.',
+            precio=44990,
+            stock=5,
+            categoria='Pinturas',
+            marca='SFI',
+            color='Azul piscina',
+            ambiente_uso='especial',
+            superficies_compatibles=['piscina_estanque'],
+            tipo_pintura='caucho_clorado',
+            activo=True,
+        )
+        pintura_interior = Producto.objects.create(
+            nombre='Látex blanco interior',
+            descripcion='Pintura para dormitorios y salas de estar.',
+            precio=18990,
+            stock=8,
+            categoria='Pinturas',
+            marca='SFI',
+            color='Blanco',
+            ambiente_uso='interior',
+            superficies_compatibles=['hormigon', 'yeso_carton'],
+            tipo_pintura='latex',
+            activo=True,
+        )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'buscar_producto',
+            'consulta_producto': 'muéstrame las pinturas para piscinas',
+            'presupuesto': 0,
+        })
+        ids = [producto['id'] for producto in resultado['productos']]
+
+        self.assertIn(pintura_piscina.id, ids)
+        self.assertNotIn(pintura_interior.id, ids)
+        self.assertIn('para piscina', resultado['mensaje'])
+
+    def test_buscar_combo_no_sustituye_por_martillo_carpintero(self):
         from .services.asistente_sfi import _buscar_productos
         resultados = _buscar_productos('combo para clavar')
         ids = [p.id for p in resultados]
-        self.assertIn(self.martillo.id, ids)
+        self.assertNotIn(self.martillo.id, ids)
+
+    def test_buscar_mazo_no_inventa_un_producto_relacionado(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'buscar_producto',
+            'consulta_producto': 'mazo',
+            'presupuesto': 0,
+        })
+
+        self.assertEqual(resultado['tipo'], 'sin_resultados')
+        self.assertFalse(resultado['productos'])
+        self.assertIn('No encontré mazos activos', resultado['mensaje'])
 
     def test_buscar_bulon_encuentra_perno(self):
         from .services.asistente_sfi import _buscar_productos
@@ -1290,11 +1461,11 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
         ids = [p.id for p in resultados]
         self.assertIn(self.perno.id, ids)
 
-    def test_buscar_serrucho_encuentra_sierra(self):
+    def test_buscar_serrucho_no_sustituye_por_sierra_circular(self):
         from .services.asistente_sfi import _buscar_productos
         resultados = _buscar_productos('serrucho')
         ids = [p.id for p in resultados]
-        self.assertIn(self.sierra.id, ids)
+        self.assertNotIn(self.sierra.id, ids)
 
     def test_buscar_madera_encuentra_pino(self):
         from .services.asistente_sfi import _buscar_productos

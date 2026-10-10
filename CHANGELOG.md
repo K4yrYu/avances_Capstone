@@ -19,6 +19,40 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ## [Sin publicar]
 
+### Operaciones, despachos y roles internos - 9 de octubre de 2026 (UTC-03:00)
+
+#### Despachos programados
+
+- Se implementó la programación de uno o dos despachos por compra, con fechas independientes, cupos diarios, cierres de fecha y cargo configurable para el segundo despacho.
+- El cliente puede asignar los productos de cada despacho antes de pagar; la distribución, el cargo y la capacidad se validan nuevamente en el servidor antes de iniciar Webpay.
+- Las direcciones de entrega se registran de forma estructurada con región, comuna, calle, número y referencia.
+- Se incorporaron resúmenes de ambos despachos en el carrito, comprobante y compras del cliente.
+
+#### Operación de entregas
+
+- Administración permite configurar cupos y fechas, revisar las órdenes y consultar los datos de contacto y productos de cada entrega.
+- La confirmación del estado se centralizó en el nuevo Panel de reparto, disponible para repartidores y administradores.
+- El Panel de reparto prioriza despachos atrasados, mantiene visibles los vigentes y compacta las entregas completadas.
+- Se agregaron filtros, agrupación por fecha, contacto directo con el comprador y cambios controlados de estado: programado, en ruta y entregado.
+- Se creó una vista separada para encargados de retiros, con validación de RUT al entregar pedidos en tienda.
+
+#### Roles y permisos
+
+- Se formalizaron los roles Cliente, Repartidor, Encargado de retiros y Administrador.
+- Los administradores conservan acceso total a las operaciones; repartidores y encargados solo acceden a sus paneles operativos.
+- Los perfiles profesionales se identifican como Maestro en la gestión administrativa, sin perder la capacidad de compra propia de una cuenta de cliente.
+
+#### Asistente SFI
+
+- Se mejoró la interpretación de búsquedas y recomendaciones mediante el catálogo real, priorizando productos disponibles y evitando recomendar artículos que no existen.
+- Se ajustaron consultas por tipo de producto, color, uso y contexto de proyecto, además de la presentación de sugerencias de maestros solo cuando el cliente los solicita.
+- Se añadieron controles para escuchar cada respuesta o la conversación completa desde la interfaz del asistente.
+
+#### Base de datos y verificación
+
+- Se agregaron migraciones para la configuración de despachos, fechas, entregas separadas y roles de usuario.
+- Se ejecutaron `python manage.py check`, pruebas de `asistente`, `usuarios` y `carro_compras` antes de la entrega.
+
 ### Verificación documental y directorio definitivo de maestros - 29 de agosto de 2026 (UTC-04:00)
 
 #### Documentación y aprobación

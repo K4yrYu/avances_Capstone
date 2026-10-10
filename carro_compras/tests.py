@@ -1,14 +1,23 @@
 from unittest.mock import Mock, patch
 from decimal import Decimal
+from datetime import timedelta
 
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from django.db.models.deletion import ProtectedError
 from transbank.common import request_service as sdk_request_service
 
 from productos.models import Producto
 from usuarios.models import Usuario
-from .models import Detalle, Venta
+from .models import (
+    ConfiguracionDespacho,
+    DespachoVenta,
+    Detalle,
+    DetalleDespacho,
+    FechaDespacho,
+    Venta,
+)
 from .services.transbank_tls import cliente_http_transbank
 from .views import _webpay_transaction
 from movimientos.models import MovimientoInventario
@@ -570,3 +579,339 @@ class SeguridadWebpayTests(TestCase):
 
         self.assertTrue(Usuario.objects.filter(pk=self.usuario.pk).exists())
         self.assertTrue(Venta.objects.filter(pk=self.venta.pk).exists())
+
+
+@override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
+class ProgramacionDespachosTests(TestCase):
+    def setUp(self):
+        self.usuario = Usuario.objects.create_user(
+            rut='12345678-5', username='cliente_despacho',
+            email='despacho@example.com', telefono='+56912345678',
+            password='Ferremas!2026Clave',
+        )
+        self.admin = Usuario.objects.create_user(
+            rut='11111111-1', username='admin_despacho',
+            email='admin-despacho@example.com', telefono='+56911111111',
+            password='Ferremas!2026Clave', is_staff=True,
+        )
+        self.producto = Producto.objects.create(
+            nombre='Cemento de prueba', descripcion='Producto para despacho',
+            precio=10000, imagen='productos/cemento.webp', stock=20,
+            categoria='Construcción', activo=True,
+        )
+        self.venta = Venta.objects.create(id_usuario=self.usuario, total_venta=20000)
+        self.detalle = Detalle.objects.create(
+            id_venta=self.venta,
+            producto=self.producto,
+            cantidad_producto=2,
+        )
+        self.configuracion = ConfiguracionDespacho.cargar()
+        self.configuracion.cargo_segundo_despacho = 6500
+        self.configuracion.capacidad_diaria = 2
+        self.configuracion.dias_anticipacion_minima = 1
+        self.configuracion.dias_horizonte = 30
+        self.configuracion.save()
+        self.fecha_1 = timezone.localdate() + timedelta(days=2)
+        self.fecha_2 = timezone.localdate() + timedelta(days=3)
+        self.client.force_login(self.usuario)
+
+    def _iniciar_despacho(self, cantidad=1, fecha_2=None):
+        tx = Mock()
+        tx.create.return_value = {
+            'token': 'token-despacho-seguro',
+            'url': 'https://webpay3gint.transbank.cl/webpayserver/initTransaction',
+        }
+        datos = {
+            'tipo_entrega': 'despacho',
+            'region_despacho': 'RM',
+            'comuna_despacho': 'Santiago',
+            'calle_despacho': 'Avenida Siempre Viva',
+            'numero_despacho': '742',
+            'referencia_despacho': 'Casa de prueba',
+            'cantidad_despachos': cantidad,
+            'fecha_despacho_1': self.fecha_1.isoformat(),
+        }
+        if cantidad == 2:
+            datos.update({
+                'fecha_despacho_2': (fecha_2 or self.fecha_2).isoformat(),
+                f'detalle_{self.detalle.id}_despacho_1': 1,
+            })
+        with patch('carro_compras.views._webpay_transaction', return_value=tx):
+            respuesta = self.client.post(
+                reverse('iniciar_pago_webpay'),
+                datos,
+                HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+                HTTP_ACCEPT='application/json',
+            )
+        return respuesta, tx
+
+    def test_un_despacho_reserva_fecha_sin_cargo(self):
+        respuesta, tx = self._iniciar_despacho()
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.venta.refresh_from_db()
+        despacho = self.venta.despachos.get()
+        self.assertEqual(despacho.fecha_programada, self.fecha_1)
+        self.assertEqual(despacho.cargo, 0)
+        self.assertEqual(self.venta.webpay_amount, 20000)
+        self.assertEqual(tx.create.call_args.kwargs['amount'], 20000)
+
+    def test_dos_despachos_cobran_cargo_y_distribuyen_cantidades(self):
+        respuesta, tx = self._iniciar_despacho(cantidad=2)
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.venta.refresh_from_db()
+        despachos = list(self.venta.despachos.order_by('numero'))
+        self.assertEqual(len(despachos), 2)
+        self.assertEqual(self.venta.cargo_despacho, 6500)
+        self.assertEqual(self.venta.webpay_amount, 26500)
+        self.assertEqual(tx.create.call_args.kwargs['amount'], 26500)
+        self.assertEqual(
+            list(DetalleDespacho.objects.filter(despacho__in=despachos).values_list('cantidad', flat=True)),
+            [1, 1],
+        )
+
+    def test_webpay_confirma_total_con_cargo_y_programa_ambos_despachos(self):
+        respuesta, _ = self._iniciar_despacho(cantidad=2)
+        self.assertEqual(respuesta.status_code, 200)
+        self.venta.refresh_from_db()
+        tx = Mock()
+        tx.commit.return_value = {
+            'status': 'AUTHORIZED',
+            'response_code': 0,
+            'buy_order': self.venta.webpay_buy_order,
+            'session_id': self.venta.webpay_session_id,
+            'amount': self.venta.webpay_amount,
+            'card_detail': {'card_number': '1234'},
+        }
+
+        with patch('carro_compras.views._webpay_transaction', return_value=tx):
+            confirmacion = self.client.post(
+                reverse('respuesta_pago_webpay'),
+                {'token_ws': 'token-despacho-seguro'},
+            )
+
+        self.venta.refresh_from_db()
+        self.producto.refresh_from_db()
+        self.assertEqual(confirmacion.status_code, 200)
+        self.assertEqual(self.venta.estado_venta, 'pagado')
+        self.assertEqual(self.venta.total_venta, 26500)
+        self.assertEqual(self.producto.stock, 18)
+        self.assertEqual(
+            set(self.venta.despachos.values_list('estado', flat=True)),
+            {DespachoVenta.Estado.PROGRAMADO},
+        )
+
+    def test_dos_despachos_rechazan_la_misma_fecha(self):
+        respuesta, tx = self._iniciar_despacho(cantidad=2, fecha_2=self.fecha_1)
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn('fechas diferentes', respuesta.json()['error'])
+        tx.create.assert_not_called()
+        self.assertFalse(self.venta.despachos.exists())
+
+    def test_despacho_rechaza_comuna_que_no_pertenece_a_region(self):
+        respuesta = self.client.post(
+            reverse('iniciar_pago_webpay'),
+            {
+                'tipo_entrega': 'despacho',
+                'region_despacho': 'RM',
+                'comuna_despacho': 'Valparaíso',
+                'calle_despacho': 'Avenida Principal',
+                'numero_despacho': '123',
+                'cantidad_despachos': 1,
+                'fecha_despacho_1': self.fecha_1.isoformat(),
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+            HTTP_ACCEPT='application/json',
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn('región y comuna válidas', respuesta.json()['error'])
+        self.assertFalse(self.venta.despachos.exists())
+
+    def test_fecha_cerrada_no_acepta_nuevos_despachos(self):
+        FechaDespacho.objects.create(fecha=self.fecha_1, cerrada=True, motivo='Feriado')
+
+        respuesta, tx = self._iniciar_despacho()
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn('cerrada', respuesta.json()['error'])
+        tx.create.assert_not_called()
+
+    def test_fecha_completa_no_acepta_mas_despachos(self):
+        self.configuracion.capacidad_diaria = 1
+        self.configuracion.save(update_fields=['capacidad_diaria'])
+        otra_venta = Venta.objects.create(
+            id_usuario=self.admin,
+            estado_venta='pagado',
+            tipo_entrega='despacho',
+            total_venta=10000,
+        )
+        DespachoVenta.objects.create(
+            venta=otra_venta,
+            numero=1,
+            fecha_programada=self.fecha_1,
+            direccion='Dirección ya programada',
+            estado=DespachoVenta.Estado.PROGRAMADO,
+        )
+
+        respuesta, tx = self._iniciar_despacho()
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn('no tiene cupos', respuesta.json()['error'])
+        tx.create.assert_not_called()
+
+    def test_admin_actualiza_cargo_y_capacidad(self):
+        self.client.force_login(self.admin)
+        respuesta = self.client.post(reverse('vista_despachos'), {
+            'accion': 'configuracion',
+            'cargo_segundo_despacho': 7990,
+            'capacidad_diaria': 12,
+            'dias_anticipacion_minima': 2,
+            'dias_horizonte': 45,
+            'despachos_activos': 'on',
+        })
+
+        self.assertEqual(respuesta.status_code, 302)
+        self.configuracion.refresh_from_db()
+        self.assertEqual(self.configuracion.cargo_segundo_despacho, 7990)
+        self.assertEqual(self.configuracion.capacidad_diaria, 12)
+
+    def test_carrito_y_panel_muestran_controles_de_programacion(self):
+        carrito = self.client.get(reverse('vista_carrito'))
+        self.assertContains(carrito, 'id="programacion-despacho"')
+        self.assertContains(carrito, 'name="cantidad_despachos"')
+        self.assertContains(carrito, 'id="distribucion-despachos"')
+        self.assertContains(carrito, 'id="modal-distribucion-despachos"')
+        self.assertContains(carrito, 'data-dispatch-product')
+
+        self.client.force_login(self.admin)
+        panel = self.client.get(reverse('vista_despachos'))
+        self.assertContains(panel, 'Configuración de despachos')
+        self.assertContains(panel, 'Cerrar para nuevos despachos')
+        self.assertContains(panel, 'Capacidad de despacho')
+
+    def test_disponibilidad_no_publica_fechas_cerradas_como_elegibles(self):
+        FechaDespacho.objects.create(fecha=self.fecha_1, cerrada=True, motivo='Sin transporte')
+
+        respuesta = self.client.get(reverse('api_disponibilidad_despachos'))
+
+        self.assertEqual(respuesta.status_code, 200)
+        fecha = next(
+            item for item in respuesta.json()['fechas']
+            if item['fecha'] == self.fecha_1.isoformat()
+        )
+        self.assertFalse(fecha['disponible'])
+        self.assertTrue(fecha['cerrada'])
+
+    def test_venta_se_completa_solo_al_entregar_ambos_despachos(self):
+        self.venta.estado_venta = 'pagado'
+        self.venta.tipo_entrega = 'despacho'
+        self.venta.save(update_fields=['estado_venta', 'tipo_entrega'])
+        primero = DespachoVenta.objects.create(
+            venta=self.venta, numero=1, fecha_programada=self.fecha_1,
+            direccion='Dirección', estado=DespachoVenta.Estado.PROGRAMADO,
+        )
+        segundo = DespachoVenta.objects.create(
+            venta=self.venta, numero=2, fecha_programada=self.fecha_2,
+            direccion='Dirección', estado=DespachoVenta.Estado.PROGRAMADO,
+        )
+        self.client.force_login(self.admin)
+
+        primera_respuesta = self.client.post(
+            reverse('api_confirmar_despacho', args=[primero.id])
+        )
+        self.venta.refresh_from_db()
+        self.assertEqual(primera_respuesta.status_code, 200)
+        self.assertEqual(self.venta.estado_entrega, 'pendiente')
+
+        segunda_respuesta = self.client.post(
+            reverse('api_confirmar_despacho', args=[segundo.id])
+        )
+        self.venta.refresh_from_db()
+        self.assertEqual(segunda_respuesta.status_code, 200)
+        self.assertEqual(self.venta.estado_entrega, 'completado')
+
+    def test_api_admin_ordena_despachos_por_fecha_e_incluye_contacto(self):
+        self.venta.estado_venta = 'pagado'
+        self.venta.tipo_entrega = 'despacho'
+        self.venta.save(update_fields=['estado_venta', 'tipo_entrega'])
+        segundo = DespachoVenta.objects.create(
+            venta=self.venta, numero=2, fecha_programada=self.fecha_2,
+            direccion='Calle Prueba 123, Santiago', estado=DespachoVenta.Estado.PROGRAMADO,
+        )
+        primero = DespachoVenta.objects.create(
+            venta=self.venta, numero=1, fecha_programada=self.fecha_1,
+            direccion='Calle Prueba 123, Santiago', estado=DespachoVenta.Estado.PROGRAMADO,
+        )
+        DetalleDespacho.objects.create(despacho=primero, detalle=self.detalle, cantidad=1)
+        DetalleDespacho.objects.create(despacho=segundo, detalle=self.detalle, cantidad=1)
+        self.client.force_login(self.admin)
+
+        respuesta = self.client.get(reverse('api_despachos'))
+
+        self.assertEqual(respuesta.status_code, 200)
+        datos = respuesta.json()
+        self.assertEqual([item['id'] for item in datos], [primero.id, segundo.id])
+        self.assertEqual(datos[0]['comprador_email'], self.usuario.email)
+        self.assertEqual(datos[0]['comprador_telefono'], self.usuario.telefono)
+        self.assertEqual(datos[0]['detalles'][0]['nombre_producto'], self.detalle.nombre_producto)
+
+    def test_vista_repartidor_requiere_rol_o_administrador(self):
+        respuesta_cliente = self.client.get(reverse('vista_repartidor_despachos'))
+        self.assertEqual(respuesta_cliente.status_code, 302)
+
+        self.usuario.rol = Usuario.Rol.REPARTIDOR
+        self.usuario.save(update_fields=['rol'])
+        respuesta_repartidor = self.client.get(reverse('vista_repartidor_despachos'))
+        self.assertEqual(respuesta_repartidor.status_code, 200)
+
+        self.client.force_login(self.admin)
+        respuesta_admin = self.client.get(reverse('vista_repartidor_despachos'))
+        self.assertEqual(respuesta_admin.status_code, 200)
+
+    def test_repartidor_actualiza_estado_en_orden(self):
+        self.venta.estado_venta = 'pagado'
+        self.venta.tipo_entrega = 'despacho'
+        self.venta.save(update_fields=['estado_venta', 'tipo_entrega'])
+        despacho = DespachoVenta.objects.create(
+            venta=self.venta, numero=1, fecha_programada=self.fecha_1,
+            direccion='Calle Prueba 123, Santiago', estado=DespachoVenta.Estado.PROGRAMADO,
+        )
+        self.usuario.rol = Usuario.Rol.REPARTIDOR
+        self.usuario.save(update_fields=['rol'])
+
+        salto_invalido = self.client.patch(
+            reverse('api_actualizar_estado_despacho', args=[despacho.id]),
+            {'estado': 'entregado'}, content_type='application/json',
+        )
+        self.assertEqual(salto_invalido.status_code, 400)
+
+        en_ruta = self.client.patch(
+            reverse('api_actualizar_estado_despacho', args=[despacho.id]),
+            {'estado': 'en_ruta'}, content_type='application/json',
+        )
+        self.assertEqual(en_ruta.status_code, 200)
+
+        entregado = self.client.patch(
+            reverse('api_actualizar_estado_despacho', args=[despacho.id]),
+            {'estado': 'entregado'}, content_type='application/json',
+        )
+        self.assertEqual(entregado.status_code, 200)
+        despacho.refresh_from_db()
+        self.venta.refresh_from_db()
+        self.assertEqual(despacho.estado, DespachoVenta.Estado.ENTREGADO)
+        self.assertEqual(self.venta.estado_entrega, 'completado')
+
+    def test_encargado_retiros_accede_a_retiros_pero_no_a_despachos(self):
+        self.usuario.rol = Usuario.Rol.RETIROS
+        self.usuario.save(update_fields=['rol'])
+
+        retiros = self.client.get(reverse('vista_retiros'))
+        despachos = self.client.get(reverse('vista_repartidor_despachos'))
+        api_retiros = self.client.get(reverse('api_retiros'))
+
+        self.assertEqual(retiros.status_code, 200)
+        self.assertEqual(api_retiros.status_code, 200)
+        self.assertEqual(despachos.status_code, 302)
