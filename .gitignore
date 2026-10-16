@@ -30,3 +30,9 @@ db.sqlite3
 
 # Logs
 *.log
+
+#carpeta de docs
+docs/
+
+# Evidencias de entrega generadas durante la operación
+media/despachos/

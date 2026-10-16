@@ -902,6 +902,7 @@ class ProgramacionDespachosTests(TestCase):
             {'estado': 'entregado'}, content_type='application/json',
         )
         self.assertEqual(entregado.status_code, 200)
+        self.assertIn('evidencia_entrega', entregado.json())
         despacho.refresh_from_db()
         self.venta.refresh_from_db()
         self.assertEqual(despacho.estado, DespachoVenta.Estado.ENTREGADO)

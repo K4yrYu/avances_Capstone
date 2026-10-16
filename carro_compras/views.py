@@ -1078,6 +1078,10 @@ def api_actualizar_estado_despacho(request, despacho_id):
         'mensaje': f'Despacho #{despacho.id} actualizado a {despacho.get_estado_display()}.',
         'estado': despacho.estado,
         'estado_display': despacho.get_estado_display(),
+        'evidencia_entrega': (
+            request.build_absolute_uri(despacho.evidencia_entrega.url)
+            if despacho.evidencia_entrega else None
+        ),
     })
 
 

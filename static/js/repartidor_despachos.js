@@ -77,7 +77,7 @@
         : ["programado", "preparacion"].includes(item.estado)
         ? `<button data-status-id="${Number(item.id)}" data-next-status="en_ruta"><i class="fa-solid fa-route"></i> Iniciar ruta</button>`
         : item.estado === "en_ruta"
-          ? `<section class="driver-evidence"><div><i class="fa-solid fa-camera"></i><span><b>Evidencia de entrega</b><small>Opcional · Imagen de hasta 5 MB.</small></span></div><label><i class="fa-solid fa-paperclip"></i><span>Adjuntar fotografía</span><input type="file" accept="image/*" data-evidence-id="${Number(item.id)}"></label></section><div class="driver-actions"><button class="complete" data-status-id="${Number(item.id)}" data-next-status="entregado"><i class="fa-solid fa-check"></i> Marcar entregado</button><button class="secondary" data-status-id="${Number(item.id)}" data-next-status="incidencia"><i class="fa-solid fa-triangle-exclamation"></i> Reportar incidencia</button></div>`
+          ? `<section class="driver-evidence"><div><i class="fa-solid fa-camera"></i><span><b>Evidencia de entrega</b><small>Opcional · Imagen de hasta 5 MB.</small></span></div><label><i class="fa-solid fa-paperclip"></i><span>Adjuntar fotografía</span><input type="file" accept="image/*" data-evidence-id="${Number(item.id)}"></label><div class="driver-evidence-preview" data-evidence-preview="${Number(item.id)}" hidden><img alt="Vista previa de la evidencia"><span><b data-evidence-name></b><small>Fotografía lista para enviar</small></span><button type="button" data-clear-evidence="${Number(item.id)}" aria-label="Quitar fotografía"><i class="fa-solid fa-xmark"></i></button></div></section><div class="driver-actions"><button class="complete" data-status-id="${Number(item.id)}" data-next-status="entregado"><i class="fa-solid fa-check"></i> Marcar entregado</button><button class="secondary" data-status-id="${Number(item.id)}" data-next-status="incidencia"><i class="fa-solid fa-triangle-exclamation"></i> Reportar incidencia</button></div>`
           : item.estado === "incidencia"
             ? `<button data-status-id="${Number(item.id)}" data-next-status="en_ruta"><i class="fa-solid fa-route"></i> Retomar ruta</button>`
           : '<span class="delivery-complete"><i class="fa-solid fa-circle-check"></i> Entrega completada</span>';
@@ -117,8 +117,45 @@
 
     function completedRows(items) {
       if (!items.length) return "";
-      const rows = items.map(item => `<li><span><b>Venta #${Number(item.venta_id)} · Despacho ${Number(item.numero)}</b><small>${escapeHtml(customerName(item))} · ${escapeHtml(formattedDate(item.fecha_programada))}</small></span><span>${escapeHtml(item.direccion_despacho || "Dirección no registrada")}</span></li>`).join("");
+      const rows = items.map(item => {
+        const evidence = item.evidencia_entrega
+          ? `<a class="completed-evidence" href="${escapeHtml(item.evidencia_entrega)}" target="_blank" rel="noopener"><img src="${escapeHtml(item.evidencia_entrega)}" alt="Evidencia de entrega del despacho ${Number(item.numero)}"><span><i class="fa-solid fa-camera"></i> Ver evidencia</span></a>`
+          : "";
+        return `<li><span><b>Venta #${Number(item.venta_id)} · Despacho ${Number(item.numero)}</b><small>${escapeHtml(customerName(item))} · ${escapeHtml(formattedDate(item.fecha_programada))}</small></span><span>${escapeHtml(item.direccion_despacho || "Dirección no registrada")}</span>${evidence}</li>`;
+      }).join("");
       return `<details class="completed-dispatches"><summary><span><i class="fa-solid fa-circle-check"></i> Entregas completadas</span><b>${items.length}</b><i class="fa-solid fa-chevron-down"></i></summary><p>Estas entregas ya fueron cerradas. Ábrelas solo si necesitas revisar su información.</p><ul>${rows}</ul></details>`;
+    }
+
+    function previewEvidence(input) {
+      const file = input.files && input.files[0];
+      const preview = document.querySelector(`[data-evidence-preview="${input.dataset.evidenceId}"]`);
+      if (!preview) return;
+      if (!file) {
+        preview.hidden = true;
+        preview.querySelector("img").removeAttribute("src");
+        return;
+      }
+      if (!file.type.startsWith("image/") || file.size > 5 * 1024 * 1024) {
+        input.value = "";
+        preview.hidden = true;
+        input.closest("label").querySelector("span").textContent = "Adjuntar fotografía";
+        notify("Selecciona una imagen de hasta 5 MB.", true);
+        return;
+      }
+      const reader = new FileReader();
+      reader.addEventListener("load", () => {
+        preview.querySelector("img").src = reader.result;
+        preview.querySelector("[data-evidence-name]").textContent = file.name;
+        preview.hidden = false;
+        input.closest("label").querySelector("span").textContent = "Cambiar fotografía";
+      });
+      reader.addEventListener("error", () => {
+        input.value = "";
+        preview.hidden = true;
+        input.closest("label").querySelector("span").textContent = "Adjuntar fotografía";
+        notify("No fue posible leer la fotografía seleccionada.", true);
+      });
+      reader.readAsDataURL(file);
     }
 
     function render() {
@@ -163,7 +200,10 @@
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || "No fue posible actualizar el despacho.");
         const item = dispatches.find(dispatch => Number(dispatch.id) === Number(button.dataset.statusId));
-        if (item) item.estado = data.estado;
+        if (item) {
+          item.estado = data.estado;
+          item.evidencia_entrega = data.evidencia_entrega || item.evidencia_entrega;
+        }
         updateSummary();
         renderAgenda();
         render();
@@ -230,10 +270,24 @@
       render();
     });
     list.addEventListener("click", event => {
+      const clearEvidence = event.target.closest("[data-clear-evidence]");
+      if (clearEvidence) {
+        const evidence = document.querySelector(`[data-evidence-id="${clearEvidence.dataset.clearEvidence}"]`);
+        if (evidence) {
+          evidence.value = "";
+          evidence.closest("label").querySelector("span").textContent = "Adjuntar fotografía";
+          previewEvidence(evidence);
+        }
+        return;
+      }
       const button = event.target.closest("[data-status-id]");
       if (button) updateStatus(button);
       const takeButton = event.target.closest("[data-take-id]");
       if (takeButton) takeDispatch(takeButton);
+    });
+    list.addEventListener("change", event => {
+      const evidence = event.target.closest("[data-evidence-id]");
+      if (evidence) previewEvidence(evidence);
     });
     load();
   });

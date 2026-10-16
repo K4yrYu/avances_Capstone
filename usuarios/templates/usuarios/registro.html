@@ -25,6 +25,12 @@
       </div>
       <form id="registro-form" class="account-form register-form" novalidate>
         {% csrf_token %}
+        <div class="register-loading" id="register-loading" role="status" aria-live="polite" aria-atomic="true" hidden>
+          <span class="register-loading-spinner" aria-hidden="true"><i class="fa-solid fa-user-check"></i></span>
+          <strong>Estamos creando tu cuenta</strong>
+          <p>Enviando el enlace de activaci&oacute;n a tu correo. Esto puede tardar unos segundos.</p>
+          <span class="register-loading-progress" aria-hidden="true"><span></span></span>
+        </div>
         <div class="account-fields-grid">
           <div class="account-field">
             <label for="first_name">Nombres</label>
@@ -81,5 +87,5 @@
 {% endblock %}
 {% block scripts %}
 <script src="{% static 'js/rut.js' %}?v=20261001-modulo11"></script>
-<script src="{% static 'js/registro.js' %}?v=20261001-rut"></script>
+<script src="{% static 'js/registro.js' %}?v=20261002-loading"></script>
 {% endblock %}

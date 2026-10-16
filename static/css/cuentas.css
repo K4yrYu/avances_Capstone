@@ -34,7 +34,21 @@
 .account-form-heading>span,.account-state-kicker { color:#2d8057; font-size:.66rem; font-weight:850; letter-spacing:.1em; text-transform:uppercase; }
 .account-form-heading h2 { margin:.4rem 0 .35rem; color:var(--sfi-navy-dark); font-size:1.8rem; font-weight:900; letter-spacing:-.04em; }
 .account-form-heading p { margin:0; color:var(--sfi-muted); font-size:.72rem; }
-.account-form { margin-top:1.4rem; }
+.account-form { position:relative; margin-top:1.4rem; }
+.register-loading { position:absolute; inset:-.65rem; z-index:20; display:flex; min-height:100%; align-items:center; justify-content:center; flex-direction:column; padding:2rem; text-align:center; background:rgba(255,255,255,.96); border:1px solid rgba(18,61,99,.12); border-radius:18px; box-shadow:0 18px 42px rgba(9,40,64,.14); backdrop-filter:blur(3px); }
+.register-loading[hidden] { display:none; }
+.register-loading-spinner { position:relative; display:grid; width:72px; height:72px; margin-bottom:1rem; color:var(--sfi-navy); background:var(--sfi-yellow-soft); border-radius:22px; font-size:1.35rem; place-items:center; }
+.register-loading-spinner::after { position:absolute; inset:-7px; content:""; border:3px solid rgba(18,61,99,.12); border-top-color:var(--sfi-yellow); border-right-color:var(--sfi-navy); border-radius:50%; animation:register-loading-spin .9s linear infinite; }
+.register-loading strong { color:var(--sfi-navy-dark); font-size:1.05rem; font-weight:900; }
+.register-loading p { max-width:360px; margin:.45rem 0 1rem; color:var(--sfi-muted); font-size:.7rem; line-height:1.55; }
+.register-loading-progress { width:min(260px,80%); height:5px; overflow:hidden; background:#e5edf2; border-radius:999px; }
+.register-loading-progress span { display:block; width:42%; height:100%; background:linear-gradient(90deg,var(--sfi-yellow),#e7a900); border-radius:inherit; animation:register-loading-progress 1.35s ease-in-out infinite; }
+.register-shell.is-submitting .register-steps>div { opacity:.45; }
+.register-shell.is-submitting .register-steps>div:nth-child(2) { opacity:1; }
+.register-shell.is-submitting .register-steps>div:nth-child(2)>span { color:#08263e; background:var(--sfi-yellow); border-color:var(--sfi-yellow); }
+@keyframes register-loading-spin { to { transform:rotate(360deg); } }
+@keyframes register-loading-progress { 0% { transform:translateX(-110%); } 55%,100% { transform:translateX(250%); } }
+@media (prefers-reduced-motion:reduce) { .register-loading-spinner::after,.register-loading-progress span { animation-duration:2.5s; } }
 .account-fields-grid { display:grid; grid-template-columns:1fr 1fr; gap:.75rem 1rem; }
 .full-field { grid-column:1/-1; }
 .account-field { display:flex; min-width:0; flex-direction:column; }

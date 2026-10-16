@@ -16,12 +16,25 @@
     const fields = Object.fromEntries(names.map((name) => [name, form.elements[name]]));
     const errorBox = document.getElementById("register-error");
     const submit = document.getElementById("register-submit");
+    const loading = document.getElementById("register-loading");
+    const controls = [...form.elements];
+    let isSubmitting = false;
     const setError = (name, message) => {
       const error = form.querySelector(`[data-error-for="${name}"]`);
       if (error) error.textContent = message || "";
       fields[name]?.classList.toggle("is-invalid", Boolean(message));
     };
     const showError = (message) => { errorBox.textContent = message; errorBox.hidden = !message; };
+    const setSubmitting = (active) => {
+      isSubmitting = active;
+      form.setAttribute("aria-busy", String(active));
+      root.classList.toggle("is-submitting", active);
+      loading.hidden = !active;
+      controls.forEach((control) => { control.disabled = active; });
+      submit.querySelector("span").textContent = active
+        ? "Registrando…"
+        : "Crear cuenta y verificar correo";
+    };
     const updateRules = () => {
       const password = fields.password.value;
       const confirmation = fields.password2.value;
@@ -71,19 +84,20 @@
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (isSubmitting) return;
       showError("");
       if (!validate()) { showError("Revisa los campos marcados para continuar."); return; }
+      const csrfToken = form.elements.csrfmiddlewaretoken.value;
       const data = Object.fromEntries(new FormData(form).entries());
       delete data.csrfmiddlewaretoken;
       data.email = data.email.trim().toLowerCase();
       data.rut = window.SFIRut.normalizar(data.rut);
       data.username = data.username.trim();
-      submit.disabled = true;
-      submit.querySelector("span").textContent = "Creando cuenta…";
+      setSubmitting(true);
       try {
         const response = await fetch(root.dataset.registerUrl, {
           method: "POST",
-          headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRFToken": form.elements.csrfmiddlewaretoken.value },
+          headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRFToken": csrfToken },
           body: JSON.stringify(data),
         });
         const result = await readJson(response);
@@ -93,9 +107,8 @@
         }
         window.location.assign(result.redirect_url || root.dataset.pendingUrl);
       } catch (error) {
+        setSubmitting(false);
         showError(error.message || "No fue posible completar el registro.");
-        submit.disabled = false;
-        submit.querySelector("span").textContent = "Crear cuenta y verificar correo";
       }
     });
   });
