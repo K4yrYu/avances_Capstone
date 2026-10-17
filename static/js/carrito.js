@@ -237,10 +237,34 @@
         const data = await readJson(response);
         if (!response.ok) throw new Error(readError(data, "No fue posible actualizar el carrito."));
 
-        applyCartResponse(item, data, nextQuantity);
         showToast(nextQuantity === 0 ? "Producto eliminado del carrito." : "Cantidad actualizada.");
+        if (item.querySelector(".cart-item-alert")) {
+          // Recalcula alertas y habilitación de pago desde el servidor.
+          window.location.reload();
+          return;
+        }
+        applyCartResponse(item, data, nextQuantity);
       } catch (error) {
         showToast(error.message || "No fue posible actualizar el carrito.", "error");
+      } finally {
+        item.classList.remove("is-updating");
+      }
+    }
+
+    async function removeCartItem(item) {
+      item.classList.add("is-updating");
+      try {
+        const response = await fetch(item.dataset.removeUrl, {
+          method: "DELETE",
+          headers: {Accept: "application/json", "X-CSRFToken": getCookie("csrftoken") || ""},
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(readError(data, "No fue posible quitar el producto."));
+        showToast(data.message || "Producto eliminado del carrito.");
+        // El total, alertas y botón de pago pueden cambiar al quitarlo.
+        window.location.reload();
+      } catch (error) {
+        showToast(error.message || "No fue posible quitar el producto.", "error");
       } finally {
         item.classList.remove("is-updating");
       }
@@ -252,7 +276,9 @@
         const button = event.target.closest("[data-cart-action]");
         if (!button || button.disabled) return;
         const item = button.closest(".cart-item");
-        if (item) changeQuantity(item, button.dataset.cartAction);
+        if (!item) return;
+        if (button.dataset.cartAction === "remove") removeCartItem(item);
+        else changeQuantity(item, button.dataset.cartAction);
       });
 
       cartItems.querySelectorAll("img").forEach((image) => {
@@ -262,6 +288,23 @@
         }, { once: true });
       });
     }
+
+    document.getElementById("revalidar-carrito")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const response = await fetch(root.dataset.revalidateUrl, {
+          method: "POST",
+          headers: {Accept: "application/json", "X-CSRFToken": getCookie("csrftoken") || ""},
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(readError(data, "No fue posible revisar el carrito."));
+        window.location.reload();
+      } catch (error) {
+        button.disabled = false;
+        showToast(error.message || "No fue posible revisar el carrito.", "error");
+      }
+    });
 
     if (paymentForm) {
       const addressWrapper = document.getElementById("direccion-despacho-wrapper");

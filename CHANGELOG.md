@@ -19,6 +19,53 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ## [Sin publicar]
 
+### Mejoras carrito info - 16 de octubre de 2026 (UTC-03:00)
+
+#### Carrito: precio, stock y vigencia
+
+**Antes**
+
+- El carrito eliminaba silenciosamente productos agotados, desactivados o retirados.
+- El cliente podía no advertir cambios de precio o una reducción de stock hasta intentar pagar.
+- No existía una vigencia para volver a comprobar el contenido de un carrito antiguo.
+- Al detectar stock insuficiente, también se bloqueaba la acción para disminuir la cantidad y corregir el problema.
+
+**Después**
+
+- Los productos con problemas permanecen visibles con una alerta clara, el stock disponible y la acción `Quitar producto`.
+- Los cambios de precio actualizan el valor visible, muestran el precio anterior tachado y recalculan el total.
+- El carrito conserva la fecha de su última modificación; vence tras 48 horas y exige una revisión explícita de stock y precios antes de pagar.
+- Se agregó el aviso permanente: precios y stock están sujetos a cambios y se validan antes de iniciar Webpay.
+- Se permite disminuir una cantidad que supera el stock disponible; al corregir o quitar un producto, se recalculan alertas y habilitación de pago desde el servidor.
+- La validación continúa protegida en backend al modificar cantidades, eliminar productos, renovar el carro e iniciar Webpay.
+
+#### Administración de productos
+
+**Antes**
+
+- La tabla de productos mostraba la columna `Acciones`, pero sus controles no se renderizaban por un bloque vacío en JavaScript.
+
+**Después**
+
+- Cada producto muestra nuevamente las acciones `Editar` y `Desactivar` o `Reactivar`, según su estado.
+
+#### Registro de merma
+
+**Antes**
+
+- El encargado seleccionaba el producto en una lista desplegable extensa, sin imagen ni búsqueda rápida.
+
+**Después**
+
+- El modal permite buscar por nombre, SKU o referencia y muestra resultados con imagen, nombre y stock.
+- Tras elegir un resultado, queda una única tarjeta de producto seleccionado; la búsqueda se oculta para evitar duplicidad y confusión.
+- La cantidad solo se habilita al seleccionar un producto y queda limitada visualmente al stock disponible; la validación de servidor se mantiene.
+
+#### Base de datos y verificación
+
+- Se agregó la migración `carro_compras.0016_venta_carrito_actualizado_en` para registrar la última actualización del carrito.
+- Se ejecutaron `python manage.py check`, 49 pruebas de `carro_compras` y comprobaciones de sintaxis JavaScript para los archivos modificados.
+
 ### Operaciones, despachos y roles internos - 9 de octubre de 2026 (UTC-03:00)
 
 #### Despachos programados

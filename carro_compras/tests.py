@@ -128,6 +128,44 @@ class SeguridadCarritoTests(TestCase):
         self.assertContains(response, 'data-clp="1990"')
         self.assertContains(response, 'data-clp="3980"')
 
+    def test_producto_agotado_permanece_visible_y_bloquea_carrito(self):
+        self.producto.stock = 0
+        self.producto.save(update_fields=['stock'])
+        self.client.force_login(self.dueno)
+
+        response = self.client.get(reverse('vista_carrito'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Detalle.objects.filter(id=self.detalle.id).exists())
+        self.assertContains(response, 'Producto agotado')
+        self.assertContains(response, 'Quitar producto')
+
+    def test_carrito_vencido_se_revalida_explicitamente(self):
+        # auto_now reemplaza el valor al usar save(); update permite simular
+        # la antigüedad real de un carrito sin modificar el comportamiento.
+        Venta.objects.filter(pk=self.venta.pk).update(
+            carrito_actualizado_en=timezone.now() - timedelta(days=3)
+        )
+        self.client.force_login(self.dueno)
+
+        pagina = self.client.get(reverse('vista_carrito'))
+        respuesta = self.client.post(reverse('revalidar_carrito'))
+
+        self.assertContains(pagina, 'Tu carrito venció después de 48 horas')
+        self.assertEqual(respuesta.status_code, 200)
+        self.venta.refresh_from_db()
+        self.assertLess(timezone.now() - self.venta.carrito_actualizado_en, timedelta(minutes=1))
+
+    def test_usuario_puede_quitar_producto_no_disponible(self):
+        self.producto.activo = False
+        self.producto.save(update_fields=['activo'])
+        self.client.force_login(self.dueno)
+
+        respuesta = self.client.delete(reverse('eliminar_producto_carrito', args=[self.detalle.id]))
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertFalse(Detalle.objects.filter(id=self.detalle.id).exists())
+
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
 class CalculadoraCarritoTests(TestCase):

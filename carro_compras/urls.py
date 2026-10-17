@@ -21,6 +21,8 @@ urlpatterns = [
 
     # Path para disminuir la cantidad de un producto en el carrito
     path('api/carrito/detalle/disminuir/<int:detalle_id>/', views.disminuir_cantidad_producto, name='disminuir_cantidad_producto'),
+    path('api/carrito/detalle/<int:detalle_id>/eliminar/', views.eliminar_producto_carrito, name='eliminar_producto_carrito'),
+    path('api/carrito/revalidar/', views.revalidar_carrito, name='revalidar_carrito'),
 
     path('api/webpay/iniciar/', views.iniciar_pago_webpay, name='iniciar_pago_webpay'),
     path('api/webpay/cancelar/', views.cancelar_pago_webpay, name='cancelar_pago_webpay'),

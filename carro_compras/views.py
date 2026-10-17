@@ -2,7 +2,7 @@ import logging
 import re
 import secrets
 import time
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode, urlsplit
 
@@ -85,8 +85,61 @@ def _validar_respuesta_creacion_webpay(response):
 
 def _recalcular_total(venta):
     venta.total_venta = sum(detalle.subtotal_venta for detalle in venta.detalles.all())
-    venta.save(update_fields=['total_venta'])
+    venta.save(update_fields=['total_venta', 'carrito_actualizado_en'])
     return venta.total_venta
+
+
+CARRITO_VIGENCIA = timedelta(days=2)
+
+
+def _carrito_vencido(venta):
+    return timezone.now() - venta.carrito_actualizado_en >= CARRITO_VIGENCIA
+
+
+def _revisar_carrito(venta):
+    """Consulta el catálogo real sin borrar el contexto del comprador."""
+    detalles = list(venta.detalles.select_related('producto').all())
+    requiere_atencion = False
+    for detalle in detalles:
+        producto = detalle.producto
+        detalle.estado_carrito = 'ok'
+        detalle.mensaje_carrito = ''
+        detalle.stock_actual = producto.stock if producto else 0
+        detalle.precio_anterior = None
+        if producto is None:
+            detalle.estado_carrito = 'eliminado'
+            detalle.mensaje_carrito = 'Este producto fue retirado del catálogo.'
+        elif not producto.activo:
+            detalle.estado_carrito = 'no_disponible'
+            detalle.mensaje_carrito = 'Este producto ya no está disponible para compra.'
+        elif producto.stock <= 0:
+            detalle.estado_carrito = 'agotado'
+            detalle.mensaje_carrito = 'Producto agotado. Quita este producto para continuar.'
+        elif detalle.cantidad_producto > producto.stock:
+            detalle.estado_carrito = 'stock_insuficiente'
+            detalle.mensaje_carrito = f'Solo quedan {producto.stock} unidades disponibles.'
+        if producto and producto.precio != detalle.precio_unitario:
+            detalle.precio_anterior = detalle.precio_unitario
+            detalle.precio_unitario = producto.precio
+            detalle.nombre_producto = producto.nombre
+            detalle.imagen_producto = producto.imagen.url if producto.imagen else None
+            detalle.save(update_fields=['precio_unitario', 'nombre_producto', 'imagen_producto', 'subtotal_venta'])
+            if detalle.estado_carrito == 'ok':
+                detalle.estado_carrito = 'precio_actualizado'
+                detalle.mensaje_carrito = 'El precio fue actualizado desde el catálogo.'
+        detalle.permite_ajuste = detalle.estado_carrito in {'ok', 'precio_actualizado'}
+        # Aunque el stock sea insuficiente, debe poder reducirse la cantidad
+        # para corregir el carro. Los productos retirados se quitan aparte.
+        detalle.puede_reducir = bool(producto and producto.activo)
+        requiere_atencion = requiere_atencion or detalle.estado_carrito not in {'ok', 'precio_actualizado'}
+    total = sum(detalle.subtotal_venta for detalle in detalles)
+    if venta.total_venta != total:
+        venta.total_venta = total
+        # Esta comprobación ocurre al visualizar el carro: no debe extender su
+        # vigencia por sí sola. La vigencia se renueva al modificarlo o al
+        # revalidarlo explícitamente.
+        venta.save(update_fields=['total_venta'])
+    return detalles, requiere_atencion
 
 
 def _actualizar_snapshot_detalle(detalle, producto):
@@ -257,30 +310,17 @@ def vista_carrito(request):
         venta = Venta.objects.filter(id_usuario=request.user, estado_venta='carrito').first()
 
         if venta:
-            detalles = Detalle.objects.filter(id_venta=venta).select_related('producto')
-            productos_eliminados = []
-
-            for detalle in detalles:
-                producto = detalle.producto
-                if producto is None or producto.stock <= 0 or not producto.activo:
-                    productos_eliminados.append(detalle)
-                    detalle.delete()
-                else:
-                    if detalle.cantidad_producto > producto.stock:
-                        detalle.cantidad_producto = producto.stock
-                    _actualizar_snapshot_detalle(detalle, producto)
-
-            detalles = Detalle.objects.filter(id_venta=venta).select_related('producto')
+            detalles, requiere_atencion = _revisar_carrito(venta)
             total_carrito = sum(d.subtotal_venta for d in detalles)
-            venta.total_venta = total_carrito
-            venta.save(update_fields=['total_venta'])
 
             return render(request, 'carro_compras/carrito.html', {
                 'detalles': detalles,
                 'total_carrito': total_carrito,
                 'configuracion_despacho': ConfiguracionDespacho.cargar(),
                 'total_unidades': sum(d.cantidad_producto for d in detalles),
-                'productos_eliminados': productos_eliminados,
+                'productos_eliminados': [],
+                'requiere_atencion': requiere_atencion,
+                'carrito_vencido': _carrito_vencido(venta),
                 'aviso': request.GET.get('mensaje', '')[:180],
                 'regiones_despacho': REGIONES_CHOICES,
                 'comunas_despacho': [
@@ -519,6 +559,39 @@ def disminuir_cantidad_producto(request, detalle_id):
         _recalcular_total(venta)
 
     return Response({"subtotal_venta": detalle.subtotal_venta, "total_carrito": venta.total_venta})
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def eliminar_producto_carrito(request, detalle_id):
+    with transaction.atomic():
+        detalle = get_object_or_404(
+            Detalle.objects.select_for_update().select_related('id_venta'),
+            id=detalle_id,
+            id_venta__id_usuario=request.user,
+            id_venta__estado_venta='carrito',
+        )
+        venta = detalle.id_venta
+        detalle.delete()
+        total = _recalcular_total(venta)
+    return Response({'message': 'Producto eliminado del carrito.', 'total_carrito': total})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def revalidar_carrito(request):
+    with transaction.atomic():
+        venta = Venta.objects.select_for_update().filter(
+            id_usuario=request.user, estado_venta='carrito',
+        ).first()
+        if not venta:
+            return Response({'detail': 'No tienes un carrito activo.'}, status=status.HTTP_404_NOT_FOUND)
+        _, requiere_atencion = _revisar_carrito(venta)
+        if requiere_atencion:
+            return Response({'detail': 'Corrige los productos marcados antes de continuar.'}, status=status.HTTP_409_CONFLICT)
+        venta.carrito_actualizado_en = timezone.now()
+        venta.save(update_fields=['carrito_actualizado_en'])
+    return Response({'message': 'Carrito revisado con stock y precios actuales.'})
 #####################
 
 
@@ -556,6 +629,8 @@ def iniciar_pago_webpay(request):
             ).first()
             if not venta:
                 return Response({'error': 'No tienes un carrito activo.'}, status=status.HTTP_404_NOT_FOUND)
+            if _carrito_vencido(venta):
+                return Response({'error': 'Tu carrito venció. Revisa nuevamente disponibilidad y precios antes de pagar.'}, status=status.HTTP_409_CONFLICT)
 
             detalles, subtotal_productos = _sincronizar_carrito_para_pago(venta)
             if tipo_entrega == 'despacho':

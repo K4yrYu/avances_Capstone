@@ -19,6 +19,7 @@ class Venta(models.Model):
     fecha_compra = models.DateTimeField(null=True, blank=True)
     total_venta = models.IntegerField(default=0)
     estado_venta = models.CharField(max_length=20, choices=ESTADO_VENTA_CHOICES, default='carrito')
+    carrito_actualizado_en = models.DateTimeField(auto_now=True)
 
     # WebPay
     webpay_transaction_id = models.CharField(max_length=100, blank=True, null=True, unique=True)
