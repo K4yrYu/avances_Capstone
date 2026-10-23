@@ -10,6 +10,7 @@ from django.db import transaction
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
+from usuarios.accesos import solo_admin_404
 
 from .chile import COMUNA_REGION, COMUNAS_CHOICES, REGIONES_CHOICES
 from .forms import (
@@ -497,7 +498,7 @@ def detalle_maestro(request, pk):
     )
 
 
-@login_required
+@solo_admin_404
 def revision_maestros(request):
     _exigir_admin(request)
     estado = request.GET.get("estado", "").strip().upper()
@@ -536,8 +537,8 @@ def revision_maestros(request):
     )
 
 
+@solo_admin_404
 @require_POST
-@login_required
 @transaction.atomic
 def cambiar_estado_maestro(request, pk):
     _exigir_admin(request)
@@ -645,8 +646,8 @@ def cambiar_estado_maestro(request, pk):
     return redirect("maestros:admin_revision")
 
 
+@solo_admin_404
 @require_POST
-@login_required
 def revisar_documento(request, pk):
     _exigir_admin(request)
     documento = get_object_or_404(DocumentoMaestro, pk=pk)
@@ -664,8 +665,8 @@ def revisar_documento(request, pk):
     return redirect("maestros:admin_revision")
 
 
+@solo_admin_404
 @require_POST
-@login_required
 def revisar_licencia(request, pk):
     _exigir_admin(request)
     licencia = get_object_or_404(LicenciaMaestro, pk=pk)
@@ -683,8 +684,8 @@ def revisar_licencia(request, pk):
     return redirect("maestros:admin_revision")
 
 
+@solo_admin_404
 @require_POST
-@login_required
 def crear_especialidad(request):
     _exigir_admin(request)
     form = EspecialidadForm(request.POST)

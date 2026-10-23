@@ -1,7 +1,6 @@
 from datetime import timedelta
 
 from django.contrib import messages
-from django.contrib.auth.decorators import user_passes_test
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db.models import F, Q, Sum
@@ -15,13 +14,10 @@ from productos.models import DetalleSolicitudReposicion, Producto
 
 from .models import LoteInventario, MovimientoInventario
 from .services import registrar_merma_stock
+from usuarios.accesos import solo_admin_404
 
 
-def es_administrador(user):
-    return user.is_active and user.is_staff
-
-
-@user_passes_test(es_administrador, login_url="/usuarios/iniciosesion/")
+@solo_admin_404
 def lista_movimientos(request):
     movimientos = MovimientoInventario.objects.select_related("responsable")
     q = request.GET.get("q", "").strip()
@@ -80,7 +76,7 @@ def lista_movimientos(request):
     })
 
 
-@user_passes_test(es_administrador, login_url="/usuarios/iniciosesion/")
+@solo_admin_404
 def registrar_merma(request):
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
@@ -105,7 +101,7 @@ def registrar_merma(request):
     return redirect("movimientos:lista")
 
 
-@user_passes_test(es_administrador, login_url="/usuarios/iniciosesion/")
+@solo_admin_404
 def iniciar_reajuste(request):
     try:
         producto_id = int(request.GET.get("producto", ""))

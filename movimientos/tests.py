@@ -35,7 +35,8 @@ class AccesoMovimientosTests(TestCase):
     def test_usuario_normal_no_puede_abrir_movimientos(self):
         self.client.force_login(self.crear_usuario("cliente_movimientos"))
         respuesta = self.client.get(reverse("movimientos:lista"))
-        self.assertEqual(respuesta.status_code, 302)
+        self.assertEqual(respuesta.status_code, 404)
+        self.assertContains(respuesta, "Página no encontrada", status_code=404)
 
     def test_selector_de_reajuste_redirige_al_formulario_del_producto(self):
         admin = self.crear_usuario("admin_selector", staff=True)

@@ -28,10 +28,11 @@ from .services import calcular_recomendaciones_pintura
 from rest_framework.permissions import AllowAny, BasePermission
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
-from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import OuterRef, Subquery, F, Prefetch, Q, Sum
 from carro_compras.models import Venta, Detalle  # Asegúrate de importar esto arriba
+from usuarios.accesos import solo_admin_404
 
 
 logger = logging.getLogger(__name__)
@@ -192,10 +193,7 @@ class EsAdmin(BasePermission):
     def has_permission(self, request, view):
         return request.user and request.user.is_authenticated and request.user.is_staff
 
-def es_admin(user):
-    return user.is_authenticated and user.is_staff
-
-@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
+@solo_admin_404
 def formulario_producto(request):
     try:
         proveedor_id = int(request.GET.get('proveedor', ''))
@@ -274,7 +272,7 @@ def api_toggle_activo_producto(request, id):
 
     
     # Usar el decorador para proteger la vista
-@user_passes_test(es_admin, login_url='/')  # Redirige a la página principal si no es admin
+@solo_admin_404
 def lista_productos_crud(request):
     return render(request, 'productos/crud_productos.html')
 
@@ -308,7 +306,7 @@ def api_editar_producto(request, id):
 
 
 # Vista protegida: solo accesible por administradores
-@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
+@solo_admin_404
 def editar_producto(request, id):
     producto = get_object_or_404(Producto, id=id)
     modo_reajuste = True
@@ -442,7 +440,7 @@ def _enviar_correo_incidencias_reposicion(recepcion):
     return True
 
 
-@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
+@solo_admin_404
 def gestion_reposicion(request):
     from movimientos.models import LoteInventario
     from .analytics import normalizar_filtros_rotacion, obtener_rotacion_productos
@@ -531,8 +529,8 @@ def gestion_reposicion(request):
     })
 
 
+@solo_admin_404
 @require_http_methods(['POST'])
-@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def procesar_lotes_vencidos(request):
     from movimientos.contexto import contexto_responsable
     from movimientos.models import LoteInventario, MovimientoInventario
@@ -604,7 +602,7 @@ def _registrar_pedido_en_movimientos(solicitud):
         )
 
 
-@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
+@solo_admin_404
 def gestion_proveedores(request):
     proveedores = Proveedor.objects.prefetch_related(
         Prefetch('productos', queryset=Producto.objects.order_by('categoria', 'nombre'))
@@ -618,8 +616,8 @@ def gestion_proveedores(request):
     })
 
 
+@solo_admin_404
 @require_http_methods(['POST'])
-@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def guardar_proveedor(request, id=None):
     proveedor = get_object_or_404(Proveedor, pk=id) if id else None
     formulario = ProveedorForm(request.POST, instance=proveedor)
@@ -646,8 +644,8 @@ def guardar_proveedor(request, id=None):
     return redirect(destino)
 
 
+@solo_admin_404
 @require_http_methods(['POST'])
-@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def crear_solicitud_reposicion(request):
     try:
         proveedor_id = int(request.POST.get('proveedor_id', ''))
@@ -708,8 +706,8 @@ def crear_solicitud_reposicion(request):
     return redirect('gestion_reposicion')
 
 
+@solo_admin_404
 @require_http_methods(['POST'])
-@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def reenviar_solicitud_reposicion(request, id):
     solicitud = get_object_or_404(SolicitudReposicion, pk=id)
     if solicitud.estado not in {'pendiente', 'error'}:
@@ -722,8 +720,8 @@ def reenviar_solicitud_reposicion(request, id):
     return redirect('gestion_reposicion')
 
 
+@solo_admin_404
 @require_http_methods(['POST'])
-@user_passes_test(es_admin, login_url='/usuarios/iniciosesion/')
 def recibir_solicitud_reposicion(request, id):
     from movimientos.models import LoteInventario, MovimientoInventario
     from movimientos.services import registrar_evento_reposicion, registrar_movimiento_stock

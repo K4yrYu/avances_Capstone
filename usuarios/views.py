@@ -13,7 +13,7 @@ from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.throttling import ScopedRateThrottle
 from .throttles import RegistroRateThrottle
 from .models import Usuario
-from django.contrib.auth.decorators import user_passes_test
+from .accesos import solo_admin_404
 from carro_compras.models import Venta
 from django.utils import timezone
 from django.contrib.auth.views import PasswordResetView
@@ -73,15 +73,15 @@ def activar_cuenta(request, token):
     except (BadSignature, SignatureExpired, Usuario.DoesNotExist):
         return render(request, 'usuarios/activacion_fallida.html')
 
-@user_passes_test(lambda u: u.is_staff)
+@solo_admin_404
 def vista_lista_usuarios(request):
     return render(request, 'usuarios/lista_usuarios.html')
 
-@user_passes_test(lambda u: u.is_staff, login_url='/usuarios/iniciosesion/')
+@solo_admin_404
 def vista_agregar_usuario(request):
     return render(request, 'usuarios/agregar_usuario.html')
 
-@user_passes_test(lambda u: u.is_staff)
+@solo_admin_404
 def vista_editar_usuario(request, id):
     usuario = get_object_or_404(Usuario, id=id)
     return render(request, 'usuarios/editar_usuario.html', {'usuario': usuario})

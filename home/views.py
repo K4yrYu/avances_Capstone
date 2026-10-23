@@ -1,10 +1,10 @@
 from datetime import timedelta
 
 from django.shortcuts import render
-from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
 from django.db.models import Count, F, Sum
 from django.db.models.functions import Coalesce
+from usuarios.accesos import solo_admin_404
 from django.utils import timezone
 
 from productos.models import DetalleSolicitudReposicion, Producto, SolicitudReposicion
@@ -47,7 +47,7 @@ def index(request):
         'total_categorias': len([total for total in totales_categoria.values() if total]),
     })
 
-@user_passes_test(lambda u: u.is_staff, login_url='/usuarios/iniciosesion/')
+@solo_admin_404
 def panel_administracion(request):
     from productos.analytics import normalizar_filtros_rotacion, obtener_rotacion_productos
 

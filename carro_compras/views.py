@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode, urlsplit
 
 from django.conf import settings
-from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.decorators import login_required
 from django.db import models, transaction
 from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
@@ -29,6 +29,11 @@ from productos.models import Producto
 from productos.services import calcular_producto_pintura
 from maestros.chile import COMUNA_REGION, REGIONES_COMUNAS, REGIONES_CHOICES
 from usuarios.models import Usuario
+from usuarios.accesos import (
+    solo_admin_404,
+    solo_repartidor_o_admin_404,
+    solo_retiros_o_admin_404,
+)
 from .models import ConfiguracionDespacho, DespachoVenta, Detalle, EventoDespacho, FechaDespacho, Venta
 from .services import configurar_transbank_tls
 from .services_despachos import (
@@ -909,11 +914,11 @@ def ver_boleta(request, venta_id):
 
 #############
 
-@user_passes_test(_es_retiros_o_admin, login_url='/usuarios/iniciosesion/')
+@solo_retiros_o_admin_404
 def vista_retiros(request):
     return render(request, 'carro_compras/retiros.html')
 
-@user_passes_test(_es_admin, login_url='/usuarios/iniciosesion/')
+@solo_admin_404
 def vista_despachos(request):
     error_configuracion = ''
     if request.method == 'POST':
@@ -967,12 +972,12 @@ def vista_despachos(request):
     })
 
 
-@user_passes_test(_es_repartidor_o_admin, login_url='/usuarios/iniciosesion/')
+@solo_repartidor_o_admin_404
 def vista_repartidor_despachos(request):
     return render(request, 'carro_compras/repartidor_despachos.html')
 
 
-@user_passes_test(_es_admin, login_url='/usuarios/iniciosesion/')
+@solo_admin_404
 def historial_ventas(request):
     return render(request, 'carro_compras/historial_ventas.html')
 

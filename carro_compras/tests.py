@@ -99,7 +99,7 @@ class SeguridadCarritoTests(TestCase):
         pagina = self.client.get(reverse('historial_ventas'))
         api = self.client.get(reverse('api_historial_ventas'))
 
-        self.assertEqual(pagina.status_code, 302)
+        self.assertEqual(pagina.status_code, 404)
         self.assertEqual(api.status_code, 403)
 
     def test_carrito_no_aparece_como_retiro_ni_genera_boleta(self):
@@ -898,7 +898,7 @@ class ProgramacionDespachosTests(TestCase):
 
     def test_vista_repartidor_requiere_rol_o_administrador(self):
         respuesta_cliente = self.client.get(reverse('vista_repartidor_despachos'))
-        self.assertEqual(respuesta_cliente.status_code, 302)
+        self.assertEqual(respuesta_cliente.status_code, 404)
 
         self.usuario.rol = Usuario.Rol.REPARTIDOR
         self.usuario.save(update_fields=['rol'])
@@ -997,4 +997,4 @@ class ProgramacionDespachosTests(TestCase):
 
         self.assertEqual(retiros.status_code, 200)
         self.assertEqual(api_retiros.status_code, 200)
-        self.assertEqual(despachos.status_code, 302)
+        self.assertEqual(despachos.status_code, 404)

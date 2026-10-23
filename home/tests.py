@@ -60,11 +60,27 @@ class HomeSfiTests(TestCase):
         self.assertContains(response, 'Mostrar gráfico')
         self.assertGreater(response.context['productos_mas_vendidos'][0]['altura_grafico'], 0)
 
+    def test_panel_admin_oculta_ruta_a_invitados_y_clientes(self):
+        url = reverse('panel_administracion')
+
+        invitado = self.client.get(url)
+        self.assertEqual(invitado.status_code, 404)
+        self.assertContains(invitado, 'Página no encontrada', status_code=404)
+
+        cliente = Usuario.objects.create_user(
+            rut='12345678-5', username='cliente_panel', email='cliente-panel@example.com',
+            telefono='+56912345678', password='ClaveSegura!2026',
+        )
+        self.client.force_login(cliente)
+        respuesta_cliente = self.client.get(url)
+        self.assertEqual(respuesta_cliente.status_code, 404)
+        self.assertContains(respuesta_cliente, 'Página no encontrada', status_code=404)
+
     @override_settings(DEBUG=False)
     def test_error_404_usa_pantalla_personalizada_sfi(self):
         response = self.client.get('/pagina-que-no-existe/')
 
         self.assertEqual(response.status_code, 404)
         self.assertContains(response, 'Página no encontrada', status_code=404)
-        self.assertContains(response, 'ERROR 404', status_code=404)
-        self.assertContains(response, 'img/frieren.gif', status_code=404)
+        self.assertContains(response, 'Error 404', status_code=404)
+        self.assertContains(response, 'img/sfi-logo.png', status_code=404)
