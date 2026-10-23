@@ -6,16 +6,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>Página no encontrada (404) | SFI</title>
-  <link rel="stylesheet" href="{% static 'css/error_404.css' %}">
+  <link rel="stylesheet" href="{% static 'css/error_404.css' %}?v=20261016-simple">
 </head>
 <body>
-  <main class="error-page">
-    <section class="error-content" aria-labelledby="error-title">
-      <h1 id="error-title">¡Ups! Página no encontrada <span>ERROR 404</span></h1>
-      <img class="error-image" src="{% static 'img/frieren.gif' %}" alt="Página no encontrada">
-      <p>Lo sentimos, la página que buscas no existe o ha sido removida.</p>
-      <a class="error-home" href="{% url 'index' %}">Volver al inicio</a>
-    </section>
+  <main class="error-page" aria-labelledby="error-title">
+    <img class="error-logo" src="{% static 'img/sfi-logo.png' %}" alt="Sistema Ferretero Inteligente">
+    <p class="error-code">Error 404</p>
+    <h1 id="error-title">Página no encontrada</h1>
+    <a class="error-home" href="{% url 'index' %}">Volver al inicio</a>
   </main>
 </body>
 </html>

@@ -19,6 +19,12 @@ No se deben incluir contraseñas, tokens, claves de API ni contenido del archivo
 
 ## [Sin publicar]
 
+### Compatibilidad de imágenes del catálogo - 23 de octubre de 2026 (UTC-03:00)
+
+- Se aseguró la carga de fotografías de productos cuando `DEBUG` está desactivado, especialmente en navegadores, sesiones privadas o perfiles sin imágenes almacenadas en caché.
+- La ruta pública se limita a `media/productos/`; evidencias de despacho, documentos y los demás archivos multimedia continúan sin exposición pública.
+- El cambio funciona como respaldo de compatibilidad y no altera el comportamiento de los navegadores que ya cargaban correctamente las imágenes.
+
 ### Mejoras carrito info - 16 de octubre de 2026 (UTC-03:00)
 
 #### Carrito: precio, stock y vigencia
