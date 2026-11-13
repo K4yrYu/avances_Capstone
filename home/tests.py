@@ -33,6 +33,16 @@ class HomeSfiTests(TestCase):
         self.assertEqual(response.context['total_productos'], 1)
         self.assertEqual(response.context['total_categorias'], 1)
 
+    def test_home_usa_logo_si_producto_no_tiene_imagen(self):
+        self.producto.imagen = ''
+        self.producto.save(update_fields=['imagen'])
+
+        response = self.client.get(reverse('index'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'img/sfi-logo.png')
+        self.assertContains(response, f'Imagen no disponible para {self.producto.nombre}')
+
     def test_panel_admin_muestra_grafico_y_filtra_categoria(self):
         admin = Usuario.objects.create_user(
             rut='87654321-4', username='admin_grafico', email='grafico@example.com',

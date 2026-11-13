@@ -2,6 +2,8 @@ import re
 import unicodedata
 from decimal import Decimal, ROUND_CEILING
 
+from django.db.models import Case, IntegerField, Value, When
+
 from maestros.chile import COMUNAS_CHOICES
 from maestros.services import buscar_maestros
 from productos.models import Producto
@@ -15,7 +17,7 @@ from .recomendacion_colores import (
 from .sinonimos_ferreteros import (
     anclas_semanticas, corregir_terminos, expandir_consulta,
 )
-from .planificador_proyectos import resolver_proyecto_generico
+from .planificador_proyectos import resolver_proyecto_generico, resolver_proyecto_techumbre
 
 
 class AsistenteNoDisponible(Exception):
@@ -86,6 +88,37 @@ def _medidas_desde_texto(texto):
         f'{numero.replace(",", ".")}{unidad}'
         for numero, unidad in re.findall(patron, _texto_normalizado(texto))
     ]
+
+
+def _dimensiones_rectangulares_cm(texto):
+    """Extrae ancho y largo explícitos como 3 x 5 m, sin estimarlos."""
+    normalizado = _texto_normalizado(texto)
+    numero = r'(\d+(?:[.,]\d+)?)'
+    unidad = r'(mm|cm|m|mts?|metros?)'
+    coincidencia = re.search(
+        rf'(?<!\w){numero}\s*(?:x|por)\s*{numero}\s*{unidad}\b',
+        normalizado,
+    )
+    if not coincidencia:
+        coincidencia = re.search(
+            rf'(?<!\w){numero}\s*{unidad}\s*(?:x|por)\s*{numero}\s*\2\b',
+            normalizado,
+        )
+        if coincidencia:
+            ancho, unidad_detectada, largo = coincidencia.groups()
+            valores = ancho, largo, unidad_detectada
+        else:
+            valores = None
+    else:
+        valores = coincidencia.groups()
+    if not coincidencia:
+        return 0, 0
+    ancho, largo, unidad_detectada = valores
+    factor = 0.1 if unidad_detectada == 'mm' else (100 if unidad_detectada.startswith('m') else 1)
+    return (
+        round(float(ancho.replace(',', '.')) * factor),
+        round(float(largo.replace(',', '.')) * factor),
+    )
 
 
 def _contiene_medida(texto, medida):
@@ -456,6 +489,86 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
     elif any(indicador in texto_mensaje for indicador in indicadores_incluir_herramientas):
         datos['incluir_herramientas'] = True
 
+    contexto_techumbre = f" {_texto_normalizado(datos.get('proyecto'))} {texto_usuario} "
+    es_techumbre = any(termino in contexto_techumbre for termino in (
+        ' techo ', ' techumbre ', ' cubierta ', ' policarbonato ',
+    ))
+    es_trabajo_techumbre = es_techumbre and any(accion in contexto_techumbre for accion in (
+        'cambiar', 'cambio', 'reemplazar', 'reemplazo', 'instalar',
+        'instalacion', 'reparar', 'reparacion', 'renovar', 'renovacion',
+    ))
+    if es_trabajo_techumbre:
+        datos['intencion'] = 'planificar_proyecto'
+        if not _texto_normalizado(datos.get('proyecto')):
+            datos['proyecto'] = mensaje.strip()[:120] or 'Proyecto de techumbre'
+
+        ancho_cm, largo_cm = _dimensiones_rectangulares_cm(texto_usuario)
+        if ancho_cm and largo_cm:
+            datos['ancho_cm'] = ancho_cm
+            datos['fondo_cm'] = largo_cm
+
+        enlace_material = r'\s+(?:(?:es|esta)\s+)?(?:de\s+)?'
+        if re.search(rf'\b(?:estructura|soporte){enlace_material}madera\b', texto_usuario):
+            datos['material_estructura'] = 'madera'
+        elif re.search(rf'\b(?:estructura|soporte){enlace_material}(?:metal|acero|metalica)\b', texto_usuario):
+            datos['material_estructura'] = 'metal'
+        elif re.search(rf'\b(?:estructura|soporte){enlace_material}(?:hormigon|concreto)\b', texto_usuario):
+            datos['material_estructura'] = 'hormigon'
+        elif datos.get('material_estructura') not in {'madera', 'metal', 'hormigon', 'otra'}:
+            datos['material_estructura'] = ''
+
+        estructura_en_buen_estado = bool(re.search(
+            r'\bestructura\b.{0,35}\b(?:esta\s+)?en buen estado\b',
+            texto_usuario,
+        ))
+        if estructura_en_buen_estado or any(frase in texto_usuario for frase in (
+            'reutilizar la estructura', 'mantener la estructura',
+        )):
+            datos['estado_estructura'] = 'reutilizable'
+        elif re.search(
+            r'\bestructura\b.{0,20}\b(?:sera|quedara)\b',
+            texto_usuario,
+        ) or any(frase in texto_usuario for frase in (
+            'construir la estructura', 'estructura nueva', 'nuevo cobertizo',
+        )):
+            datos['estado_estructura'] = 'nueva'
+        elif any(frase in texto_usuario for frase in (
+            'reparar la estructura', 'estructura danada', 'estructura deteriorada',
+        )):
+            datos['estado_estructura'] = 'reparar'
+        elif any(frase in texto_usuario for frase in (
+            'reemplazar la estructura', 'cambiar la estructura',
+        )):
+            datos['estado_estructura'] = 'reemplazar'
+        elif datos.get('estado_estructura') not in {'nueva', 'reutilizable', 'reparar', 'reemplazar'}:
+            datos['estado_estructura'] = ''
+
+        cubierta = ''
+        if 'policarbonato' in texto_usuario:
+            coincidencias_cubierta = list(re.finditer(
+                r'policarbonato(?:\s+(alveolar|ondulad[oa]|compact[oa]))?'
+                r'(?:\s+(?:de\s+)?(\d+(?:[.,]\d+)?\s*mm))?',
+                texto_usuario,
+            ))
+            # Puede existir una mención antigua sin detalles. Se privilegia la
+            # coincidencia más completa y, ante empate, la más reciente.
+            detalles = max(
+                enumerate(coincidencias_cubierta),
+                key=lambda item: (
+                    sum(bool(valor) for valor in item[1].groups()),
+                    item[0],
+                ),
+                default=(0, None),
+            )[1]
+            partes = ['policarbonato']
+            if detalles:
+                partes.extend(valor for valor in detalles.groups() if valor)
+            cubierta = ' '.join(partes)
+        if cubierta:
+            datos['tipo_cubierta'] = cubierta
+        elif not datos.get('tipo_cubierta'):
+            datos['tipo_cubierta'] = ''
+
     if datos.get('intencion') == 'buscar_producto':
         orden_precio = ''
         if any(frase in texto_mensaje for frase in (
@@ -583,7 +696,15 @@ def _formatear_clp(valor):
 def _producto_catalogo(nombre):
     return (
         Producto.objects.filter(activo=True, nombre__icontains=nombre)
-        .order_by('precio', 'nombre')
+        .annotate(
+            prioridad_catalogo=Case(
+                When(sku__startswith='BAN-', then=Value(0)),
+                When(sku__startswith='TEST-', then=Value(2)),
+                default=Value(1),
+                output_field=IntegerField(),
+            )
+        )
+        .order_by('prioridad_catalogo', 'precio', 'nombre')
         .first()
     )
 
@@ -1146,6 +1267,16 @@ def _resolver_bano(datos):
 
 def _resolver_proyecto(datos):
     proyecto = _texto_normalizado(datos.get('proyecto'))
+    if any(termino in f' {proyecto} ' for termino in (
+        'techo', 'techumbre', 'cubierta', 'policarbonato',
+    )):
+        return resolver_proyecto_techumbre(
+            datos,
+            buscar_productos=lambda consulta: _buscar_productos(consulta, limite=20),
+            producto_publico=_producto_publico,
+            buscar_maestros=buscar_maestros,
+            resolver_especialidad=_especialidad_desde_texto,
+        )
     if 'repisa' in proyecto or 'estante' in proyecto:
         return _resolver_repisa(datos)
     if any(termino in f' {proyecto} ' for termino in (

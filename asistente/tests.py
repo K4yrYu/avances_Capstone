@@ -1810,3 +1810,262 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertEqual(resultado['maestros'], [])
         self.assertEqual(resultado['especialidades'], [])
         self.assertEqual(resultado['faltantes_catalogo'], ['panel transparente espacial'])
+
+    def test_techumbre_pide_datos_criticos_antes_de_sugerir_materiales(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de techo de policarbonato',
+            'ancho_cm': 0,
+            'fondo_cm': 0,
+            'material_estructura': '',
+            'estado_estructura': '',
+            'tipo_cubierta': 'policarbonato',
+            'datos_faltantes_proyecto': [],
+            'tareas_proyecto': [],
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('largo y ancho', resultado['mensaje'])
+        self.assertIn('material de la estructura', resultado['mensaje'])
+        self.assertIn('formato y espesor', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_techumbre_corrige_intencion_y_usa_solo_catalogo_con_stock(self, interpretar):
+        Producto.objects.create(
+            nombre='Policarbonato alveolar 6 mm',
+            descripcion='Plancha para cubierta', precio=29990, stock=0,
+            categoria='Construcción', activo=True,
+        )
+        tornillo = Producto.objects.create(
+            nombre='Tornillo autoperforante metal para techo',
+            descripcion='Fijación para estructura metálica', precio=4990, stock=30,
+            categoria='Ferretería', activo=True,
+        )
+        interpretar.return_value = {
+            'intencion': 'buscar_producto',
+            'respuesta': 'Buscaré una opción.',
+            'consulta_producto': 'policarbonato',
+            'proyecto': '',
+            'ancho_cm': 0,
+            'fondo_cm': 0,
+            'material_estructura': '',
+            'estado_estructura': '',
+            'tipo_cubierta': '',
+            'tareas_proyecto': [],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': [],
+            'datos_faltantes_proyecto': [],
+        }
+
+        resultado = procesar_consulta(
+            'Quiero cambiar un techo de policarbonato alveolar 6 mm de 3 x 5 m; '
+            'la estructura metálica está en buen estado.',
+            [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertEqual(resultado['superficie_m2'], 15)
+        self.assertIn(tornillo.id, {item['id'] for item in resultado['productos']})
+        self.assertTrue(all(item['stock'] > 0 for item in resultado['productos']))
+        self.assertTrue(any('policarbonato' in item for item in resultado['faltantes_catalogo']))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_techumbre_prioriza_formato_detallado_de_respuesta_posterior(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'respuesta': 'Continuaré el proyecto.',
+            'proyecto': 'Cambio de techo de policarbonato',
+            'ancho_cm': 0,
+            'fondo_cm': 0,
+            'material_estructura': '',
+            'estado_estructura': '',
+            'tipo_cubierta': 'policarbonato',
+            'tareas_proyecto': [],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': [],
+            'datos_faltantes_proyecto': ['formato y espesor del policarbonato'],
+        }
+        historial = [{
+            'role': 'user',
+            'content': 'Quiero cambiar un techo de policarbonato.',
+        }]
+
+        resultado = procesar_consulta(
+            'Mide 4 x 2 metros, la estructura es de madera y está en buen estado. '
+            'Quiero policarbonato alveolar de 6 mm.',
+            historial,
+        )
+
+        self.assertNotEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertEqual(resultado['superficie_m2'], 8)
+
+    def test_techumbre_calcula_planchas_con_rendimiento_y_margen_verificados(self):
+        policarbonato = Producto.objects.create(
+            nombre='Policarbonato alveolar 6 mm',
+            descripcion='Plancha de 2 por 1 metro para cubierta',
+            precio=29990,
+            stock=10,
+            categoria='Construcción',
+            activo=True,
+            unidad_venta='unidad',
+            contenido=Decimal('2.000'),
+            unidad_contenido='m2',
+            tipo_calculo='superficie',
+            rendimiento=Decimal('2.000'),
+            unidad_rendimiento='m2_unidad',
+            porcentaje_desperdicio=Decimal('10.00'),
+            informacion_tecnica_verificada=True,
+        )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de techo de policarbonato',
+            'ancho_cm': 400,
+            'fondo_cm': 200,
+            'material_estructura': 'madera',
+            'estado_estructura': 'reutilizable',
+            'tipo_cubierta': 'policarbonato alveolar 6 mm',
+            'datos_faltantes_proyecto': [],
+            'tareas_proyecto': [],
+        })
+
+        cubierta = next(
+            item for item in resultado['productos'] if item['id'] == policarbonato.id
+        )
+        self.assertEqual(cubierta['cantidad_requerida'], 5)
+        self.assertEqual(cubierta['carrito_cantidad'], 5)
+        self.assertEqual(cubierta['subtotal'], 5 * policarbonato.precio)
+        self.assertFalse(cubierta['recomendacion_orientativa'])
+        self.assertIn('5 unidad(es)', resultado['mensaje'])
+
+    def test_proyecto_libre_calcula_solo_con_ficha_tecnica_verificada(self):
+        baldosa = Producto.objects.create(
+            nombre='Baldosa exterior antideslizante terraza',
+            descripcion='Revestimiento para terraza exterior',
+            precio=18990,
+            stock=20,
+            categoria='Construcción',
+            activo=True,
+            contenido=Decimal('2.000'),
+            unidad_contenido='m2',
+            tipo_calculo='superficie',
+            rendimiento=Decimal('2.000'),
+            unidad_rendimiento='m2_unidad',
+            porcentaje_desperdicio=Decimal('10.00'),
+            informacion_tecnica_verificada=True,
+        )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Instalar baldosas en terraza exterior',
+            'superficie': 12,
+            'tareas_proyecto': [{
+                'nombre': 'Revestir la superficie',
+                'busquedas': ['baldosa exterior antideslizante terraza'],
+            }],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': [],
+            'datos_faltantes_proyecto': [],
+        })
+
+        item = next(producto for producto in resultado['productos'] if producto['id'] == baldosa.id)
+        self.assertEqual(item['cantidad_requerida'], 7)
+        self.assertEqual(item['carrito_cantidad'], 7)
+        self.assertFalse(item['recomendacion_orientativa'])
+        self.assertIn('Cantidades calculadas con fichas verificadas', resultado['mensaje'])
+
+    def test_proyecto_libre_es_invalido_si_falta_material_principal(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Construir cerco con paneles de bambú',
+            'material_principal_proyecto': 'panel de bambú',
+            'tareas_proyecto': [
+                {
+                    'nombre': 'Instalar postes',
+                    'busquedas': ['pino dimensionado', 'cemento uso general'],
+                },
+                {
+                    'nombre': 'Montar paneles',
+                    'busquedas': ['tornillos para madera'],
+                },
+            ],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': ['Carpintería'],
+            'datos_faltantes_proyecto': ['altura del cerco'],
+        })
+
+        self.assertEqual(resultado['tipo'], 'proyecto_no_valido')
+        self.assertEqual(resultado['productos'], [])
+        self.assertEqual(resultado['faltantes_catalogo'], ['panel de bambú'])
+        self.assertIn('Proyecto no válido por falta de materiales', resultado['mensaje'])
+
+    def test_proyecto_libre_no_declara_faltante_un_material_ya_mostrado(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Construcción de cobertizo',
+            'material_principal_proyecto': 'pino dimensionado',
+            'tareas_proyecto': [{
+                'nombre': 'Estructura de madera',
+                'busquedas': ['pino dimensionado exterior'],
+            }],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': ['Carpintería'],
+            'datos_faltantes_proyecto': [
+                'ancho del área a cubrir',
+                'largo del área a cubrir',
+            ],
+        })
+
+        ids = [producto['id'] for producto in resultado['productos']]
+        self.assertEqual(ids.count(self.madera.id), 1)
+        self.assertFalse(any(
+            'pino dimensionado' in faltante.casefold()
+            for faltante in resultado['faltantes_catalogo']
+        ))
+        self.assertNotIn('No encontré en el catálogo: pino', resultado['mensaje'])
+
+    def test_proyecto_libre_solo_materiales_excluye_herramientas(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Construir estructura pequeña de madera',
+            'material_principal_proyecto': 'pino dimensionado exterior',
+            'tareas_proyecto': [{
+                'nombre': 'Estructura',
+                'busquedas': ['pino dimensionado exterior'],
+            }],
+            'herramientas_proyecto': ['taladro', 'sierra circular'],
+            'incluir_herramientas': False,
+            'especialidades_proyecto': [],
+            'datos_faltantes_proyecto': [],
+        })
+
+        self.assertTrue(resultado['productos'])
+        self.assertFalse(any(
+            tarea['nombre'] == 'Herramientas recomendadas'
+            for tarea in resultado['tareas']
+        ))
+        self.assertTrue(all(
+            producto['rol'] != 'Herramientas recomendadas'
+            for producto in resultado['productos']
+        ))
+
+    def test_cobertizo_nuevo_pide_altura_antes_de_mostrar_materiales(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cobertizo de madera con cubierta de policarbonato',
+            'ancho_cm': 300,
+            'fondo_cm': 400,
+            'alto_cm': 0,
+            'material_estructura': 'madera',
+            'estado_estructura': 'nueva',
+            'tipo_cubierta': 'policarbonato alveolar 6 mm',
+            'datos_faltantes_proyecto': [],
+            'tareas_proyecto': [],
+            'herramientas_proyecto': [],
+            'incluir_herramientas': False,
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('altura de la estructura nueva', resultado['mensaje'])

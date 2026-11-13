@@ -77,7 +77,7 @@
                         {% for producto in grupo.list %}
                           <tr>
                             <td><input class="order-check" type="checkbox" name="productos" value="{{ producto.id }}" checked aria-label="Incluir {{ producto.nombre }}"></td>
-                            <td><div class="replenishment-product"><span class="product-mini-image"><img src="{{ producto.imagen.url }}" alt=""></span><div><strong>{{ producto.nombre }}</strong><small>{{ producto.marca }}{% if producto.color %} · {{ producto.color }}{% endif %}</small></div></div></td>
+                            <td><div class="replenishment-product"><span class="product-mini-image">{% if producto.imagen %}<img src="{{ producto.imagen.url }}" alt="">{% else %}<img src="{% static 'img/sfi-logo.png' %}" alt="Imagen no disponible">{% endif %}</span><div><strong>{{ producto.nombre }}</strong><small>{{ producto.marca }}{% if producto.color %} · {{ producto.color }}{% endif %}</small></div></div></td>
                             <td><span class="stock-chip {% if producto.stock == 0 %}empty{% endif %}">{{ producto.stock }}</span></td>
                             <td>{{ producto.stock_minimo }}</td>
                             <td><input class="quantity-order" type="number" name="cantidad_{{ producto.id }}" min="1" max="1000000" value="{{ producto.cantidad_alerta_sugerida }}" required aria-label="Cantidad de {{ producto.nombre }}"></td>

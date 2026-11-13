@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from decimal import Decimal, ROUND_CEILING
 
 from maestros.models import Especialidad
 from productos.models import Producto
@@ -135,7 +136,11 @@ def _extraer_tareas(datos):
         if total_busquedas >= MAX_BUSQUEDAS:
             break
 
-    herramientas = _lista_textos(datos.get("herramientas_proyecto"), 3, 80)
+    herramientas = (
+        _lista_textos(datos.get("herramientas_proyecto"), 3, 80)
+        if datos.get("incluir_herramientas") is True
+        else []
+    )
     herramientas = herramientas[:max(0, MAX_BUSQUEDAS - total_busquedas)]
     if herramientas:
         tareas.append({"nombre": "Herramientas recomendadas", "busquedas": herramientas})
@@ -190,10 +195,58 @@ def resolver_proyecto_generico(
             ],
         }
 
+    material_principal = _texto_seguro(
+        datos.get("material_principal_proyecto"), 100
+    )
+    if material_principal:
+        candidatos_principales = _candidatos_directos(material_principal)
+        ids_principales = {producto.pk for producto in candidatos_principales}
+        candidatos_principales.extend(
+            producto for producto in buscar_productos(material_principal)
+            if producto.pk not in ids_principales
+        )
+        principal_disponible = next((
+            producto for producto in candidatos_principales
+            if producto.stock > 0
+            and _coincidencia_suficiente(producto, material_principal)
+        ), None)
+        if principal_disponible is None:
+            return {
+                "tipo": "proyecto_no_valido",
+                "mensaje": (
+                    f"Proyecto no válido por falta de materiales: no encontré "
+                    f"“{material_principal}” con stock en SFI. No mostraré postes, "
+                    "fijaciones ni herramientas porque, sin el material principal, "
+                    "el proyecto no puede completarse como fue solicitado."
+                ),
+                "productos": [],
+                "maestros": [],
+                "faltantes_catalogo": [material_principal],
+                "sugerencias": [
+                    "Cambiar el material principal",
+                    "Ver productos disponibles",
+                    "Reformular el proyecto",
+                ],
+            }
+        if not any(
+            _normalizar(material_principal) == _normalizar(busqueda)
+            for tarea in tareas for busqueda in tarea["busquedas"]
+        ):
+            tareas.insert(0, {
+                "nombre": "Material principal",
+                "busquedas": [material_principal],
+            })
+            tareas = tareas[:MAX_TAREAS]
+
     productos = []
     productos_usados = set()
     faltantes = []
+    cantidades_calculadas = []
     texto_plan = [proyecto]
+    try:
+        superficie_m2 = Decimal(str(datos.get("superficie") or 0))
+    except Exception:
+        superficie_m2 = Decimal("0")
 
     for tarea in tareas:
         texto_plan.append(tarea["nombre"])
@@ -205,6 +258,26 @@ def resolver_proyecto_generico(
                 producto for producto in buscar_productos(consulta)
                 if producto.pk not in ids_candidatos
             )
+            if _normalizar(tarea["nombre"]) == "cubierta":
+                accesorios_cubierta = {
+                    "perfil", "union", "cierre", "tornillo", "golilla",
+                    "sellador", "silicona", "cinta", "canaleta", "bajada",
+                }
+                candidatos = [
+                    candidato for candidato in candidatos
+                    if not (
+                        set(_palabras_consulta(candidato.nombre))
+                        & accesorios_cubierta
+                    )
+                ]
+            # Si una etapa posterior vuelve a pedir el mismo producto ya
+            # seleccionado, no se duplica ni se informa falsamente como ausente.
+            if any(
+                candidato.pk in productos_usados
+                and _coincidencia_suficiente(candidato, consulta)
+                for candidato in candidatos
+            ):
+                continue
             disponibles = [
                 candidato for candidato in candidatos
                 if (
@@ -228,6 +301,37 @@ def resolver_proyecto_generico(
                 "carrito_cantidad": 1,
                 "recomendacion_orientativa": True,
             })
+            if (
+                superficie_m2 > 0
+                and producto.informacion_tecnica_verificada
+                and producto.tipo_calculo == "superficie"
+                and producto.rendimiento
+                and producto.unidad_rendimiento == "m2_unidad"
+            ):
+                margen = Decimal(producto.porcentaje_desperdicio or 0) / Decimal("100")
+                cantidad = int((
+                    superficie_m2 * (Decimal("1") + margen)
+                    / Decimal(producto.rendimiento)
+                ).to_integral_value(rounding=ROUND_CEILING))
+                if cantidad > 0:
+                    item.update({
+                        "cantidad_requerida": cantidad,
+                        "carrito_cantidad": min(cantidad, producto.stock),
+                        "subtotal": cantidad * producto.precio,
+                        "recomendacion_orientativa": False,
+                        "detalle_material": (
+                            f"{cantidad} unidad(es) para {superficie_m2:g} m² con "
+                            f"{producto.porcentaje_desperdicio:g}% de margen."
+                        ),
+                    })
+                    cantidades_calculadas.append(
+                        f"{cantidad} unidad(es) de {producto.nombre}"
+                    )
+                    if cantidad > producto.stock:
+                        faltantes.append(
+                            f"{producto.nombre}: se requieren {cantidad} y hay "
+                            f"{producto.stock} en stock"
+                        )
             productos.append(item)
             productos_usados.add(producto.pk)
             if len(productos) >= MAX_PRODUCTOS:
@@ -270,9 +374,16 @@ def resolver_proyecto_generico(
             + "."
         )
     else:
-        partes.append(
-            "Las cantidades mostradas son referenciales hasta validar medidas y rendimiento."
-        )
+        if cantidades_calculadas:
+            partes.append(
+                "Cantidades calculadas con fichas verificadas: "
+                + ", ".join(cantidades_calculadas)
+                + ". Los demás materiales permanecen como referencia."
+            )
+        else:
+            partes.append(
+                "Las cantidades mostradas son referenciales hasta validar medidas y rendimiento."
+            )
     if faltantes:
         partes.append("No encontré en el catálogo: " + ", ".join(faltantes) + ".")
     if maestros:
@@ -296,3 +407,164 @@ def resolver_proyecto_generico(
         "calculo_orientativo": True,
         "sugerencias": sugerencias[:3],
     }
+
+
+def resolver_proyecto_techumbre(
+    datos,
+    *,
+    buscar_productos,
+    producto_publico,
+    buscar_maestros,
+    resolver_especialidad,
+):
+    """Valida una techumbre antes de recomendar materiales del catálogo."""
+    proyecto = _texto_seguro(datos.get("proyecto"), 120) or "Proyecto de techumbre"
+    try:
+        ancho_cm = max(0, int(datos.get("ancho_cm") or 0))
+        largo_cm = max(0, int(datos.get("fondo_cm") or 0))
+        alto_cm = max(0, int(datos.get("alto_cm") or 0))
+    except (TypeError, ValueError):
+        ancho_cm = largo_cm = alto_cm = 0
+    material = _normalizar(datos.get("material_estructura"))
+    estado = _normalizar(datos.get("estado_estructura"))
+    cubierta = _texto_seguro(datos.get("tipo_cubierta"), 100)
+    texto = _normalizar(" ".join([proyecto, cubierta]))
+
+    # Los datos críticos se reconstruyen para no arrastrar faltantes obsoletos
+    # que Gemini pudiera haber conservado después de una respuesta del usuario.
+    faltantes = []
+    claves_faltantes = set()
+
+    def agregar_faltante(texto_faltante):
+        clave = _normalizar(texto_faltante)
+        if clave not in claves_faltantes and len(faltantes) < 5:
+            faltantes.append(texto_faltante)
+            claves_faltantes.add(clave)
+
+    if not ancho_cm or not largo_cm:
+        agregar_faltante("largo y ancho del área a cubrir")
+    if material not in {"madera", "metal", "hormigon", "otra"}:
+        agregar_faltante("material de la estructura de apoyo")
+    if estado not in {"nueva", "reutilizable", "reparar", "reemplazar"}:
+        agregar_faltante("estado de la estructura existente")
+    if estado == "nueva" and not alto_cm:
+        agregar_faltante("altura de la estructura nueva")
+    if not cubierta:
+        agregar_faltante("material, formato y espesor de la cubierta")
+    elif "policarbonato" in texto and not re.search(
+        r"\b(?:alveolar|ondulad[oa]|compact[oa]|\d+\s*mm)\b", texto
+    ):
+        agregar_faltante("formato y espesor del policarbonato")
+
+    if faltantes:
+        return {
+            "tipo": "aclaracion_proyecto",
+            "mensaje": (
+                f"Para preparar {proyecto} con materiales compatibles del catálogo necesito: "
+                + ", ".join(faltantes)
+                + ". También confirma que la pendiente y el drenaje existentes son adecuados. "
+                "Con esos datos revisaré solo productos con stock y no asumiré fijaciones."
+            ),
+            "productos": [],
+            "maestros": [],
+            "sugerencias": [
+                "Indicar medidas del techo",
+                "Indicar estructura y cubierta",
+                "Buscar maestro de Techumbre",
+            ],
+        }
+
+    consulta_cubierta = "policarbonato" if "policarbonato" in texto else cubierta
+    consulta_fijacion = {
+        "madera": "tornillo para techo de madera",
+        "metal": "tornillo autoperforante metal",
+        "hormigon": "fijacion para hormigon",
+        "otra": "fijacion para techumbre",
+    }[material]
+    datos_plan = dict(datos)
+    tareas_techumbre = []
+    if estado == "nueva":
+        consulta_estructura = {
+            "madera": "pino dimensionado 2 x 4 pulgadas",
+            "metal": "perfil metalico estructural exterior",
+            "hormigon": "material estructural hormigon",
+            "otra": "material estructura exterior",
+        }[material]
+        tareas_techumbre.append({
+            "nombre": "Estructura",
+            "busquedas": [consulta_estructura],
+        })
+    tareas_techumbre.extend([
+        {"nombre": "Cubierta", "busquedas": [consulta_cubierta]},
+        {"nombre": "Fijación compatible", "busquedas": [consulta_fijacion]},
+        {
+            "nombre": "Sellado",
+            "busquedas": [
+                "sellador policarbonato"
+                if "policarbonato" in texto
+                else f"sellador {cubierta}"
+            ],
+        },
+    ])
+    datos_plan["tareas_proyecto"] = tareas_techumbre
+    datos_plan["especialidades_proyecto"] = ["Techumbre"]
+    datos_plan["datos_faltantes_proyecto"] = []
+    resultado = resolver_proyecto_generico(
+        datos_plan,
+        buscar_productos=buscar_productos,
+        producto_publico=producto_publico,
+        buscar_maestros=buscar_maestros,
+        resolver_especialidad=resolver_especialidad,
+    )
+    superficie = round((ancho_cm * largo_cm) / 10000, 2)
+    cantidades_calculadas = []
+    for item in resultado.get("productos", []):
+        if _normalizar(item.get("rol")) != "cubierta":
+            continue
+        producto = Producto.objects.filter(pk=item.get("id"), activo=True).first()
+        if not (
+            producto
+            and producto.informacion_tecnica_verificada
+            and producto.tipo_calculo == "superficie"
+            and producto.rendimiento
+            and producto.unidad_rendimiento == "m2_unidad"
+        ):
+            continue
+        cobertura = Decimal(producto.rendimiento)
+        margen = Decimal(producto.porcentaje_desperdicio or 0) / Decimal("100")
+        superficie_calculo = Decimal(str(superficie)) * (Decimal("1") + margen)
+        cantidad = int(
+            (superficie_calculo / cobertura).to_integral_value(rounding=ROUND_CEILING)
+        )
+        if cantidad < 1:
+            continue
+        item.update({
+            "cantidad_requerida": cantidad,
+            "carrito_cantidad": min(cantidad, producto.stock),
+            "subtotal": cantidad * producto.precio,
+            "recomendacion_orientativa": False,
+            "detalle_material": (
+                f"{cantidad} unidad(es) para {superficie:g} m², incluyendo "
+                f"{producto.porcentaje_desperdicio:g}% de margen; "
+                f"cada unidad cubre {producto.rendimiento:g} m²."
+            ),
+        })
+        cantidades_calculadas.append(f"{cantidad} unidad(es) de {producto.nombre}")
+        if cantidad > producto.stock:
+            resultado.setdefault("faltantes_catalogo", []).append(
+                f"{producto.nombre}: se requieren {cantidad} y hay {producto.stock} en stock"
+            )
+
+    resultado["superficie_m2"] = superficie
+    resumen_cantidad = (
+        " Cantidad calculada: " + ", ".join(cantidades_calculadas) + "."
+        if cantidades_calculadas else ""
+    )
+    resultado["mensaje"] = (
+        f"El área informada es de {superficie:g} m². "
+        + resultado["mensaje"]
+        + resumen_cantidad
+        + " Las cantidades sin ficha técnica verificada siguen siendo referenciales. "
+          "Confirma formato útil y traslapes indicados por el fabricante antes de comprar."
+    )
+    return resultado

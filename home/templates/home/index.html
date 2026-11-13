@@ -231,7 +231,11 @@
               <article class="product-card">
                 <a href="{% url 'detalle_producto' producto.id %}" class="product-image-wrap" aria-label="Ver {{ producto.nombre }}">
                   <span class="stock-pill"><i class="fa-solid fa-circle" aria-hidden="true"></i> {{ producto.stock }} disponibles</span>
-                  <img src="{{ producto.imagen.url }}" alt="{{ producto.nombre }}" class="product-image" loading="lazy">
+                  {% if producto.imagen %}
+                    <img src="{{ producto.imagen.url }}" alt="{{ producto.nombre }}" class="product-image" loading="lazy">
+                  {% else %}
+                    <img src="{% static 'img/sfi-logo.png' %}" alt="Imagen no disponible para {{ producto.nombre }}" class="product-image" loading="lazy">
+                  {% endif %}
                 </a>
                 <div class="product-card-body">
                   <span class="product-category">{{ producto.categoria }}</span>

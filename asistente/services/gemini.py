@@ -17,7 +17,7 @@ class GeminiNoDisponible(Exception):
 
 
 def _catalogo_compacto():
-    productos = Producto.objects.filter(activo=True).order_by('categoria', 'nombre')[:80]
+    productos = Producto.objects.filter(activo=True).order_by('categoria', 'nombre')[:250]
     return [
         {
             'id': producto.id,
@@ -33,7 +33,10 @@ def _catalogo_compacto():
             'ambiente': producto.get_ambiente_uso_display(),
             'superficies': producto.superficies_compatibles_display,
             'terminacion': producto.get_terminacion_display(),
-            'rendimiento_m2_l': str(producto.rendimiento or ''),
+            'tipo_calculo': producto.tipo_calculo,
+            'rendimiento': str(producto.rendimiento or ''),
+            'unidad_rendimiento': producto.unidad_rendimiento,
+            'ficha_verificada': producto.informacion_tecnica_verificada,
         }
         for producto in productos
     ]
@@ -77,6 +80,7 @@ def _esquema_respuesta():
             'desperdicio': {'type': 'integer', 'minimum': -1, 'maximum': 50},
             'presupuesto': {'type': 'integer', 'minimum': 0, 'maximum': 100000000},
             'proyecto': {'type': 'string', 'maxLength': 120},
+            'material_principal_proyecto': {'type': 'string', 'maxLength': 100},
             'tareas_proyecto': {
                 'type': 'array',
                 'maxItems': 6,
@@ -117,6 +121,15 @@ def _esquema_respuesta():
                 'type': 'string',
                 'enum': ['', 'hormigon', 'ladrillo', 'yeso_carton', 'madera'],
             },
+            'material_estructura': {
+                'type': 'string',
+                'enum': ['', 'madera', 'metal', 'hormigon', 'otra', 'desconocido'],
+            },
+            'estado_estructura': {
+                'type': 'string',
+                'enum': ['', 'nueva', 'reutilizable', 'reparar', 'reemplazar', 'desconocido'],
+            },
+            'tipo_cubierta': {'type': 'string', 'maxLength': 100},
             'incluir_herramientas': {'type': 'boolean'},
             'alcance_bano': {
                 'type': 'string',
@@ -134,10 +147,12 @@ def _esquema_respuesta():
             'intencion', 'respuesta', 'consulta_producto', 'superficie',
             'ambiente', 'tipo_superficie', 'estado_superficie', 'terminacion',
             'color', 'capas', 'desperdicio',
-            'presupuesto', 'proyecto', 'ancho_cm', 'fondo_cm', 'alto_cm',
+            'presupuesto', 'proyecto', 'material_principal_proyecto',
+            'ancho_cm', 'fondo_cm', 'alto_cm',
             'tareas_proyecto', 'herramientas_proyecto',
             'especialidades_proyecto', 'datos_faltantes_proyecto',
             'cantidad', 'tipo_muro', 'incluir_herramientas',
+            'material_estructura', 'estado_estructura', 'tipo_cubierta',
             'alcance_bano', 'superficie_muros', 'incluir_sanitario',
             'incluir_lavamanos', 'incluir_ducha',
             'especialidad_maestro', 'comuna_maestro', 'descripcion_trabajo',
@@ -176,6 +191,20 @@ Reglas obligatorias:
   que requiera combinar materiales, herramientas o profesionales.
 - Para proyectos distintos de pintura, divide el trabajo en tareas_proyecto. Cada tarea debe
   tener un nombre y búsquedas breves de tipos de producto, no IDs ni productos inventados.
+- Interpreta también proyectos libres que SFI no tenga programados de forma especializada:
+  cercos, terrazas, cobertizos, muebles, reparaciones y otras mejoras domésticas. Resume el
+  objetivo en proyecto y divídelo en 2 a 6 etapas materiales coherentes.
+- En material_principal_proyecto conserva el material o producto que define la viabilidad del
+  pedido, por ejemplo "panel de bambú", "baldosa antideslizante" o "madera para cerco".
+  Si el cliente exige un material concreto, no lo sustituyas por otro. Los postes, tornillos,
+  adhesivos y herramientas no reemplazan la ausencia del material principal.
+- Usa el historial para completar respuestas posteriores. Cuando el cliente entregue un dato
+  solicitado, actualízalo y no lo mantengas en datos_faltantes_proyecto.
+- Antes de proponer cantidades identifica solo los datos indispensables para ese trabajo, por
+  ejemplo dimensiones, superficie, material existente, soporte, exposición o terminación.
+  Formula esos faltantes como preguntas concretas y no como instrucciones genéricas.
+- Una etapa puede buscar un material solamente si aparece en el catálogo o corresponde a un
+  tipo de producto razonablemente consultable. Django decidirá si existe y tiene stock.
 - Las búsquedas de tareas deben nombrar un producto concreto y su uso, por ejemplo
   "monomando lavamanos" o "kit conexión lavamanos". No uses términos ambiguos aislados
   como "llave", "llaves", "kit", "juego" ni acciones como "desmontar".
@@ -183,11 +212,21 @@ Reglas obligatorias:
   baño. Conserva el artefacto exacto solicitado y no agregues otros artefactos sanitarios.
 - En herramientas_proyecto incluye herramientas solo si son razonablemente necesarias o el
   cliente las solicita. No repitas búsquedas ya incluidas en las tareas.
+- Si el cliente pide "solo materiales", "sin herramientas" o una expresión equivalente,
+  usa incluir_herramientas=false y deja herramientas_proyecto vacío.
 - En especialidades_proyecto utiliza únicamente nombres presentes en ESPECIALIDADES SFI.
   Usa comuna_maestro si el cliente indicó dónde realizará el proyecto, aunque todavía no haya
   pedido explícitamente un maestro.
 - En datos_faltantes_proyecto indica medidas o decisiones indispensables para calcular
   cantidades. No supongas dimensiones, rendimientos ni cantidades.
+- Para techos y techumbres usa ancho_cm y fondo_cm como ancho y largo del área a cubrir.
+  Extrae material_estructura (madera, metal, hormigón, otra o desconocido),
+  estado_estructura (nueva, reutilizable, reparar, reemplazar o desconocido) y tipo_cubierta.
+  Usa nueva cuando se construirá un cobertizo o soporte que todavía no existe. En ese caso
+  extrae alto_cm y, si falta, solicítalo antes de preparar materiales estructurales.
+  Para policarbonato conserva su formato y espesor si el
+  cliente los indica. Si faltan, agrégalos a datos_faltantes_proyecto; no supongas fijaciones
+  compatibles ni cantidades antes de conocer la estructura y las medidas.
 - Para repisas y baños conserva además los campos especializados actuales, porque Django posee
   cálculos exactos para esos proyectos.
 - Para baños usa superficie para los m² de piso y superficie_muros para los m² de muros.

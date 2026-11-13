@@ -544,6 +544,16 @@ class ReposicionInventarioTests(TestCase):
         )
         self.client.force_login(self.admin)
 
+    def test_reposicion_usa_logo_si_producto_no_tiene_imagen(self):
+        self.producto.imagen = ''
+        self.producto.save(update_fields=['imagen'])
+
+        response = self.client.get(reverse('gestion_reposicion'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'img/sfi-logo.png')
+        self.assertContains(response, self.producto.nombre)
+
     def test_admin_puede_enviar_solicitud_por_correo(self):
         response = self.client.post(reverse('crear_solicitud_reposicion'), {
             'proveedor_id': self.proveedor.id,
