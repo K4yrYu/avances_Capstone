@@ -5,7 +5,7 @@ from productos.models import Producto
 
 class MensajeHistorialSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=['user', 'assistant'])
-    content = serializers.CharField(min_length=1, max_length=700, trim_whitespace=True)
+    content = serializers.CharField(min_length=1, max_length=4000, trim_whitespace=True)
 
 
 class ConsultaAsistenteSerializer(serializers.Serializer):
@@ -19,8 +19,8 @@ class ConsultaAsistenteSerializer(serializers.Serializer):
     )
 
     def validate_historial(self, value):
-        if len(value) > 6:
-            raise serializers.ValidationError('Solo se permiten los últimos 6 mensajes.')
+        if len(value) > 10:
+            raise serializers.ValidationError('Solo se permiten los últimos 10 mensajes.')
         return value
 
     def validate_productos_contexto(self, value):

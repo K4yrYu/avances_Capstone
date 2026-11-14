@@ -63,7 +63,29 @@ TODAS_LAS_COMUNAS = '__todas__'
 
 def _texto_normalizado(valor):
     texto = unicodedata.normalize('NFKD', str(valor or '').lower())
-    return ''.join(caracter for caracter in texto if not unicodedata.combining(caracter))
+    texto = ''.join(
+        caracter for caracter in texto if not unicodedata.combining(caracter)
+    )
+    # Correcciones pequeñas y seguras para palabras que expresan la acción.
+    # No se corrigen nombres de productos ni materiales por aproximación.
+    correcciones_accion = {
+        'neceisto': 'necesito',
+        'nesecito': 'necesito',
+        'quieor': 'quiero',
+        'maetsro': 'maestro',
+        'profecional': 'profesional',
+        'herrameintas': 'herramientas',
+        'prodcutos': 'productos',
+        'econimico': 'economico',
+        'preico': 'precio',
+        'cantdiad': 'cantidad',
+        'eligue': 'elige',
+    }
+    return re.sub(
+        r'\b(?:' + '|'.join(map(re.escape, correcciones_accion)) + r')\b',
+        lambda coincidencia: correcciones_accion[coincidencia.group(0)],
+        texto,
+    )
 
 
 def _presupuesto_desde_texto(texto):
@@ -188,6 +210,8 @@ def _es_solicitud_directa_maestro(mensaje):
         'necesito un ', 'necesito una ', 'busco un ', 'busco una ',
         'quiero contratar', 'buscar maestro', 'buscar maestra',
         'buscar profesional', 'prefiero un maestro', 'prefiero una maestra',
+        'muestrame ', 'muestra ', 'ver maestro', 'ver maestra',
+        'ver profesional',
     )) and any(referencia in texto for referencia in referencias_profesionales)
     return solicitud_persona or accion_con_profesional
 
@@ -221,7 +245,8 @@ def _pide_listado_especialidad(mensaje):
     return any(frase in texto for frase in (
         'todos los maestros', 'todas las maestras', 'que maestros',
         'cuales maestros', 'maestros disponibles', 'profesionales disponibles',
-        'ver maestros', 'mostrar maestros',
+        'ver maestros', 'mostrar maestros', 'muestrame los maestros',
+        'muestrame maestros', 'muestra los maestros', 'muestra maestros',
     ))
 
 
@@ -472,13 +497,17 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
             datos['presupuesto'] = presupuesto_detectado
 
     texto_mensaje = _texto_normalizado(mensaje)
+    datos['_proyecto_estandar'] = bool(re.search(
+        r'\b(?:estandar|basico|basica)\b|\b(?:de|como) referencia\b',
+        texto_mensaje,
+    ))
     indicadores_excluir_herramientas = (
         'excluir herramientas', 'sin herramientas', 'quitar herramientas',
         'solo materiales', 'sin taladro',
     )
     indicadores_incluir_herramientas = (
         'incluir herramientas', 'herramienta', 'herramientas', 'taladro',
-        'cinta metrica', 'wincha', 'metro', 'con herramientas',
+        'cinta metrica', 'wincha', 'con herramientas',
     )
 
     if any(indicador in texto_mensaje for indicador in indicadores_excluir_herramientas):
@@ -489,6 +518,11 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
     elif any(indicador in texto_mensaje for indicador in indicadores_incluir_herramientas):
         datos['incluir_herramientas'] = True
 
+    datos['_consulta_solo_herramientas'] = bool(re.search(
+        r'\b(?:que|cuales|dime|indica).*\bherramientas?\b|\bherramientas?\s+se\s+usan\b',
+        texto_mensaje,
+    ))
+
     contexto_techumbre = f" {_texto_normalizado(datos.get('proyecto'))} {texto_usuario} "
     es_techumbre = any(termino in contexto_techumbre for termino in (
         ' techo ', ' techumbre ', ' cubierta ', ' policarbonato ',
@@ -496,6 +530,7 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
     es_trabajo_techumbre = es_techumbre and any(accion in contexto_techumbre for accion in (
         'cambiar', 'cambio', 'reemplazar', 'reemplazo', 'instalar',
         'instalacion', 'reparar', 'reparacion', 'renovar', 'renovacion',
+        'hacer', 'construir', 'construccion',
     ))
     if es_trabajo_techumbre:
         datos['intencion'] = 'planificar_proyecto'
@@ -503,16 +538,42 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
             datos['proyecto'] = mensaje.strip()[:120] or 'Proyecto de techumbre'
 
         ancho_cm, largo_cm = _dimensiones_rectangulares_cm(texto_usuario)
+        pidio_medidas_antes = any(
+            item.get('role') == 'assistant' and any(
+                frase in _texto_normalizado(item.get('content'))
+                for frase in (
+                    'largo y ancho', 'medidas del techo', 'area a cubrir',
+                    'indica medidas', 'ancho x largo', 'ancho y largo',
+                )
+            )
+            for item in historial
+        )
+        if not (ancho_cm and largo_cm) and pidio_medidas_antes:
+            medidas_sin_unidad = re.search(
+                r'(?<!\w)(\d+(?:[.,]\d+)?)\s*(?:x|por)\s*(\d+(?:[.,]\d+)?)(?!\w)',
+                texto_mensaje,
+            )
+            if medidas_sin_unidad:
+                ancho_cm, largo_cm = (
+                    round(float(valor.replace(',', '.')) * 100)
+                    for valor in medidas_sin_unidad.groups()
+                )
         if ancho_cm and largo_cm:
             datos['ancho_cm'] = ancho_cm
             datos['fondo_cm'] = largo_cm
 
         enlace_material = r'\s+(?:(?:es|esta)\s+)?(?:de\s+)?'
-        if re.search(rf'\b(?:estructura|soporte){enlace_material}madera\b', texto_usuario):
+        if re.search(rf'\b(?:estructura|soporte){enlace_material}madera\b', texto_usuario) or (
+            'madera' in texto_mensaje
+        ):
             datos['material_estructura'] = 'madera'
-        elif re.search(rf'\b(?:estructura|soporte){enlace_material}(?:metal|acero|metalica)\b', texto_usuario):
+        elif re.search(rf'\b(?:estructura|soporte){enlace_material}(?:metal|acero|metalica)\b', texto_usuario) or any(
+            material in texto_mensaje for material in ('metal', 'acero', 'metalica')
+        ):
             datos['material_estructura'] = 'metal'
-        elif re.search(rf'\b(?:estructura|soporte){enlace_material}(?:hormigon|concreto)\b', texto_usuario):
+        elif re.search(rf'\b(?:estructura|soporte){enlace_material}(?:hormigon|concreto)\b', texto_usuario) or any(
+            material in texto_mensaje for material in ('hormigon', 'concreto')
+        ):
             datos['material_estructura'] = 'hormigon'
         elif datos.get('material_estructura') not in {'madera', 'metal', 'hormigon', 'otra'}:
             datos['material_estructura'] = ''
@@ -521,7 +582,17 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
             r'\bestructura\b.{0,35}\b(?:esta\s+)?en buen estado\b',
             texto_usuario,
         ))
-        if estructura_en_buen_estado or any(frase in texto_usuario for frase in (
+        respuesta_estado_favorable = any(frase in texto_mensaje for frase in (
+            'en buen estado', 'esta buena', 'esta bien', 'en buena forma',
+            'se puede reutilizar', 'sirve todavia', 'reutilizable',
+            'estructura buena', 'estructura firme',
+        ))
+        respuesta_breve_favorable = bool(re.search(
+            r'\b(?:bueno|buena|firme)\b', texto_mensaje,
+        )) and not any(frase in texto_mensaje for frase in (
+            'no esta bueno', 'no esta buena', 'no esta firme',
+        ))
+        if estructura_en_buen_estado or respuesta_estado_favorable or respuesta_breve_favorable or any(frase in texto_usuario for frase in (
             'reutilizar la estructura', 'mantener la estructura',
         )):
             datos['estado_estructura'] = 'reutilizable'
@@ -543,6 +614,13 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
         elif datos.get('estado_estructura') not in {'nueva', 'reutilizable', 'reparar', 'reemplazar'}:
             datos['estado_estructura'] = ''
 
+        autoriza_recomendacion_cubierta = any(
+            frase in texto_mensaje for frase in (
+                'recomiendame tu', 'recomiendamelo tu', 'tu recomiendame',
+                'elige tu', 'tu elige', 'lo demas recomienda',
+                'lo que recomiendes', 'la que recomiendes', 'el que recomiendes',
+            )
+        )
         cubierta = ''
         if 'policarbonato' in texto_usuario:
             coincidencias_cubierta = list(re.finditer(
@@ -564,10 +642,24 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
             if detalles:
                 partes.extend(valor for valor in detalles.groups() if valor)
             cubierta = ' '.join(partes)
+        elif re.search(r'\btejas?\b', texto_usuario):
+            cubierta = 'tejas'
+        elif re.search(r'\bzinc\b', texto_usuario):
+            cubierta = 'zinc'
         if cubierta:
             datos['tipo_cubierta'] = cubierta
-        elif not datos.get('tipo_cubierta'):
+            # Una cubierta indicada expresamente por el cliente no puede ser
+            # sustituida silenciosamente por otra familia de productos.
+            datos['material_principal_proyecto'] = cubierta
+        elif not autoriza_recomendacion_cubierta:
             datos['tipo_cubierta'] = ''
+            datos['material_principal_proyecto'] = ''
+
+        datos['_autoriza_recomendacion_cubierta'] = autoriza_recomendacion_cubierta
+        datos['_consulta_solo_herramientas'] = bool(re.search(
+            r'\b(?:que|cuales|dime|indica).*\bherramientas?\b|\bherramientas?\s+se\s+usan\b',
+            texto_mensaje,
+        ))
 
     if datos.get('intencion') == 'buscar_producto':
         orden_precio = ''
@@ -1267,6 +1359,14 @@ def _resolver_bano(datos):
 
 def _resolver_proyecto(datos):
     proyecto = _texto_normalizado(datos.get('proyecto'))
+    if datos.get('_proyecto_estandar') is True:
+        return resolver_proyecto_generico(
+            datos,
+            buscar_productos=lambda consulta: _buscar_productos(consulta, limite=20),
+            producto_publico=_producto_publico,
+            buscar_maestros=buscar_maestros,
+            resolver_especialidad=_especialidad_desde_texto,
+        )
     if any(termino in f' {proyecto} ' for termino in (
         'techo', 'techumbre', 'cubierta', 'policarbonato',
     )):
@@ -1322,6 +1422,15 @@ FAMILIAS_ESTRICTAS_BUSQUEDA = {
     'perno': ('perno', 'bulon'),
     'latex': ('latex',),
     'oleo': ('oleo',),
+}
+
+ACCESORIOS_POR_FAMILIA = {
+    # Al pedir un sanitario/inodoro se debe priorizar el artefacto. Estos
+    # productos siguen siendo resultados válidos, pero no deben desplazarlo.
+    'sanitario': (
+        'tubo', 'codo', 'tee', 'sifon', 'adhesivo', 'valvula', 'flexible',
+        'conexion', 'fitting', 'manguito', 'reduccion', 'cemento',
+    ),
 }
 
 
@@ -1480,6 +1589,11 @@ def _buscar_productos(consulta, limite=6):
             elif contiene(detalle, palabra):
                 puntaje += 1
 
+        if familia_solicitada:
+            accesorios = ACCESORIOS_POR_FAMILIA.get(familia_solicitada, ())
+            if any(contiene(nombre, accesorio) for accesorio in accesorios):
+                puntaje -= 8
+
         coincidencias = sum(
             contiene(texto_completo, palabra) for palabra in palabras_expandidas
         )
@@ -1511,6 +1625,13 @@ def _aplicar_contexto_productos(datos, mensaje, productos_contexto):
         return datos
 
     texto = _texto_normalizado(mensaje)
+    referencia_proyecto = bool(re.search(
+        r'\b(?:este|esta|estos|estas|ese|esa|esos|esas|mi|el|la)\s+'
+        r'(?:proyecto|trabajo|obra|instalacion|materiales|herramientas)\b',
+        texto,
+    ))
+    if referencia_proyecto:
+        return datos
     referencia_contextual = any(frase in texto for frase in (
         'este', 'esta', 'ese', 'esa', 'estos', 'estas', 'esos', 'esas',
         'anterior', 'anteriores', 'de los que mostraste', 'de esas opciones',
@@ -1549,6 +1670,180 @@ def _aplicar_contexto_productos(datos, mensaje, productos_contexto):
     elif referencia_contextual:
         datos['_contexto_ambiguo'] = True
     return datos
+
+
+def _continuar_dato_pendiente_proyecto(datos, mensaje, historial):
+    """Prioriza una respuesta del proyecto sobre referencias a tarjetas mostradas."""
+    ultimo_asistente = next((
+        _texto_normalizado(item.get('content'))
+        for item in reversed(historial)
+        if item.get('role') == 'assistant'
+    ), '')
+    texto = _texto_normalizado(mensaje)
+    pide_estado = (
+        'estado' in ultimo_asistente
+        and any(frase in ultimo_asistente for frase in (
+            'todavia necesito', 'necesito:', 'indica', 'confirmar',
+        ))
+    )
+    responde_estado = any(frase in texto for frase in (
+        'buen estado', 'perfecto estado', 'mal estado', 'estado regular',
+        'esta bueno', 'esta buena', 'esta bien', 'esta malo', 'esta mala',
+        'es nuevo', 'es nueva', 'esta nivelado', 'esta nivelada',
+    ))
+    if not (pide_estado and responde_estado):
+        return False
+
+    faltantes = datos.get('datos_faltantes_proyecto') or []
+    datos['datos_faltantes_proyecto'] = [
+        item for item in faltantes if 'estado' not in _texto_normalizado(item)
+    ]
+    if not datos.get('proyecto'):
+        proyecto_anterior = re.search(r'analice\s+[“\"]([^”\"]+)', ultimo_asistente)
+        if proyecto_anterior:
+            datos['proyecto'] = proyecto_anterior.group(1)
+    if datos.get('proyecto'):
+        datos['intencion'] = 'planificar_proyecto'
+
+    es_piso = any(termino in _texto_normalizado(datos.get('proyecto')) for termino in (
+        'piso flotante', 'piso laminado',
+    ))
+    if es_piso:
+        tareas_limpias = []
+        for tarea in datos.get('tareas_proyecto') or []:
+            if not isinstance(tarea, dict):
+                continue
+            busquedas = [
+                busqueda for busqueda in tarea.get('busquedas', [])
+                if 'demolicion' not in _texto_normalizado(busqueda)
+            ]
+            nombre = _texto_normalizado(tarea.get('nombre'))
+            if busquedas and 'demolicion' not in nombre:
+                tareas_limpias.append({**tarea, 'busquedas': busquedas})
+        datos['tareas_proyecto'] = tareas_limpias
+        datos['herramientas_proyecto'] = [
+            herramienta for herramienta in datos.get('herramientas_proyecto') or []
+            if 'demolicion' not in _texto_normalizado(herramienta)
+        ]
+    return True
+
+
+def _mantener_cuestionario_antes_de_recomendar(mensaje, historial):
+    """Evita que una petición de recomendación reinicie un proyecto incompleto."""
+    ultimo_asistente = next((
+        str(item.get('content') or '')
+        for item in reversed(historial)
+        if item.get('role') == 'assistant'
+    ), '')
+    if 'ANTES DE RECOMENDAR PRODUCTOS' not in ultimo_asistente:
+        return None
+
+    texto = _texto_normalizado(mensaje)
+    delega_eleccion = any(frase in texto for frase in (
+        'que me recomiendas', 'cual me recomiendas', 'me recomiendas', 'recomiendame',
+        'elige tu', 'tu elige', 'el que recomiendes', 'la que recomiendes',
+    ))
+    if not delega_eleccion:
+        return None
+
+    preguntas = [
+        coincidencia.group(1).strip().rstrip('?.')
+        for coincidencia in re.finditer(
+            r'(?m)^\s*\d+[.)]\s*(.+?)\s*$', ultimo_asistente
+        )
+    ]
+    if not preguntas:
+        preguntas = [
+            coincidencia.group(1).strip().rstrip('?.')
+            for coincidencia in re.finditer(
+                r'(?m)^\s*[•*-]\s*(.+?)\s*$', ultimo_asistente
+            )
+        ]
+    preferencias_delegables = (
+        'tipo de piso', 'estilo', 'terminacion', 'acabado', 'color',
+        'formato', 'espesor', 'cubierta', 'policarbonato', 'teja',
+    )
+    responde_medidas = bool(re.search(
+        r'\b\d+(?:[.,]\d+)?\s*(?:x|por|×)\s*\d+(?:[.,]\d+)?\b',
+        texto,
+    ))
+    responde_material = bool(re.search(
+        r'\b(?:madera|osb|metal|acero|hormigon|concreto|ceramica|ladrillo)\b',
+        texto,
+    ))
+    responde_estado = bool(re.search(
+        r'\b(?:bueno|buena|firme|reutilizable|regular|malo|mala|danad[oa]|'
+        r'deteriorad[oa]|reparar|reemplazar|nuevo|nueva)\b',
+        texto,
+    ))
+
+    def ya_respondida(pregunta):
+        clave = _texto_normalizado(pregunta)
+        if responde_medidas and any(
+            termino in clave for termino in ('medida', 'ancho', 'largo', 'alto', 'area')
+        ):
+            return True
+        if responde_material and any(
+            termino in clave for termino in ('material', 'base', 'soporte', 'estructura')
+        ) and 'estado' not in clave:
+            return True
+        if responde_estado and 'estado' in clave:
+            return True
+        return False
+
+    pendientes = [
+        pregunta for pregunta in preguntas
+        if not any(
+            preferencia in _texto_normalizado(pregunta)
+            for preferencia in preferencias_delegables
+        )
+        and not ya_respondida(pregunta)
+    ]
+    if not pendientes:
+        return None
+
+    proyecto = ''
+    lineas = [linea.strip() for linea in ultimo_asistente.splitlines()]
+    if 'PROYECTO' in lineas:
+        indice = lineas.index('PROYECTO')
+        if indice + 1 < len(lineas):
+            proyecto = lineas[indice + 1]
+
+    proyecto_normalizado = _texto_normalizado(proyecto)
+    if any(termino in proyecto_normalizado for termino in (
+        'techo', 'techumbre', 'cubierta', 'policarbonato',
+    )):
+        ejemplo = 'Ejemplo: “Mide 3 × 4 m y la estructura es de madera y está firme”.'
+        sugerencias = [
+            'Mide 3 × 4 m; la estructura es de madera y está firme',
+            'La estructura es de metal y está en buen estado',
+            'No sé evaluar la estructura; adjuntaré una fotografía',
+        ]
+    else:
+        ejemplo = 'Ejemplo: “La base es de hormigón y está en buen estado”.'
+        sugerencias = [
+            'La base es de hormigón y está en buen estado',
+            'La base es de madera/OSB y está en buen estado',
+            'No sé identificar la base; adjuntaré una fotografía',
+        ]
+
+    return {
+        'tipo': 'aclaracion_proyecto',
+        'mensaje': '\n'.join([
+            'SIGAMOS CON TU PROYECTO',
+            proyecto or 'Proyecto en preparación',
+            '',
+            'Entendido: yo elegiré la opción más conveniente entre los productos reales de SFI.',
+            'Antes necesito estos datos para asegurar compatibilidad:',
+            *(f'• {pendiente}' for pendiente in pendientes),
+            '',
+            'RESPONDE TODO EN UN MENSAJE',
+            ejemplo,
+        ]),
+        'productos': [],
+        'maestros': [],
+        'sugerencias': sugerencias,
+    }
 
 
 def _resolver_recomendacion_color(datos):
@@ -1931,7 +2226,8 @@ def resolver_interpretacion(datos):
             productos = [min(productos, key=lambda producto: producto.precio)]
             mensaje = (
                 f'La opción más económica para “{consulta}” es '
-                f'{productos[0].nombre} a {_formatear_clp(productos[0].precio)}.'
+                f'{productos[0].nombre} a {_formatear_clp(productos[0].precio)}. '
+                'No encontré una alternativa compatible más barata disponible en SFI.'
             )
         elif datos.get('consulta_precio') and productos:
             if len(productos) == 1:
@@ -1963,7 +2259,512 @@ def resolver_interpretacion(datos):
     }
 
 
+def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
+    """Explica las tarjetas actuales sin reinterpretar ni reconstruir el proyecto."""
+    ids = list(dict.fromkeys(productos_contexto or []))[:8]
+    if not ids:
+        return None
+
+    texto = _texto_normalizado(mensaje)
+    pide_motivo = any(frase in texto for frase in (
+        'por que estos materiales', 'por que esos materiales',
+        'por que elegiste', 'por que seleccionaste', 'por que recomiendas',
+        'por que este producto', 'por que ese producto',
+    )) or bool(re.search(
+        r'\bpor que\b.{0,45}\b(?:materiales?|productos?|eleg\w*|'
+        r'seleccion\w*|recomiend\w*)\b',
+        texto,
+    ))
+    ultimo_asistente = next((
+        _texto_normalizado(item.get('content'))
+        for item in reversed(historial)
+        if item.get('role') == 'assistant'
+    ), '')
+    responde_ambiguedad = 'a cual de los productos mostrados' in ultimo_asistente
+    if not pide_motivo and not responde_ambiguedad:
+        return None
+
+    encontrados = {
+        producto.pk: producto
+        for producto in Producto.objects.filter(pk__in=ids, activo=True)
+    }
+    productos = [encontrados[pk] for pk in ids if pk in encontrados]
+    if responde_ambiguedad and not pide_motivo:
+        palabras = set(re.findall(r'[a-z0-9]+', texto))
+        coincidencias = [
+            producto for producto in productos
+            if palabras & set(re.findall(r'[a-z0-9]+', _texto_normalizado(producto.nombre)))
+        ]
+        if coincidencias:
+            productos = coincidencias[:1]
+        else:
+            return None
+
+    lineas = []
+    for producto in productos:
+        uso = ' '.join(
+            str(producto.uso_recomendado or producto.descripcion or '').split()
+        )[:220]
+        if not uso:
+            uso = f'Se incluyó como una opción disponible de {producto.categoria}.'
+        lineas.append(f'• {producto.nombre}: {uso}')
+
+    return {
+        'tipo': 'explicacion_proyecto',
+        'mensaje': '\n'.join([
+            'POR QUÉ SE INCLUYERON',
+            'Cada producto cumple una función diferente dentro de la propuesta:',
+            *lineas,
+            '',
+            'No son las únicas alternativas. Se priorizaron opciones disponibles en SFI; '
+            'puedo comparar otras si prefieres cambiar material, precio o terminación.',
+        ]),
+        'productos': [],
+        'maestros': [],
+        'sugerencias': [
+            'Muéstrame alternativas más económicas',
+            'Quiero cambiar el material principal',
+            'Volver al resumen del proyecto',
+        ],
+    }
+
+
+def _comparar_alternativas_economicas(mensaje, productos_contexto):
+    """Compara las tarjetas actuales sin mezclar familias ni reiniciar el proyecto."""
+    texto = _texto_normalizado(mensaje)
+    pide_alternativa_economica = any(frase in texto for frase in (
+        'alternativas mas economicas', 'alternativa mas economica',
+        'opciones mas economicas', 'opcion mas economica',
+        'algo mas barato', 'uno mas barato', 'una mas barata',
+        'hay uno mas barato', 'hay una mas barata',
+    )) or bool(re.search(
+        r'\b(?:alternativas?|opciones?|productos?)\b.{0,35}\b(?:barat\w*|econom\w*)\b|'
+        r'\b(?:barat\w*|econom\w*)\b.{0,35}\b(?:alternativas?|opciones?|productos?)\b',
+        texto,
+    ))
+    if not pide_alternativa_economica:
+        return None
+
+    ids = list(dict.fromkeys(productos_contexto or []))[:8]
+    encontrados = {
+        producto.pk: producto
+        for producto in Producto.objects.filter(pk__in=ids, activo=True)
+    }
+    productos = [encontrados[pk] for pk in ids if pk in encontrados]
+    if not productos:
+        return None
+
+    lineas = []
+    alternativas = []
+    alternativas_usadas = set()
+    for producto in productos:
+        candidatos = [
+            candidato for candidato in _buscar_productos(producto.nombre, limite=20)
+            if candidato.pk != producto.pk
+            and candidato.stock > 0
+            and candidato.precio < producto.precio
+        ]
+        alternativa = min(candidatos, key=lambda item: item.precio, default=None)
+        if alternativa:
+            ahorro = producto.precio - alternativa.precio
+            lineas.append(
+                f'• {producto.nombre}: {alternativa.nombre} cuesta '
+                f'{_formatear_clp(alternativa.precio)} y permite ahorrar '
+                f'{_formatear_clp(ahorro)} por unidad.'
+            )
+            if alternativa.pk not in alternativas_usadas:
+                item = _producto_publico(alternativa)
+                item['carrito_cantidad'] = 1
+                item['rol'] = 'Alternativa más económica'
+                alternativas.append(item)
+                alternativas_usadas.add(alternativa.pk)
+        else:
+            lineas.append(
+                f'• {producto.nombre}: no encontré una alternativa compatible '
+                'más barata disponible en SFI.'
+            )
+
+    return {
+        'tipo': 'comparacion_economica',
+        'mensaje': '\n'.join([
+            'COMPARACIÓN DE PRECIOS',
+            *lineas,
+            '',
+            'La comparación mantiene el tipo y las medidas identificables del producto; '
+            'no sustituye materiales por artículos de otra función.',
+        ]),
+        'productos': alternativas,
+        'maestros': [],
+        'sugerencias': [
+            'Volver al resumen del proyecto',
+            'Comparar por durabilidad',
+            'Mantener los productos originales',
+        ],
+    }
+
+
+def _pide_profesional_para_proyecto(mensaje):
+    """Reconoce distintas formas naturales de pedir el oficio adecuado."""
+    texto = _texto_normalizado(mensaje)
+    menciona_profesional = bool(re.search(
+        r'\b(?:maestr[oa]s?|profesional(?:es)?|especialistas?|carpinter[oa]s?|'
+        r'pintor(?:es|as?)?|gasfiter(?:es)?|electricistas?|ceramistas?)\b',
+        texto,
+    ))
+    pide_alguien = bool(re.search(
+        r'\b(?:necesito|busco|quiero|quien)\b.{0,35}\balguien\b',
+        texto,
+    ))
+    refiere_trabajo = bool(re.search(
+        r'\b(?:este|esta|el|la|mi)\s+(?:proyecto|trabajo|obra|instalacion)\b|'
+        r'\b(?:hacerlo|realizarlo|instalarlo|construirlo)\b',
+        texto,
+    ))
+    solicita_orientacion = bool(re.search(
+        r'\b(?:que|cual|quien|necesito|busco|quiero|recomiend\w*|muestrame)\b',
+        texto,
+    ))
+    return (menciona_profesional or pide_alguien) and refiere_trabajo and solicita_orientacion
+
+
+def _clasificar_seguimiento_natural(mensaje, productos_contexto):
+    """Clasifica expresiones libres sin obligar al cliente a usar botones."""
+    if not productos_contexto:
+        return ''
+    texto = _texto_normalizado(mensaje)
+    if re.search(
+        r'\b(?:herramientas?|con que)\b.{0,45}\b(?:usar|uso|hacer|instalar|'
+        r'trabajar|necesit\w*|recomend\w*)\b|'
+        r'\b(?:que|cuales|dime|muestra(?:me)?)\b.{0,45}\bherramientas?\b',
+        texto,
+    ) or any(frase in texto for frase in ('con que hago esta pega', 'con que se hace')):
+        return 'herramientas'
+    if _pide_profesional_para_proyecto(mensaje) or bool(re.search(
+        r'\b(?:busco|necesito|quiero|recomiend\w*)\b.{0,40}'
+        r'\b(?:alguien|maestr[oa]|profesional|especialista)\b.{0,40}'
+        r'\b(?:pega|trabajo|proyecto|instalacion|obra)\b',
+        texto,
+    )):
+        return 'profesional'
+    if re.search(
+        r'\b(?:cuanto|cuanto me|cuanto nos)\b.{0,35}'
+        r'\b(?:sale|cuesta|costaria|saldra|total|todo|proyecto)\b|'
+        r'\b(?:total|costo total|valor total|presupuesto final)\b',
+        texto,
+    ):
+        return 'total'
+    if re.search(
+        r'\bpor que\b.{0,45}\b(?:materiales?|productos?|eleg\w*|'
+        r'pusiste|incluiste|seleccion\w*|recomiend\w*)\b',
+        texto,
+    ):
+        return 'explicacion'
+    if re.search(
+        r'\b(?:alternativas?|opciones?|algo)\b.{0,35}\b(?:barat\w*|econom\w*)\b|'
+        r'\b(?:barat\w*|econom\w*)\b.{0,35}\b(?:alternativas?|opciones?|algo)\b',
+        texto,
+    ):
+        return 'economico'
+    if re.search(
+        r'\b(?:ver|mostrar|muestrame|buscar|comparar)\b.{0,30}'
+        r'\b(?:alternativas?|opciones?)\b',
+        texto,
+    ):
+        return 'alternativas'
+    if re.search(
+        r'\b(?:ajustar|modificar|cambiar)\b.{0,40}'
+        r'\b(?:proyecto|medidas?|material|cubierta|terminacion|solo)\b',
+        texto,
+    ):
+        return 'ajuste'
+    return ''
+
+
+def _resolver_total_contextual(historial):
+    """Recupera el último total ya calculado sin reconstruir el proyecto."""
+    ultimo_total = None
+    for item in reversed(historial):
+        if item.get('role') != 'assistant':
+            continue
+        contenido = str(item.get('content') or '')
+        coincidencia = re.search(
+            r'TOTAL CALCULADO\s*\n?\s*(\$[\d.]+\s*CLP)(.*?)(?:\n\n|$)',
+            contenido,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if coincidencia:
+            ultimo_total = ' '.join(
+                f'{coincidencia.group(1)} {coincidencia.group(2)}'.split()
+            )
+            break
+    mensaje = (
+        f'TOTAL ACTUAL DEL PROYECTO\n{ultimo_total}'
+        if ultimo_total
+        else (
+            'Todavía no hay un total completo calculado para este proyecto. '
+            'Primero debo contar con cantidades verificadas para los materiales.'
+        )
+    )
+    return {
+        'tipo': 'seguimiento_proyecto',
+        'mensaje': mensaje,
+        'productos': [],
+        'maestros': [],
+        'sugerencias': ['Volver al resumen del proyecto', 'Ver alternativas más económicas'],
+    }
+
+
+def _resolver_accion_seguimiento(mensaje, productos_contexto):
+    """Resuelve botones de seguimiento sin reinterpretar el proyecto completo."""
+    if not productos_contexto:
+        return None
+    texto = _texto_normalizado(mensaje)
+    pide_herramientas = bool(re.search(
+        r'\b(?:que|cuales|dime|indica|muestra(?:me)?|necesito)\b.{0,45}'
+        r'\bherramientas?\b|\bherramientas?\b.{0,35}'
+        r'\b(?:necesarias?|recomendadas?|usar|uso|necesito)\b',
+        texto,
+    ))
+    if pide_herramientas:
+        materiales = list(Producto.objects.filter(
+            pk__in=list(dict.fromkeys(productos_contexto))[:8],
+            activo=True,
+        ))
+        contexto = _texto_normalizado(' '.join(
+            f'{producto.nombre} {producto.categoria} {producto.uso_recomendado}'
+            for producto in materiales
+        ))
+        if any(termino in contexto for termino in (
+            'techo', 'techumbre', 'zinc', 'teja', 'policarbonato', 'cubierta',
+        )):
+            consultas = ['cinta metrica', 'taladro percutor']
+        elif any(termino in contexto for termino in ('madera', 'pino', 'tablero', 'melamina')):
+            consultas = ['cinta metrica', 'taladro percutor', 'sierra circular']
+        elif any(termino in contexto for termino in ('pintura', 'latex', 'esmalte', 'barniz')):
+            consultas = ['rodillo pintura', 'brocha pintura']
+        elif any(termino in contexto for termino in ('radier', 'hormigon', 'mortero', 'tierra')):
+            consultas = ['cinta metrica', 'pala']
+        else:
+            consultas = ['cinta metrica', 'taladro percutor']
+
+        herramientas = []
+        usadas = set()
+        for consulta in consultas:
+            herramienta = next((
+                producto for producto in _buscar_productos(consulta, limite=10)
+                if producto.pk not in usadas
+                and 'herramienta' in _texto_normalizado(producto.categoria)
+            ), None)
+            if not herramienta:
+                continue
+            item = _producto_publico(herramienta)
+            item.update({
+                'rol': 'Herramienta opcional',
+                'carrito_cantidad': 1,
+                'es_opcional': True,
+            })
+            herramientas.append(item)
+            usadas.add(herramienta.pk)
+
+        total_opcional = sum(
+            (herramienta.get('precio') or 0 for herramienta in herramientas),
+            0,
+        )
+        return {
+            'tipo': 'seguimiento_herramientas',
+            'mensaje': (
+                'HERRAMIENTAS PARA ESTE PROYECTO\n'
+                + (
+                    '\n'.join(f"• {herramienta['nombre']}" for herramienta in herramientas)
+                    if herramientas
+                    else 'No encontré herramientas compatibles con stock en SFI.'
+                )
+                + (
+                    f'\n\nCOSTO OPCIONAL\n{_formatear_clp(total_opcional)} CLP '
+                    'considerando una unidad de cada herramienta.'
+                    if herramientas else ''
+                )
+                + '\n\nLas herramientas son opcionales y no modifican el total de materiales.'
+            ),
+            'productos': herramientas,
+            'maestros': [],
+            'sugerencias': [
+                'Volver al resumen del proyecto',
+                '¿Qué maestro realiza este trabajo?',
+            ],
+        }
+    consulta_maestro_proyecto = _pide_profesional_para_proyecto(mensaje) or any(
+        frase in texto for frase in (
+        'que tipo de maestro necesito', 'que maestro necesito',
+        'que tipo de profesional necesito', 'que profesional necesito',
+        'quien puede hacer este proyecto', 'quien realiza este trabajo',
+        'que maestro realiza este trabajo', 'que maestro hace este trabajo',
+        'que maestro realiza este proyecto', 'que maestro hace este proyecto',
+        'necesito un maestro para este trabajo',
+        'neceisto un maestro para este trabajo',
+        'necesito un maestro para este proyecto',
+        'neceisto un maestro para este proyecto',
+        'busco un maestro para este trabajo', 'busco un maestro para este proyecto',
+        )
+    )
+    if consulta_maestro_proyecto:
+        productos = list(Producto.objects.filter(
+            pk__in=list(dict.fromkeys(productos_contexto))[:8],
+            activo=True,
+        ))
+        contexto = _texto_normalizado(' '.join(
+            f'{producto.nombre} {producto.categoria} {producto.uso_recomendado}'
+            for producto in productos
+        ))
+        reglas = (
+            ((
+                'ladrillo', 'mortero', 'radier', 'malla acma',
+                'refractario', 'base estabilizada',
+            ), 'Albañilería'),
+            (('techo', 'techumbre', 'zinc', 'teja', 'cumbrera', 'policarbonato'), 'Techumbre'),
+            (('pino', 'madera', 'tablero', 'melamina'), 'Carpintería'),
+            (('pintura', 'latex', 'esmalte', 'barniz'), 'Pintura'),
+            (('sanitario', 'lavamanos', 'ducha', 'griferia', 'tuberia'), 'Gasfitería'),
+            (('cable', 'enchufe', 'interruptor', 'luminaria'), 'Electricidad'),
+            (('ceramica', 'porcelanato', 'fragüe'), 'Cerámica y revestimientos'),
+        )
+        especialidades = []
+        for terminos, especialidad in reglas:
+            if any(termino in contexto for termino in terminos):
+                especialidades.append(especialidad)
+        especialidades = list(dict.fromkeys(especialidades))[:3]
+        if especialidades:
+            principal = especialidades[0]
+            apoyos = especialidades[1:]
+            complemento = ''
+            if apoyos:
+                lista_apoyos = (
+                    apoyos[0]
+                    if len(apoyos) == 1
+                    else f'{", ".join(apoyos[:-1])} y {apoyos[-1]}'
+                )
+                complemento = (
+                    f' Como apoyo también corresponden {lista_apoyos}, según la etapa '
+                    'del trabajo.'
+                )
+            mensaje_respuesta = (
+                f'Para este proyecto, la especialidad principal es {principal}.'
+                f'{complemento} Antes de contratar, confirma experiencia en el tipo de '
+                'material y trabajo mostrado.'
+            )
+            sugerencias = [
+                *(f'Buscar maestro de {especialidad}' for especialidad in especialidades),
+                '¿Qué debo consultar antes de contratarlo?',
+            ][:3]
+        else:
+            mensaje_respuesta = (
+                'No puedo determinar una especialidad segura únicamente con los productos '
+                'mostrados. Describe brevemente el trabajo principal y te orientaré sin '
+                'modificar el proyecto.'
+            )
+            sugerencias = ['Describir el trabajo principal']
+        return {
+            'tipo': 'seguimiento_proyecto',
+            'mensaje': mensaje_respuesta,
+            'productos': [],
+            'maestros': [],
+            'sugerencias': sugerencias,
+        }
+    pide_alternativas = any(frase in texto for frase in (
+        'ver alternativas de productos', 'ver alternativas',
+        'mostrar alternativas de productos', 'comparar alternativas',
+    )) or bool(re.search(
+        r'\b(?:ver|mostrar|muestrame|buscar|comparar)\b.{0,30}'
+        r'\b(?:alternativas?|opciones?)\b',
+        texto,
+    ))
+    if pide_alternativas:
+        return {
+            'tipo': 'seguimiento_proyecto',
+            'mensaje': (
+                '¿Qué deseas comparar de los productos actuales? Puedo buscar opciones '
+                'más económicas o ayudarte a cambiar un material específico sin modificar '
+                'el resto del proyecto.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': [
+                'Muéstrame alternativas más económicas',
+                'Quiero cambiar el material principal',
+                '¿Por qué elegiste estos materiales?',
+            ],
+        }
+    pide_ajuste = any(frase in texto for frase in (
+        'ajustar el proyecto', 'ajustar proyecto', 'modificar el proyecto',
+        'cambiar el proyecto',
+    )) or bool(re.search(
+        r'\b(?:ajustar|modificar|cambiar)\b.{0,35}'
+        r'\b(?:proyecto|medidas?|material|cubierta|terminacion)\b',
+        texto,
+    ))
+    if pide_ajuste:
+        return {
+            'tipo': 'seguimiento_proyecto',
+            'mensaje': (
+                'Indica qué deseas cambiar del proyecto actual. Mantendré todo lo demás '
+                'sin modificaciones.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': [
+                'Quiero cambiar las medidas',
+                'Quiero cambiar el material principal',
+                'Quiero cambiar la cubierta o terminación',
+            ],
+        }
+    return None
+
+
 def procesar_consulta(mensaje, historial, productos_contexto=None):
+    flujo_natural = _clasificar_seguimiento_natural(
+        mensaje,
+        productos_contexto or [],
+    )
+    if flujo_natural == 'total':
+        return _resolver_total_contextual(historial)
+    mensaje_economico = (
+        'Muéstrame alternativas más económicas'
+        if flujo_natural == 'economico' else mensaje
+    )
+    comparacion_economica = _comparar_alternativas_economicas(
+        mensaje_economico,
+        productos_contexto or [],
+    )
+    if comparacion_economica:
+        return comparacion_economica
+    mensajes_accion = {
+        'herramientas': '¿Qué herramientas necesito para este proyecto?',
+        'profesional': '¿Qué maestro necesito para este proyecto?',
+        'alternativas': 'Ver alternativas de productos',
+        'ajuste': 'Ajustar el proyecto',
+    }
+    accion_seguimiento = _resolver_accion_seguimiento(
+        mensajes_accion.get(flujo_natural, mensaje),
+        productos_contexto or [],
+    )
+    if accion_seguimiento:
+        return accion_seguimiento
+    mensaje_explicacion = (
+        '¿Por qué elegiste estos materiales?'
+        if flujo_natural == 'explicacion' else mensaje
+    )
+    explicacion_contextual = _explicar_productos_mostrados(
+        mensaje_explicacion,
+        historial,
+        productos_contexto or [],
+    )
+    if explicacion_contextual:
+        return explicacion_contextual
+    cuestionario_pendiente = _mantener_cuestionario_antes_de_recomendar(
+        mensaje, historial,
+    )
+    if cuestionario_pendiente:
+        return cuestionario_pendiente
     try:
         interpretacion = interpretar_con_gemini(
             mensaje, historial, productos_contexto or [],
@@ -1980,9 +2781,13 @@ def procesar_consulta(mensaje, historial, productos_contexto=None):
         mensaje,
         historial,
     )
-    interpretacion = _aplicar_contexto_productos(
-        interpretacion, mensaje, productos_contexto,
+    continua_proyecto = _continuar_dato_pendiente_proyecto(
+        interpretacion, mensaje, historial,
     )
+    if not continua_proyecto:
+        interpretacion = _aplicar_contexto_productos(
+            interpretacion, mensaje, productos_contexto,
+        )
     return resolver_interpretacion(interpretacion)
 
 

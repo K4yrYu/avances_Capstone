@@ -15,6 +15,7 @@
     if (!root || !form || !input || !messages || !security) return;
 
     const {escapeHtml, safeUrl} = security;
+    const defaultInputPlaceholder = input.placeholder;
     const fallbackImage = safeUrl(root.dataset.placeholderUrl);
     const fallbackMasterImage = safeUrl(root.dataset.masterPlaceholderUrl) || fallbackImage;
     const authenticated = root.dataset.authenticated === "true";
@@ -227,7 +228,7 @@
       container.className = "assistant-products";
       container.innerHTML = products.map(product => {
         const id = Math.max(0, Math.trunc(Number(product.id) || 0));
-        const image = safeUrl(product.imagen) || fallbackImage;
+        const image = safeUrl(product.imagen);
         const url = safeUrl(product.url) || `/productos/${id}/`;
         const calculation = product.calculo_carrito;
         if (calculation) calculations.set(id, calculation);
@@ -245,12 +246,20 @@
           : product.carrito_cantidad
             ? `<button type="button" data-chat-product="${id}"><i class="fa-solid fa-cart-plus"></i> Agregar ${escapeHtml(product.carrito_cantidad)}</button>`
             : "";
-        return `<article class="assistant-product"><div class="assistant-product-image"><img src="${image}" alt="${escapeHtml(product.nombre || "Producto SFI")}" loading="lazy"></div><div class="assistant-product-body"><small>${escapeHtml(product.rol || product.marca || product.categoria || "SFI")}</small><h3>${escapeHtml(product.nombre || "Producto")}</h3><div class="assistant-product-meta"><span>${escapeHtml(product.presentacion || "")}</span><span>${escapeHtml(product.terminacion || "")}</span><span>${escapeHtml(product.stock)} disponibles</span></div>${calculationText}${optionalText}<strong class="assistant-product-price">${formatClp(product.precio)} c/u</strong><div class="assistant-product-actions"><a href="${url}">Ver producto</a>${addButton}</div></div></article>`;
+        const imageMarkup = image
+          ? `<img src="${image}" alt="${escapeHtml(product.nombre || "Producto SFI")}" loading="lazy">`
+          : '<span class="assistant-product-no-image"><i class="fa-regular fa-image"></i> Imagen no disponible</span>';
+        const metadata = [product.presentacion, product.terminacion]
+          .map(value => String(value || "").trim())
+          .filter(value => value && value.toLocaleLowerCase("es-CL") !== "no aplica")
+          .map(value => `<span>${escapeHtml(value)}</span>`)
+          .join("");
+        return `<article class="assistant-product"><div class="assistant-product-image">${imageMarkup}</div><div class="assistant-product-body"><small>${escapeHtml(product.rol || product.marca || product.categoria || "SFI")}</small><h3>${escapeHtml(product.nombre || "Producto")}</h3><div class="assistant-product-meta">${metadata}<span>${escapeHtml(product.stock)} disponibles</span></div>${calculationText}${optionalText}<strong class="assistant-product-price">${formatClp(product.precio)} c/u</strong><div class="assistant-product-actions"><a href="${url}">Ver producto</a>${addButton}</div></div></article>`;
       }).join("");
       messages.appendChild(container);
       container.querySelectorAll("img").forEach(image => image.addEventListener("error", function replaceImage() {
         image.removeEventListener("error", replaceImage);
-        if (fallbackImage) image.src = fallbackImage;
+        image.parentElement.innerHTML = '<span class="assistant-product-no-image"><i class="fa-regular fa-image"></i> Imagen no disponible</span>';
       }));
       scrollToLatest();
     }
@@ -277,15 +286,22 @@
     }
 
     function renderSuggestions(items) {
-      if (!Array.isArray(items) || !items.length) return;
-      suggestions.innerHTML = items.slice(0, 3).map(item => `<button type="button" data-suggestion="${escapeHtml(item)}"><i class="fa-regular fa-message"></i> ${escapeHtml(item)}</button>`).join("");
+      if (!Array.isArray(items) || !items.length) {
+        suggestions.innerHTML = "";
+        input.placeholder = defaultInputPlaceholder;
+        return;
+      }
+      const examples = items.slice(0, 3);
+      suggestions.innerHTML = '<span style="flex-basis:100%;color:#657d8f;font-size:.6rem;font-weight:750">Puedes responder asÃ­:</span>'
+        + examples.map(item => `<button type="button" data-suggestion="${escapeHtml(item)}"><i class="fa-regular fa-message"></i> ${escapeHtml(item)}</button>`).join("");
+      input.placeholder = `Ej.: ${String(examples[0]).slice(0, 140)}`;
     }
 
     async function askAssistant(message) {
       errorBox.hidden = true;
       addMessage("user", message);
       rememberMessage("user", message);
-      const historyForRequest = history.slice(-6);
+      const historyForRequest = history.slice(-10);
       history.push({role: "user", content: message});
       const typing = addTyping();
       submit.disabled = true;
@@ -304,7 +320,7 @@
         addMessage("assistant", answer);
         rememberMessage("assistant", answer, data.productos, data.maestros);
         history.push({role: "assistant", content: answer});
-        history = history.slice(-6);
+        history = history.slice(-10);
         renderProducts(data.productos);
         renderMasters(data.maestros);
         renderSuggestions(data.sugerencias);
@@ -425,6 +441,8 @@
       cartItems = new Map();
       messages.innerHTML = "";
       addMessage("assistant", "Empecemos de nuevo. Cuéntame qué necesitas para tu proyecto.");
+      suggestions.innerHTML = "";
+      input.placeholder = defaultInputPlaceholder;
       errorBox.hidden = true;
       input.focus();
     });
@@ -458,9 +476,9 @@
           renderMasters(entry.masters);
         }
       });
-      history = conversationEntries.slice(-6).map(entry => ({
+      history = conversationEntries.slice(-10).map(entry => ({
         role: entry.role,
-        content: entry.text.slice(0, 700),
+        content: entry.text.slice(0, 4000),
       }));
       scrollToLatest();
     }

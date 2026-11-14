@@ -11,8 +11,9 @@ from maestros.models import Especialidad, PerfilMaestro
 from productos.models import Producto
 from usuarios.models import Usuario
 from .services import procesar_configuracion_foto, procesar_consulta, resolver_interpretacion
+from .serializers import ConsultaAsistenteSerializer
 from .services.cliente_gemini import cliente_gemini
-from .services.gemini import GeminiNoDisponible, interpretar_con_gemini
+from .services.gemini import GeminiNoDisponible, _instrucciones, interpretar_con_gemini
 from .services.sinonimos_ferreteros import expandir_consulta
 
 
@@ -1031,6 +1032,24 @@ class AsistenteSfiTests(TestCase):
         self.assertIn('Daniela Silva', nombres)
         self.assertIn('maestros pintores disponibles', resultado['mensaje'])
 
+    def test_muestrame_maestros_carpinteros_conserva_la_especialidad(self):
+        historial = [{
+            'role': 'assistant',
+            'content': (
+                'Para este proyecto, la especialidad principal es Techumbre. '
+                'También puede intervenir un especialista en Carpintería.'
+            ),
+        }]
+
+        resultado = self.consultar_maestro(
+            'Muéstrame los maestros carpinteros',
+            historial,
+        )
+
+        self.assertEqual(resultado['tipo'], 'maestros')
+        self.assertIn('Pedro González', [item['nombre'] for item in resultado['maestros']])
+        self.assertIn('carpintero disponible', resultado['mensaje'])
+
     def test_solicitud_generica_reutiliza_el_oficio_sin_confundir_retiro_en_tienda(self):
         historial = [
             {
@@ -1681,6 +1700,65 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
 class PlanificadorGenericoProyectosTests(TestCase):
+    def test_instrucciones_exigen_lenguaje_natural_y_prudente_para_todos(self):
+        instrucciones = _instrucciones()
+
+        self.assertIn('cualquier proyecto del cliente', instrucciones)
+        self.assertIn('español de Chile natural', instrucciones)
+        self.assertIn('No afirmes que un producto evita', instrucciones)
+        self.assertIn('Distingue materiales, herramientas y complementos', instrucciones)
+        self.assertIn('asesor de proyectos', instrucciones)
+        self.assertIn('propuesta_directa', instrucciones)
+        self.assertIn('antes que preguntar', instrucciones)
+        self.assertIn('La ausencia de un producto limita solamente', instrucciones)
+        self.assertIn('No rechaces, cierres ni declares', instrucciones)
+
+    def test_preguntas_de_puerta_explican_como_medir_el_vano(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de puerta',
+            'tareas_proyecto': [{
+                'nombre': 'Puerta y marco',
+                'busquedas': ['puerta interior MDF'],
+            }],
+            'datos_faltantes_proyecto': [
+                'La puerta es interior o exterior',
+                'Cuáles son las medidas del vano (alto y ancho)',
+            ],
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn('80 × 200 cm', resultado['mensaje'])
+        self.assertIn('usa la medida menor', resultado['mensaje'])
+        self.assertIn('solo la hoja o también el marco', resultado['mensaje'])
+        self.assertNotIn('3 × 4 metros', resultado['mensaje'])
+
+    def test_preguntas_de_mueble_usan_tres_dimensiones_en_centimetros(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Construcción de mueble para cocina',
+            'tareas_proyecto': [{
+                'nombre': 'Fabricación',
+                'busquedas': ['plancha melamina blanca 18 mm'],
+            }],
+            'datos_faltantes_proyecto': ['Medidas disponibles para el mueble'],
+        })
+
+        self.assertIn('ancho × alto × fondo', resultado['mensaje'])
+        self.assertIn('120 × 80 × 35 cm', resultado['mensaje'])
+        self.assertNotIn('3 × 4 metros', resultado['mensaje'])
+
+    def test_historial_acepta_respuesta_guiada_mayor_a_700_caracteres(self):
+        serializer = ConsultaAsistenteSerializer(data={
+            'mensaje': '3 x 4 y hormigón',
+            'historial': [{
+                'role': 'assistant',
+                'content': 'Cuestionario guiado. ' + ('Detalle técnico. ' * 80),
+            }],
+        })
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
     def setUp(self):
         self.madera = Producto.objects.create(
             nombre='Pino dimensionado para exterior',
@@ -1811,6 +1889,603 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertEqual(resultado['especialidades'], [])
         self.assertEqual(resultado['faltantes_catalogo'], ['panel transparente espacial'])
 
+    def test_preguntas_de_piso_guian_al_cliente_si_desconoce_los_datos(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de piso flotante',
+            'tareas_proyecto': [{
+                'nombre': 'Instalación de piso',
+                'busquedas': ['piso laminado 8 mm'],
+            }],
+            'datos_faltantes_proyecto': [
+                'Qué tipo de piso deseas instalar',
+                'Cuál es el material de la superficie actual',
+                'Cuál es el estado actual del piso',
+            ],
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('1. TIPO DE PISO', resultado['mensaje'])
+        self.assertIn('2. BASE ACTUAL', resultado['mensaje'])
+        self.assertIn('3. ESTADO DE LA BASE', resultado['mensaje'])
+        self.assertIn('No lo sé: indica en qué habitación', resultado['mensaje'])
+        self.assertIn('Hormigón: superficie gris', resultado['mensaje'])
+        self.assertIn('Bueno: está firme, seca y nivelada', resultado['mensaje'])
+
+    def test_preguntas_genericas_explican_como_responder_o_decir_no_se(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Construir una terraza exterior',
+            'tareas_proyecto': [{
+                'nombre': 'Revestimiento',
+                'busquedas': ['baldosa exterior antideslizante'],
+            }],
+            'datos_faltantes_proyecto': [
+                'Ancho y largo de la terraza',
+                'Material de la base actual',
+                'Estado de la superficie',
+                'Exposición a lluvia o sol',
+            ],
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('3 × 4 metros', resultado['mensaje'])
+        self.assertIn('hormigón, madera/OSB, metal, cerámica', resultado['mensaje'])
+        self.assertIn('Bueno: firme, seco, nivelado', resultado['mensaje'])
+        self.assertIn('lluvia o sol directo', resultado['mensaje'])
+        self.assertGreaterEqual(resultado['mensaje'].count('No lo sé'), 4)
+
+    def test_proyecto_estandar_entrega_materiales_sin_exigir_medidas(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Construcción de quincho estándar con cubierta de policarbonato',
+            '_proyecto_estandar': True,
+            'tareas_proyecto': [
+                {'nombre': 'Albañilería', 'busquedas': ['ladrillo fiscal'], 'usos_materiales': [
+                    {'busqueda': 'ladrillo fiscal', 'uso': 'Construir los elementos de albañilería del quincho.'},
+                ]},
+                {'nombre': 'Unión', 'busquedas': ['mortero pega ladrillos'], 'usos_materiales': [
+                    {'busqueda': 'mortero pega ladrillos', 'uso': 'Unir los ladrillos de la albañilería.'},
+                ]},
+                {'nombre': 'Cubierta', 'busquedas': ['policarbonato alveolar 6 mm'], 'usos_materiales': [
+                    {'busqueda': 'policarbonato alveolar 6 mm', 'uso': 'Formar la cubierta superior del quincho.'},
+                ]},
+            ],
+            'datos_faltantes_proyecto': [
+                'Ancho y fondo del quincho',
+                'Material de la estructura',
+            ],
+        })
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertTrue(resultado['productos'])
+        self.assertIn('PROPUESTA ESTÁNDAR PARA TU PROYECTO', resultado['mensaje'])
+        self.assertIn('PRODUCTOS POR ETAPA', resultado['mensaje'])
+        self.assertIn('Construir los elementos de albañilería', resultado['mensaje'])
+        self.assertIn('Son una estim', resultado['mensaje'])
+        self.assertNotIn('ANTES DE RECOMENDAR PRODUCTOS', resultado['mensaje'])
+        self.assertTrue(all(
+            producto['recomendacion_orientativa']
+            for producto in resultado['productos']
+        ))
+        self.assertTrue(all(
+            producto.get('uso_en_proyecto')
+            for producto in resultado['productos']
+        ))
+
+    def test_gemini_puede_orientar_con_propuesta_estandar_sin_bloquearse(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'modo_orientacion': 'propuesta_estandar',
+            'proyecto': 'Cobertizo de madera orientativo',
+            'tareas_proyecto': [{
+                'nombre': 'Estructura base',
+                'busquedas': ['pino dimensionado para exterior'],
+                'usos_materiales': [
+                    'Se utiliza como referencia para formar la estructura de madera.',
+                ],
+                'bases_calculo': ['referencial'],
+            }],
+            'datos_faltantes_proyecto': ['medidas definitivas del cobertizo'],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': [],
+        })
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertEqual(resultado['modo_orientacion'], 'propuesta_estandar')
+        self.assertTrue(resultado['productos'])
+        self.assertIn('PROPUESTA EST', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_pregunta_por_que_conserva_productos_y_no_regenera_plan(self, interpretar):
+        resultado = procesar_consulta(
+            '¿Por qué estos materiales y no otros?',
+            [{
+                'role': 'assistant',
+                'content': 'Preparé una propuesta estándar para tu cobertizo.',
+            }],
+            [self.madera.id, self.tornillos.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'explicacion_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn(self.madera.nombre, resultado['mensaje'])
+        self.assertIn(self.tornillos.nombre, resultado['mensaje'])
+        self.assertIn('No son las únicas alternativas', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_comparacion_indica_si_no_existe_producto_mas_barato(self, interpretar):
+        exclusivo = Producto.objects.create(
+            nombre='Conector estructural exclusivo modelo ZXQ',
+            descripcion='Conector específico para una prueba de compatibilidad.',
+            precio=18990,
+            stock=8,
+            categoria='Ferretería',
+            activo=True,
+        )
+
+        resultado = procesar_consulta(
+            'Muéstrame alternativas más económicas',
+            [],
+            [exclusivo.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'comparacion_economica')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn(
+            'no encontré una alternativa compatible más barata',
+            resultado['mensaje'],
+        )
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_comparacion_muestra_alternativa_real_mas_barata(self, interpretar):
+        economico = Producto.objects.create(
+            nombre='Taladro percutor 500 W básico',
+            descripcion='Taladro con percusión.',
+            precio=19990,
+            stock=8,
+            categoria='Herramientas',
+            activo=True,
+        )
+        costoso = Producto.objects.create(
+            nombre='Taladro percutor 500 W premium',
+            descripcion='Taladro con percusión.',
+            precio=39990,
+            stock=8,
+            categoria='Herramientas',
+            activo=True,
+        )
+
+        resultado = procesar_consulta(
+            '¿Hay uno más barato?',
+            [],
+            [costoso.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'comparacion_economica')
+        self.assertEqual(resultado['productos'][0]['id'], economico.id)
+        self.assertIn('$20.000', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_boton_ver_alternativas_no_reconstruye_proyecto(self, interpretar):
+        resultado = procesar_consulta(
+            'Ver alternativas de productos',
+            [],
+            [self.madera.id, self.tornillos.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'seguimiento_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('sin modificar el resto del proyecto', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_boton_ajustar_no_reconstruye_proyecto(self, interpretar):
+        resultado = procesar_consulta(
+            'Ajustar el proyecto',
+            [],
+            [self.madera.id, self.tornillos.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'seguimiento_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('Mantendré todo lo demás', resultado['mensaje'])
+        self.assertIn('Quiero cambiar las medidas', resultado['sugerencias'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_pregunta_tipo_maestro_usa_proyecto_y_no_tarjeta_ambigua(self, interpretar):
+        cubierta = Producto.objects.create(
+            nombre='Plancha zinc acanalado para techumbre',
+            descripcion='Cubierta para techo.',
+            precio=15990,
+            stock=12,
+            categoria='Construcción',
+            activo=True,
+        )
+
+        resultado = procesar_consulta(
+            '¿Qué tipo de maestro necesito para este proyecto?',
+            [],
+            [self.madera.id, cubierta.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'seguimiento_proyecto')
+        self.assertIn('especialidad principal es Techumbre', resultado['mensaje'])
+        self.assertIn('Carpintería', resultado['mensaje'])
+        self.assertNotIn('A cuál de los productos', resultado['mensaje'])
+        self.assertIn('Buscar maestro de Techumbre', resultado['sugerencias'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_frases_naturales_sobre_maestro_conservan_el_proyecto(self, interpretar):
+        cubierta = Producto.objects.create(
+            nombre='Plancha zinc para cobertizo',
+            descripcion='Cubierta para una estructura exterior de madera.',
+            precio=15990,
+            stock=12,
+            categoria='Construcción',
+            activo=True,
+        )
+        historial = [{
+            'role': 'assistant',
+            'content': '¿A cuál de los productos mostrados te refieres?',
+        }]
+
+        for consulta in (
+            '¿Qué maestro realiza este trabajo?',
+            'Neceisto un maestro para este trabajo',
+            '¿Qué profesional me recomiendas para esta obra?',
+            'Necesito alguien que haga este proyecto',
+            'Busco alguien para esta pega',
+        ):
+            with self.subTest(consulta=consulta):
+                resultado = procesar_consulta(
+                    consulta,
+                    historial,
+                    [self.madera.id, cubierta.id],
+                )
+
+                self.assertEqual(resultado['tipo'], 'seguimiento_proyecto')
+                self.assertIn('especialidad principal es Techumbre', resultado['mensaje'])
+                self.assertIn('Carpintería', resultado['mensaje'])
+                self.assertNotIn('A cuál de los productos', resultado['mensaje'])
+
+        interpretar.assert_not_called()
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_quincho_informa_todas_las_especialidades_relevantes(self, interpretar):
+        ladrillo = Producto.objects.create(
+            nombre='Ladrillo refractario para quincho prueba',
+            descripcion='Material para zona de fuego y albañilería.',
+            precio=1890,
+            stock=100,
+            categoria='Construcción',
+            activo=True,
+        )
+        teja = Producto.objects.create(
+            nombre='Teja para cubierta de quincho prueba',
+            descripcion='Cubierta para techumbre.',
+            precio=34990,
+            stock=20,
+            categoria='Construcción',
+            activo=True,
+        )
+        pino = Producto.objects.create(
+            nombre='Pino estructural para quincho prueba',
+            descripcion='Madera para pilares y vigas.',
+            precio=8990,
+            stock=30,
+            categoria='Construcción',
+            activo=True,
+        )
+
+        resultado = procesar_consulta(
+            '¿Qué maestros necesito para este trabajo?',
+            [],
+            [ladrillo.id, teja.id, pino.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'seguimiento_proyecto')
+        self.assertIn('especialidad principal es Albañilería', resultado['mensaje'])
+        self.assertIn('Techumbre', resultado['mensaje'])
+        self.assertIn('Carpintería', resultado['mensaje'])
+        self.assertIn('Buscar maestro de Albañilería', resultado['sugerencias'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_pedir_herramientas_usa_el_proyecto_y_no_pregunta_por_tarjeta(self, interpretar):
+        policarbonato = Producto.objects.create(
+            nombre='Policarbonato alveolar 6 mm prueba',
+            descripcion='Cubierta liviana para techumbre.',
+            precio=32990,
+            stock=12,
+            categoria='Construcción',
+            activo=True,
+        )
+        cinta = Producto.objects.create(
+            nombre='Cinta métrica 8 m prueba',
+            descripcion='Herramienta de medición.',
+            precio=12990,
+            stock=8,
+            categoria='Herramientas',
+            activo=True,
+        )
+        taladro = Producto.objects.create(
+            nombre='Taladro percutor con selector prueba',
+            descripcion='Permite perforar con o sin impacto.',
+            precio=29990,
+            stock=6,
+            categoria='Herramientas',
+            activo=True,
+        )
+        sierra = Producto.objects.create(
+            nombre='Sierra circular solo para madera prueba',
+            descripcion='Cortes en madera.',
+            precio=60000,
+            stock=5,
+            categoria='Herramientas',
+            activo=True,
+        )
+
+        for consulta in ('¿Qué herramientas son necesarias?', '¿Con qué hago esta pega?'):
+            with self.subTest(consulta=consulta):
+                resultado = procesar_consulta(
+                    consulta,
+                    [{'role': 'assistant', 'content': '¿A cuál producto te refieres?'}],
+                    [policarbonato.id],
+                )
+
+                self.assertEqual(resultado['tipo'], 'seguimiento_herramientas')
+                ids = {producto['id'] for producto in resultado['productos']}
+                self.assertEqual(ids, {cinta.id, taladro.id})
+                self.assertNotIn(sierra.id, ids)
+                self.assertNotIn('A cuál de los productos', resultado['mensaje'])
+                self.assertIn('COSTO OPCIONAL', resultado['mensaje'])
+
+        interpretar.assert_not_called()
+
+    def test_seguimiento_de_herramientas_generico_devuelve_solo_herramientas(self):
+        herramienta = Producto.objects.create(
+            nombre='Taladro para proyecto de cobertizo',
+            descripcion='Herramienta para perforar y atornillar.',
+            precio=24990,
+            stock=7,
+            categoria='Herramientas',
+            activo=True,
+        )
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Construcción de cobertizo',
+            'modo_orientacion': 'propuesta_directa',
+            '_consulta_solo_herramientas': True,
+            'incluir_herramientas': True,
+            'tareas_proyecto': [{
+                'nombre': 'Estructura',
+                'busquedas': ['pino dimensionado para exterior'],
+            }],
+            'herramientas_proyecto': ['taladro proyecto cobertizo'],
+            'datos_faltantes_proyecto': [],
+            'especialidades_proyecto': [],
+        })
+
+        self.assertEqual(resultado['tipo'], 'seguimiento_herramientas')
+        self.assertEqual([item['id'] for item in resultado['productos']], [herramienta.id])
+        self.assertNotIn(self.madera.nombre, resultado['mensaje'])
+        self.assertIn('No modifiqué los materiales', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_boton_ajustar_pide_el_cambio_sin_reconstruir(self, interpretar):
+        resultado = procesar_consulta(
+            'Ajustar el proyecto',
+            [],
+            [self.madera.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'seguimiento_proyecto')
+        self.assertIn('Mantendré todo lo demás', resultado['mensaje'])
+        self.assertIn('Quiero cambiar las medidas', resultado['sugerencias'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_quincho_estandar_activa_propuesta_sin_cuestionario(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Quincho estándar',
+            'tareas_proyecto': [{
+                'nombre': 'Estructura base',
+                'busquedas': ['pino dimensionado para exterior'],
+            }],
+            'datos_faltantes_proyecto': ['Ancho y fondo del quincho'],
+        }
+
+        resultado = procesar_consulta('Quiero hacer un quincho estándar', [])
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertTrue(resultado['productos'])
+        self.assertIn('PROPUESTA ESTÁNDAR PARA TU PROYECTO', resultado['mensaje'])
+        self.assertNotIn('ANTES DE RECOMENDAR PRODUCTOS', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_no_reemplaza_tejas_solicitadas_por_zinc(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Construcción de techo estándar de madera',
+            'tareas_proyecto': [{
+                'nombre': 'Cubierta',
+                'busquedas': ['plancha zinc acanalado'],
+                'usos_materiales': ['Cubrir la estructura del techo.'],
+                'bases_calculo': ['superficie_cubierta'],
+            }],
+            'datos_faltantes_proyecto': [],
+        }
+
+        resultado = procesar_consulta(
+            'Quiero hacer un techo estándar de 4 x 6 metros, estructura de madera y tejas',
+            [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertTrue(resultado['productos'])
+        self.assertTrue(any(
+            'teja' in producto['nombre'].casefold()
+            for producto in resultado['productos']
+        ))
+        self.assertFalse(any(
+            'zinc' in producto['nombre'].casefold()
+            for producto in resultado['productos']
+        ))
+
+    def test_proyecto_muestra_mas_de_seis_materiales_planificados(self):
+        nombres = [
+            'Material exclusivo alfa', 'Material exclusivo beta',
+            'Material exclusivo gamma', 'Material exclusivo delta',
+            'Material exclusivo epsilon', 'Material exclusivo zeta',
+            'Material exclusivo theta',
+        ]
+        for nombre in nombres:
+            Producto.objects.create(
+                nombre=nombre,
+                descripcion='Material destinado exclusivamente a una etapa de prueba.',
+                precio=1000,
+                stock=10,
+                categoria='Construcción',
+                activo=True,
+            )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Proyecto estándar completo',
+            '_proyecto_estandar': True,
+            'tareas_proyecto': [
+                {'nombre': 'Etapa 1', 'busquedas': nombres[:3]},
+                {'nombre': 'Etapa 2', 'busquedas': nombres[3:6]},
+                {'nombre': 'Etapa 3', 'busquedas': nombres[6:]},
+            ],
+            'datos_faltantes_proyecto': [],
+        })
+
+        self.assertEqual(len(resultado['productos']), 7)
+
+    def test_quincho_completo_admite_mas_de_ocho_materiales_con_usos_claros(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Quincho estándar completo',
+            '_proyecto_estandar': True,
+            'tareas_proyecto': [
+                {'nombre': 'Preparación del radier', 'busquedas': [
+                    'base estabilizada para radier saco 25 kg',
+                    'polietileno construcción 200 micras 4 x 25 m',
+                    'malla ACMA C-92 2,60 x 5 m',
+                ], 'usos_materiales': [
+                    {'busqueda': 'base estabilizada para radier saco 25 kg', 'uso': 'Preparar la base compactada del radier.'},
+                    {'busqueda': 'polietileno construcción 200 micras 4 x 25 m', 'uso': 'Separar el radier del terreno preparado.'},
+                    {'busqueda': 'malla ACMA C-92 2,60 x 5 m', 'uso': 'Reforzar el radier antes del hormigonado.'},
+                ]},
+                {'nombre': 'Albañilería y zona de fuego', 'busquedas': [
+                    'hormigón predosificado H20 saco 25 kg',
+                    'mortero pega ladrillos saco 25 kg',
+                    'ladrillo refractario 23 x 11 x 3 cm',
+                ], 'usos_materiales': [
+                    {'busqueda': 'hormigón predosificado H20 saco 25 kg', 'uso': 'Formar el radier del quincho.'},
+                    {'busqueda': 'mortero pega ladrillos saco 25 kg', 'uso': 'Unir los ladrillos de albañilería.'},
+                    {'busqueda': 'ladrillo refractario 23 x 11 x 3 cm', 'uso': 'Revestir la zona interior expuesta al fuego.'},
+                ]},
+                {'nombre': 'Estructura metálica', 'busquedas': [
+                    'mortero refractario balde 5 kg',
+                    'perfil tubular acero 80 x 80 x 3 mm x 6 m',
+                    'perfil costanera acero 100 x 50 x 2 mm x 6 m',
+                ], 'usos_materiales': [
+                    {'busqueda': 'mortero refractario balde 5 kg', 'uso': 'Unir los ladrillos refractarios.'},
+                    {'busqueda': 'perfil tubular acero 80 x 80 x 3 mm x 6 m', 'uso': 'Formar los pilares de la estructura.'},
+                    {'busqueda': 'perfil costanera acero 100 x 50 x 2 mm x 6 m', 'uso': 'Formar los apoyos donde se fija la cubierta.'},
+                ]},
+                {'nombre': 'Uniones y revestimiento', 'busquedas': [
+                    'electrodo soldadura E6013 2,5 mm caja 1 kg',
+                    'perno anclaje expansión M12 x 120 mm pack 4',
+                    'plancha fibrocemento exterior 8 mm 1,20 x 2,40 m',
+                ], 'usos_materiales': [
+                    {'busqueda': 'electrodo soldadura E6013 2,5 mm caja 1 kg', 'uso': 'Realizar las uniones soldadas de la estructura.'},
+                    {'busqueda': 'perno anclaje expansión M12 x 120 mm pack 4', 'uso': 'Anclar la estructura a la base.'},
+                    {'busqueda': 'plancha fibrocemento exterior 8 mm 1,20 x 2,40 m', 'uso': 'Cerrar superficies exteriores compatibles.'},
+                ]},
+            ],
+            'datos_faltantes_proyecto': [],
+        })
+
+        self.assertGreaterEqual(len(resultado['productos']), 12)
+        mensaje = resultado['mensaje'].casefold()
+        self.assertIn('reforzar el radier', mensaje)
+        self.assertIn('zona interior expuesta al fuego', mensaje)
+        self.assertIn('apoyos donde se fija la cubierta', mensaje)
+
+    def test_quincho_calcula_cada_material_con_su_superficie_correcta(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Quincho estándar de 4 x 6 metros',
+            '_proyecto_estandar': True,
+            'ancho_cm': 400,
+            'fondo_cm': 600,
+            'tareas_proyecto': [{
+                'nombre': 'Radier y cubierta',
+                'busquedas': [
+                    'malla ACMA C-92 2,60 x 5 m',
+                    'polietileno construcción 200 micras 4 x 25 m',
+                    'plancha zinc acanalado 0,35 mm x 3 m',
+                ],
+                'usos_materiales': [
+                    'Reforzar el radier.',
+                    'Separar el radier del terreno.',
+                    'Formar la cubierta del quincho.',
+                ],
+                'bases_calculo': [
+                    'superficie_piso',
+                    'superficie_piso',
+                    'superficie_cubierta',
+                ],
+            }],
+            'datos_faltantes_proyecto': [],
+        })
+
+        calculados = {
+            producto['nombre']: producto
+            for producto in resultado['productos']
+            if producto.get('cantidad_requerida')
+        }
+        self.assertEqual(len(calculados), 3)
+        self.assertTrue(all(
+            producto['medida_base'] == '24 m²'
+            for producto in calculados.values()
+        ))
+        self.assertIn('superficie piso', resultado['mensaje'])
+        self.assertIn('superficie cubierta', resultado['mensaje'])
+
+    def test_bases_de_calculo_tambien_aplican_a_otros_proyectos(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Terraza exterior estándar de 3 x 5 metros',
+            '_proyecto_estandar': True,
+            'ancho_cm': 300,
+            'fondo_cm': 500,
+            'tareas_proyecto': [{
+                'nombre': 'Terminación del piso',
+                'busquedas': ['baldosa exterior antideslizante 40 x 40 cm caja 1,44 m²'],
+                'usos_materiales': ['Terminar la superficie transitable de la terraza.'],
+                'bases_calculo': ['superficie_piso'],
+            }],
+            'datos_faltantes_proyecto': [],
+        })
+
+        producto = resultado['productos'][0]
+        self.assertEqual(producto['medida_base'], '15 m²')
+        self.assertGreater(producto['cantidad_requerida'], 1)
+        self.assertIn('Terraza exterior', resultado['mensaje'])
+
     def test_techumbre_pide_datos_criticos_antes_de_sugerir_materiales(self):
         resultado = resolver_interpretacion({
             'intencion': 'planificar_proyecto',
@@ -1826,9 +2501,412 @@ class PlanificadorGenericoProyectosTests(TestCase):
 
         self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
         self.assertEqual(resultado['productos'], [])
-        self.assertIn('largo y ancho', resultado['mensaje'])
-        self.assertIn('material de la estructura', resultado['mensaje'])
-        self.assertIn('formato y espesor', resultado['mensaje'])
+        mensaje = resultado['mensaje'].casefold()
+        self.assertIn('largo y ancho', mensaje)
+        self.assertIn('material y estado de la estructura', mensaje)
+        self.assertIn('formato y espesor', mensaje)
+        self.assertNotIn('\n4.', mensaje)
+        self.assertIn('3 × 4 m', resultado['sugerencias'][0])
+        self.assertIn('estructura', resultado['sugerencias'][0])
+        self.assertFalse(any(
+            'maestro' in sugerencia.casefold()
+            for sugerencia in resultado['sugerencias']
+        ))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_techumbre_no_repite_material_ni_confunde_metros_con_herramientas(
+        self,
+        interpretar,
+    ):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de techo de policarbonato',
+            'ancho_cm': 300,
+            'fondo_cm': 200,
+            'material_estructura': 'hormigon',
+            'estado_estructura': '',
+            'tipo_cubierta': 'policarbonato',
+            'incluir_herramientas': True,
+            'datos_faltantes_proyecto': [],
+            'tareas_proyecto': [],
+            'herramientas_proyecto': ['sierra circular'],
+            'especialidades_proyecto': [],
+        }
+
+        resultado = procesar_consulta(
+            'Quiero cambiar mi techo de policarbonato; es de 3 x 2 metros en hormigón.',
+            [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn('ESTADO DE LA ESTRUCTURA', resultado['mensaje'])
+        self.assertNotIn('MATERIAL DE LA ESTRUCTURA', resultado['mensaje'])
+        self.assertNotIn('sierra', resultado['mensaje'].casefold())
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_techumbre_no_acepta_cubierta_inventada_por_gemini(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de techumbre',
+            'ancho_cm': 300,
+            'fondo_cm': 400,
+            'material_estructura': 'madera',
+            'estado_estructura': 'reutilizable',
+            'tipo_cubierta': 'zinc',
+            'material_principal_proyecto': 'zinc',
+            'datos_faltantes_proyecto': [],
+            'tareas_proyecto': [],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': [],
+        }
+
+        resultado = procesar_consulta(
+            'Quiero cambiar mi techo; mide 3 x 4 m y la estructura de madera está firme.',
+            [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn(
+            'material, formato y espesor de la cubierta',
+            resultado['mensaje'].casefold(),
+        )
+        self.assertIn('zinc, policarbonato, tejas', resultado['mensaje'])
+        self.assertNotIn('Plancha zinc', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_seguimiento_de_herramientas_no_repite_plan_completo(self, interpretar):
+        Producto.objects.create(
+            nombre='Cinta métrica profesional 8 m',
+            descripcion='Herramienta para medir longitudes.',
+            precio=12990,
+            stock=10,
+            categoria='Herramientas',
+            activo=True,
+        )
+        Producto.objects.create(
+            nombre='Taladro percutor profesional',
+            descripcion='Herramienta para perforar y atornillar.',
+            precio=20000,
+            stock=10,
+            categoria='Herramientas',
+            activo=True,
+        )
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de techo de zinc',
+            'ancho_cm': 300,
+            'fondo_cm': 400,
+            'material_estructura': 'madera',
+            'estado_estructura': 'reutilizable',
+            'tipo_cubierta': 'zinc',
+            'incluir_herramientas': True,
+            'datos_faltantes_proyecto': [],
+            'tareas_proyecto': [],
+            'herramientas_proyecto': ['cinta métrica', 'taladro percutor'],
+            'especialidades_proyecto': [],
+        }
+        historial = [{
+            'role': 'user',
+            'content': (
+                'Quiero cambiar mi techo de zinc; mide 3 x 4 m y la estructura '
+                'de madera está firme.'
+            ),
+        }]
+
+        resultado = procesar_consulta(
+            '¿Y qué herramientas se usan?',
+            historial,
+        )
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertIn('HERRAMIENTAS PARA TU TECHUMBRE', resultado['mensaje'])
+        self.assertIn('COSTO OPCIONAL DE HERRAMIENTAS', resultado['mensaje'])
+        self.assertNotIn('PROYECTO\nAnalicé', resultado['mensaje'])
+        self.assertTrue(resultado['productos'])
+        self.assertTrue(all(
+            'herramienta' in producto['rol'].casefold()
+            for producto in resultado['productos']
+        ))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_techumbre_recomienda_cubierta_si_usuario_delega_eleccion(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'respuesta': 'Revisaré una alternativa compatible.',
+            'proyecto': 'Instalación de techo de policarbonato',
+            'ancho_cm': 0,
+            'fondo_cm': 0,
+            'material_estructura': '',
+            'estado_estructura': '',
+            'tipo_cubierta': 'policarbonato',
+            'datos_faltantes_proyecto': ['formato y espesor del policarbonato'],
+            'tareas_proyecto': [],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': [],
+        }
+        historial = [
+            {'role': 'user', 'content': 'Quiero un techo de policarbonato'},
+            {
+                'role': 'assistant',
+                'content': 'Indica largo y ancho, material y estado de la estructura.',
+            },
+        ]
+
+        resultado = procesar_consulta(
+            '2x3 madera, el ambiente está en buena forma; lo demás recomiéndamelo tú',
+            historial,
+        )
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertEqual(resultado['superficie_m2'], 6)
+        self.assertIn('Como pediste una recomendación', resultado['mensaje'])
+        self.assertIn('Policarbonato alveolar 6 mm', resultado['mensaje'])
+        self.assertTrue(any(
+            'policarbonato alveolar 6 mm' in item['nombre'].casefold()
+            for item in resultado['productos']
+        ))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_techumbre_entiende_hormigon_bueno_y_eleccion_delegada(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de techo de policarbonato',
+            'ancho_cm': 0,
+            'fondo_cm': 0,
+            'alto_cm': 0,
+            'material_estructura': '',
+            'estado_estructura': 'nueva',
+            'tipo_cubierta': 'policarbonato',
+            'datos_faltantes_proyecto': [
+                'altura de la estructura nueva',
+                'formato y espesor del policarbonato',
+            ],
+            'tareas_proyecto': [],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': [],
+        }
+        historial = [{
+            'role': 'assistant',
+            'content': 'Indica medidas, material y estado de la estructura, y cubierta.',
+        }]
+
+        resultado = procesar_consulta(
+            '3x4 hormigón bueno, no lo sé, elige tú',
+            historial,
+        )
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertEqual(resultado['superficie_m2'], 12)
+        self.assertNotIn('ALTURA DE LA ESTRUCTURA NUEVA', resultado['mensaje'])
+        self.assertIn('Como pediste una recomendación', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_respuesta_sobre_estado_continua_proyecto_y_no_selecciona_tarjeta(self, interpretar):
+        piso = Producto.objects.filter(nombre__icontains='Piso laminado 8 mm').first()
+        interpretar.return_value = {
+            'intencion': 'buscar_producto',
+            'respuesta': 'El piso está en buen estado.',
+            'consulta_producto': 'el piso',
+            'proyecto': 'Cambio de piso flotante',
+            'superficie': 30,
+            'tareas_proyecto': [{
+                'nombre': 'Instalación de piso',
+                'busquedas': ['piso laminado 8 mm'],
+            }, {
+                'nombre': 'Demolición',
+                'busquedas': ['herramientas demolición'],
+            }],
+            'herramientas_proyecto': ['herramientas demolición'],
+            'especialidades_proyecto': [],
+            'datos_faltantes_proyecto': [
+                'estado del piso actual',
+                '¿Qué material es la base actual del piso?',
+            ],
+        }
+        historial = [
+            {'role': 'user', 'content': 'Quiero cambiar mi piso flotante, mide 3 x 10 m'},
+            {
+                'role': 'assistant',
+                'content': (
+                    'Analicé “Cambio de piso flotante”. Para calcular cantidades '
+                    'exactas todavía necesito: estado del piso actual.'
+                ),
+            },
+        ]
+
+        resultado = procesar_consulta(
+            'El piso está en perfecto estado',
+            historial,
+            [piso.id],
+        )
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn('PROYECTO\n', resultado['mensaje'])
+        self.assertIn('ANTES DE RECOMENDAR PRODUCTOS\n', resultado['mensaje'])
+        self.assertIn('RESPONDE TODO EN UN MENSAJE\n', resultado['mensaje'])
+        self.assertNotIn('A cuál de los productos', resultado['mensaje'])
+        self.assertIn('hormigón, madera/OSB o cerámica', resultado['mensaje'])
+        self.assertNotIn('demolición', resultado['mensaje'].casefold())
+        self.assertEqual(resultado['productos'], [])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_pedir_recomendacion_no_reinicia_cuestionario_pendiente(self, interpretar):
+        historial = [{
+            'role': 'assistant',
+            'content': (
+                'PROYECTO\nCambio de piso flotante\n\n'
+                'ANTES DE RECOMENDAR PRODUCTOS\n'
+                'Necesito estos datos:\n'
+                '• Qué tipo de piso deseas instalar\n'
+                '• Cuál es el material de la superficie actual\n'
+                '• Cuál es el estado actual del piso\n\n'
+                'RESPONDE TODO EN UN MENSAJE'
+            ),
+        }]
+
+        resultado = procesar_consulta(
+            '¿Qué piso me recomiendas?',
+            historial,
+            [1, 2, 3],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('yo elegiré la opción más conveniente', resultado['mensaje'])
+        self.assertNotIn('Qué tipo de piso', resultado['mensaje'])
+        self.assertIn('material de la superficie actual', resultado['mensaje'])
+        self.assertIn('estado actual del piso', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_elegir_formato_de_policarbonato_avanza_sin_sugerencias_de_piso(
+        self,
+        interpretar,
+    ):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de techo de policarbonato',
+            'ancho_cm': 300,
+            'fondo_cm': 400,
+            'material_estructura': 'hormigon',
+            'estado_estructura': 'reutilizable',
+            'tipo_cubierta': 'policarbonato',
+            'datos_faltantes_proyecto': ['formato y espesor del policarbonato'],
+            'tareas_proyecto': [],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': [],
+        }
+        historial = [{
+            'role': 'assistant',
+            'content': (
+                'PROYECTO\nCambio de techo de policarbonato\n\n'
+                'ANTES DE RECOMENDAR PRODUCTOS\n'
+                '1. FORMATO Y ESPESOR DEL POLICARBONATO\n'
+                '• Indica tu preferencia si ya la conoces.\n'
+                '• No lo sé: escribe “elige tú”.'
+            ),
+        }]
+
+        resultado = procesar_consulta(
+            'Elige tú una cubierta compatible',
+            historial,
+        )
+
+        interpretar.assert_called_once()
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertNotIn('SIGAMOS CON TU PROYECTO', resultado['mensaje'])
+        self.assertFalse(any(
+            'base es de' in sugerencia.casefold()
+            for sugerencia in resultado.get('sugerencias', [])
+        ))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_estado_y_eleccion_en_un_mensaje_completan_el_cuestionario(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de techo de policarbonato',
+            'ancho_cm': 300,
+            'fondo_cm': 200,
+            'material_estructura': 'hormigon',
+            'estado_estructura': '',
+            'tipo_cubierta': 'policarbonato',
+            'datos_faltantes_proyecto': ['estado de la estructura', 'formato del policarbonato'],
+            'tareas_proyecto': [],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': [],
+            'incluir_herramientas': False,
+        }
+        historial = [{
+            'role': 'assistant',
+            'content': (
+                'PROYECTO\nCambio de techo de policarbonato\n\n'
+                'ANTES DE RECOMENDAR PRODUCTOS\n'
+                '1. ESTADO DE LA ESTRUCTURA DE APOYO\n'
+                '2. FORMATO Y ESPESOR DEL POLICARBONATO\n\n'
+                'RESPONDE TODO EN UN MENSAJE'
+            ),
+        }]
+
+        resultado = procesar_consulta('Bueno, elige tú', historial)
+
+        interpretar.assert_called_once()
+        self.assertNotEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertNotIn('SIGAMOS CON TU PROYECTO', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_este_proyecto_no_se_confunde_con_una_tarjeta(self, interpretar):
+        producto = Producto.objects.create(
+            nombre='Plancha de cubierta de prueba',
+            descripcion='Material para un proyecto de techumbre.',
+            precio=15990,
+            stock=10,
+            categoria='Construcción',
+            activo=True,
+        )
+        interpretar.return_value = {
+            'intencion': 'orientacion_general',
+            'respuesta': 'El costo mostrado para este proyecto es parcial.',
+        }
+
+        resultado = procesar_consulta(
+            '¿Cuánto cuesta este proyecto?',
+            [],
+            [producto.id],
+        )
+
+        self.assertEqual(resultado['tipo'], 'orientacion')
+        self.assertNotIn('A cuál de los productos', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_cuanto_sale_todo_recupera_el_total_del_proyecto(self, interpretar):
+        producto = Producto.objects.create(
+            nombre='Material contextual para total',
+            descripcion='Material del proyecto actual.',
+            precio=10000,
+            stock=10,
+            categoria='Construcción',
+            activo=True,
+        )
+        historial = [{
+            'role': 'assistant',
+            'content': (
+                'TOTAL CALCULADO\n$98.970 CLP por 1 material con cantidad verificada.\n'
+                'Este es un total parcial: faltan materiales por cuantificar.\n\n'
+                'Productos del proyecto.'
+            ),
+        }]
+
+        resultado = procesar_consulta(
+            '¿Cuánto me sale todo?',
+            historial,
+            [producto.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'seguimiento_proyecto')
+        self.assertIn('$98.970 CLP', resultado['mensaje'])
+        self.assertIn('total parcial', resultado['mensaje'].casefold())
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_techumbre_corrige_intencion_y_usa_solo_catalogo_con_stock(self, interpretar):
@@ -1868,7 +2946,10 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertEqual(resultado['superficie_m2'], 15)
         self.assertIn(tornillo.id, {item['id'] for item in resultado['productos']})
         self.assertTrue(all(item['stock'] > 0 for item in resultado['productos']))
-        self.assertTrue(any('policarbonato' in item for item in resultado['faltantes_catalogo']))
+        self.assertTrue(any(
+            'policarbonato' in item['nombre'].lower()
+            for item in resultado['productos']
+        ))
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_techumbre_prioriza_formato_detallado_de_respuesta_posterior(self, interpretar):
@@ -1901,6 +2982,7 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertEqual(resultado['superficie_m2'], 8)
 
     def test_techumbre_calcula_planchas_con_rendimiento_y_margen_verificados(self):
+        Producto.objects.filter(sku__startswith='TEST-EXT-TEC-POL').update(stock=0)
         policarbonato = Producto.objects.create(
             nombre='Policarbonato alveolar 6 mm',
             descripcion='Plancha de 2 por 1 metro para cubierta',
@@ -1926,6 +3008,7 @@ class PlanificadorGenericoProyectosTests(TestCase):
             'material_estructura': 'madera',
             'estado_estructura': 'reutilizable',
             'tipo_cubierta': 'policarbonato alveolar 6 mm',
+            'material_principal_proyecto': 'plancha de policarbonato',
             'datos_faltantes_proyecto': [],
             'tareas_proyecto': [],
         })
@@ -1938,6 +3021,79 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertEqual(cubierta['subtotal'], 5 * policarbonato.precio)
         self.assertFalse(cubierta['recomendacion_orientativa'])
         self.assertIn('5 unidad(es)', resultado['mensaje'])
+        self.assertEqual(resultado['total_calculado'], 5 * policarbonato.precio)
+        self.assertIn('TOTAL CALCULADO', resultado['mensaje'])
+        self.assertIn('$149.950 CLP', resultado['mensaje'])
+
+    def test_techumbre_zinc_no_confunde_cubierta_con_producto_zincado(self):
+        Producto.objects.create(
+            nombre='Clavo zincado para madera',
+            descripcion='Clavo para fijaciones generales.',
+            precio=1990,
+            stock=50,
+            categoria='Ferretería',
+            activo=True,
+        )
+        plancha = Producto.objects.create(
+            nombre='Plancha zinc acanalado 0,35 mm x 3 m prueba',
+            descripcion='Cubierta metálica para techumbre.',
+            precio=15990,
+            stock=40,
+            categoria='Construcción',
+            activo=True,
+            contenido=Decimal('2.550'),
+            unidad_contenido='m2',
+            tipo_calculo='superficie',
+            rendimiento=Decimal('2.550'),
+            unidad_rendimiento='m2_unidad',
+            porcentaje_desperdicio=Decimal('10.00'),
+            informacion_tecnica_verificada=True,
+        )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de techumbre',
+            'ancho_cm': 300,
+            'fondo_cm': 400,
+            'material_estructura': 'madera',
+            'estado_estructura': 'reutilizable',
+            'tipo_cubierta': 'zinc',
+            'datos_faltantes_proyecto': [],
+            'tareas_proyecto': [],
+        })
+
+        cubierta = next(
+            producto for producto in resultado['productos']
+            if producto['rol'] == 'Cubierta'
+        )
+        self.assertIn('plancha zinc acanalado', cubierta['nombre'].casefold())
+        self.assertNotIn('clavo', cubierta['nombre'].casefold())
+        self.assertEqual(cubierta['cantidad_requerida'], 6)
+        self.assertEqual(resultado['total_calculado'], 95940)
+
+    def test_techumbre_con_tejas_usa_familia_y_membrana_del_catalogo(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cambio de techo con tejas',
+            'ancho_cm': 300,
+            'fondo_cm': 400,
+            'material_estructura': 'madera',
+            'estado_estructura': 'reutilizable',
+            'tipo_cubierta': 'tejas',
+            'datos_faltantes_proyecto': [],
+            'tareas_proyecto': [],
+        })
+
+        nombres = [producto['nombre'].casefold() for producto in resultado['productos']]
+        self.assertTrue(any('teja' in nombre for nombre in nombres))
+        self.assertTrue(any(
+            'membrana impermeable para techumbre' in nombre
+            for nombre in nombres
+        ))
+        self.assertFalse(any(
+            faltante in {'teja', 'teja para techo', 'sellador para techumbre exterior'}
+            for faltante in resultado['faltantes_catalogo']
+        ))
 
     def test_proyecto_libre_calcula_solo_con_ficha_tecnica_verificada(self):
         baldosa = Producto.objects.create(
@@ -1975,7 +3131,7 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertFalse(item['recomendacion_orientativa'])
         self.assertIn('Cantidades calculadas con fichas verificadas', resultado['mensaje'])
 
-    def test_proyecto_libre_es_invalido_si_falta_material_principal(self):
+    def test_proyecto_libre_orienta_aunque_falte_material_principal(self):
         resultado = resolver_interpretacion({
             'intencion': 'planificar_proyecto',
             'proyecto': 'Construir cerco con paneles de bambú',
@@ -1992,13 +3148,16 @@ class PlanificadorGenericoProyectosTests(TestCase):
             ],
             'herramientas_proyecto': [],
             'especialidades_proyecto': ['Carpintería'],
-            'datos_faltantes_proyecto': ['altura del cerco'],
+            'datos_faltantes_proyecto': [],
         })
 
-        self.assertEqual(resultado['tipo'], 'proyecto_no_valido')
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_sin_producto')
         self.assertEqual(resultado['productos'], [])
         self.assertEqual(resultado['faltantes_catalogo'], ['panel de bambú'])
-        self.assertIn('Proyecto no válido por falta de materiales', resultado['mensaje'])
+        self.assertIn('Instalar postes', resultado['mensaje'])
+        self.assertIn('Montar paneles', resultado['mensaje'])
+        self.assertIn('No encontré “panel de bambú” con stock', resultado['mensaje'])
+        self.assertIn('Puedes continuar consultando etapas', resultado['mensaje'])
 
     def test_proyecto_libre_no_declara_faltante_un_material_ya_mostrado(self):
         resultado = resolver_interpretacion({

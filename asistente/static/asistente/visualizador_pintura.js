@@ -776,7 +776,7 @@
         if (!response.ok) throw new Error(firstError(data) || "No fue posible configurar la fotografía.");
         const answer = data.mensaje || "Revisa las pinturas disponibles para este color.";
         addPhotoChatMessage("assistant", answer);
-        photoHistory.push({role: "assistant", content: answer.slice(0, 700)});
+        photoHistory.push({role: "assistant", content: answer.slice(0, 4000)});
         photoHistory = photoHistory.slice(-6);
         const recommendations = Array.isArray(data.productos) ? data.productos : [];
         renderRecommendations(recommendations);

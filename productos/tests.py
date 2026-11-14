@@ -49,6 +49,42 @@ class CatalogoBanoTests(TestCase):
             self.assertGreater(producto.rendimiento, 0)
 
 
+class CatalogoTecnicoExtendidoTests(TestCase):
+    def test_catalogo_extendido_incorpora_51_productos_medibles(self):
+        productos = Producto.objects.filter(sku__startswith='TEST-EXT-')
+
+        self.assertEqual(productos.count(), 51)
+        for producto in productos:
+            self.assertTrue(producto.informacion_tecnica_verificada)
+            self.assertTrue(producto.uso_recomendado)
+            self.assertTrue(producto.especificaciones.get('Medidas o presentación'))
+            self.assertGreater(producto.contenido, 0)
+            self.assertTrue(producto.unidad_contenido)
+            self.assertNotEqual(producto.tipo_calculo, 'ninguno')
+
+    def test_productos_por_superficie_tienen_cobertura_calculable(self):
+        productos = Producto.objects.filter(
+            sku__startswith='TEST-EXT-',
+            tipo_calculo='superficie',
+        )
+
+        self.assertGreater(productos.count(), 0)
+        for producto in productos:
+            self.assertGreater(producto.rendimiento, 0)
+            self.assertEqual(producto.unidad_rendimiento, 'm2_unidad')
+            self.assertTrue(producto.apto_para_calculo)
+
+    def test_diez_productos_del_catalogo_extendido_tienen_imagen_local(self):
+        productos = Producto.objects.filter(
+            imagen__startswith='productos/catalogo_extendido/'
+        )
+
+        self.assertEqual(productos.count(), 10)
+        for producto in productos:
+            self.assertTrue(producto.imagen.name.endswith('.jpg'))
+            self.assertTrue(default_storage.exists(producto.imagen.name))
+
+
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
 class SeguridadProductosTests(TestCase):
     def setUp(self):
