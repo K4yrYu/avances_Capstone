@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 import requests
 import truststore
 from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 GEMINI_API_HOST = 'generativelanguage.googleapis.com'
@@ -38,9 +39,19 @@ class _TruststoreAdapter(HTTPAdapter):
 class ClienteGemini:
     def __init__(self):
         self.session = requests.Session()
+        reintentos = Retry(
+            total=2,
+            connect=2,
+            read=2,
+            status=2,
+            backoff_factor=0.5,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset({'POST'}),
+            raise_on_status=False,
+        )
         self.session.mount(
             f'https://{GEMINI_API_HOST}/',
-            _TruststoreAdapter(),
+            _TruststoreAdapter(max_retries=reintentos),
         )
 
     def post(self, url, **kwargs):

@@ -74,6 +74,30 @@ class AsistenteSfiTests(TestCase):
         self.assertContains(pagina, 'Compra protegida con Webpay')
         self.assertContains(inicio, reverse('asistente_sfi'))
 
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_respuesta_nuevo_completa_estado_de_superficie_pendiente(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'calcular_pintura',
+            'superficie': 10,
+            'ambiente': 'interior',
+            'tipo_superficie': 'hormigon',
+            'estado_superficie': '',
+            'terminacion': 'cualquiera',
+            'color': '',
+            'capas': 0,
+            'desperdicio': -1,
+            'presupuesto': 0,
+        }
+        historial = [{
+            'role': 'assistant',
+            'content': 'Necesito saber el estado actual de la superficie del muro.',
+        }]
+
+        resultado = procesar_consulta('NUEVO', historial)
+
+        self.assertEqual(resultado['tipo'], 'calculo_pintura')
+        self.assertTrue(resultado['productos'])
+
     @patch('asistente.views.analizar_foto_pintura')
     def test_analiza_foto_sin_guardarla(self, analizar):
         analizar.return_value = {
@@ -1712,6 +1736,151 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertIn('antes que preguntar', instrucciones)
         self.assertIn('La ausencia de un producto limita solamente', instrucciones)
         self.assertIn('No rechaces, cierres ni declares', instrucciones)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_consulta_inicial_de_herramientas_para_pintar_no_inicia_calculo(self, interpretar):
+        rodillo = Producto.objects.create(
+            nombre='Rodillo pintura muros prueba',
+            descripcion='Herramienta para aplicar pintura en muros.',
+            precio=5990,
+            stock=10,
+            categoria='Herramientas',
+            activo=True,
+        )
+        brocha = Producto.objects.create(
+            nombre='Brocha pintura 2 pulgadas prueba',
+            descripcion='Herramienta para recortes y bordes.',
+            precio=3990,
+            stock=10,
+            categoria='Herramientas',
+            activo=True,
+        )
+
+        resultado = procesar_consulta(
+            'QUE HERAMIENTAS NECESITO PARA PINTAR UNA PARED',
+            [],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'seguimiento_herramientas')
+        nombres = [producto['nombre'].casefold() for producto in resultado['productos']]
+        self.assertTrue(any('rodillo' in nombre for nombre in nombres))
+        self.assertTrue(any('brocha' in nombre for nombre in nombres))
+        self.assertTrue(all(
+            producto['rol'] == 'Herramienta recomendada'
+            for producto in resultado['productos']
+        ))
+        self.assertNotIn('metros cuadrados', resultado['mensaje'].casefold())
+
+    def test_materiales_y_herramientas_pasan_al_planificador_completo(self):
+        from .services.asistente_sfi import (
+            _clasificar_seguimiento_natural,
+            _normalizar_preferencias_extraidas,
+            _resolver_accion_seguimiento,
+            _resolver_herramientas_iniciales,
+        )
+
+        consulta = (
+            'Quiero instalar dos enchufes y una luz en una bodega de 3 x 4 metros. '
+            'Necesito conduit PVC de 20 mm. ¿Qué materiales y herramientas necesito?'
+        )
+        resultado = _resolver_herramientas_iniciales(consulta)
+
+        self.assertIsNone(resultado)
+        self.assertEqual(
+            _clasificar_seguimiento_natural(consulta, [self.madera.pk]),
+            '',
+        )
+        self.assertIsNone(
+            _resolver_accion_seguimiento(consulta, [self.madera.pk])
+        )
+        datos = _normalizar_preferencias_extraidas(
+            {'intencion': 'planificar_proyecto', 'incluir_herramientas': True},
+            consulta,
+            [],
+        )
+        self.assertFalse(datos['_consulta_solo_herramientas'])
+        self.assertTrue(datos['incluir_herramientas'])
+
+    def test_cliente_gemini_reintenta_errores_temporales(self):
+        adaptador = cliente_gemini.session.get_adapter(
+            'https://generativelanguage.googleapis.com/'
+        )
+
+        self.assertEqual(adaptador.max_retries.total, 2)
+        self.assertIn(503, adaptador.max_retries.status_forcelist)
+        self.assertIn('POST', adaptador.max_retries.allowed_methods)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_filtracion_desconocida_en_lavaplatos_pide_diagnostico(self, interpretar):
+        resultado = procesar_consulta(
+            'Se me rompió el lavaplatos. Está filtrando agua por debajo y no sé qué pieza falla. '
+            '¿Qué materiales o herramientas podría necesitar?',
+            [],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'seguimiento_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('PRIMERO IDENTIFIQUEMOS', resultado['mensaje'])
+        self.assertIn('Sifón o tubo de desagüe', resultado['mensaje'])
+        self.assertNotIn('martillo', resultado['mensaje'].casefold())
+
+    def test_filtracion_identificada_en_sifon_continua_al_planificador(self):
+        from .services.asistente_sfi import _resolver_diagnostico_filtracion_inicial
+
+        resultado = _resolver_diagnostico_filtracion_inicial(
+            'La fuga viene del sifón o desagüe del lavaplatos.'
+        )
+
+        self.assertIsNone(resultado)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_respuesta_llave_conserva_contexto_de_filtracion(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'orientacion',
+            'respuesta': 'Revisaremos la llave y sus conexiones.',
+        }
+        historial = [{
+            'role': 'assistant',
+            'content': (
+                'PRIMERO IDENTIFIQUEMOS LA FILTRACIÓN\n'
+                'Indícame cuál de estas opciones coincide: sifón, flexible, llave o borde.'
+            ),
+        }]
+
+        procesar_consulta('llave', historial)
+
+        mensaje_enviado = interpretar.call_args.args[0]
+        self.assertIn('CONTINÚA EL PROYECTO', mensaje_enviado)
+        self.assertIn('Respuesta breve del cliente: llave', mensaje_enviado)
+
+    def test_respuesta_breve_sin_guia_no_inventa_contexto(self):
+        from .services.asistente_sfi import _mensaje_para_continuar_guia
+
+        self.assertEqual(
+            _mensaje_para_continuar_guia(
+                'llave',
+                [{'role': 'assistant', 'content': '¿En qué puedo ayudarte?'}],
+            ),
+            'llave',
+        )
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_campana_para_quincho_es_busqueda_de_producto(self, interpretar):
+        resultado = procesar_consulta('CAMPANA PARA QUINCHO ?', [])
+
+        interpretar.assert_not_called()
+        self.assertIn(resultado['tipo'], {'busqueda', 'sin_resultados'})
+        self.assertNotIn('ANTES DE RECOMENDAR PRODUCTOS', resultado['mensaje'])
+        self.assertNotIn('dimensiones', resultado['mensaje'].casefold())
+
+    def test_pregunta_generica_de_materiales_no_se_reduce_a_producto(self):
+        from .services.asistente_sfi import _resolver_producto_breve
+
+        self.assertIsNone(
+            _resolver_producto_breve('¿Qué materiales necesito para un quincho?')
+        )
 
     def test_preguntas_de_puerta_explican_como_medir_el_vano(self):
         resultado = resolver_interpretacion({

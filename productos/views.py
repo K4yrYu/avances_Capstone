@@ -338,7 +338,7 @@ def editar_producto(request, id):
         'especificaciones_texto': especificaciones_texto,
         'modo_edicion': True,
         'modo_reajuste': modo_reajuste,
-        'url_retorno': reverse('movimientos:lista'),
+        'url_retorno': reverse('lista_productos_crud'),
         'bloquear_identidad': bloquear_identidad,
     })
 @api_view(['GET'])

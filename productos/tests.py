@@ -208,6 +208,11 @@ class SeguridadProductosTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'readonly aria-readonly="true"')
         self.assertContains(response, 'Motivo del reajuste')
+        self.assertContains(response, '>Cambio de imagen</textarea>')
+        self.assertContains(
+            response,
+            f'data-products-url="{reverse("lista_productos_crud")}"',
+        )
 
     def test_reajuste_exige_motivo(self):
         self.client.force_login(self.admin)
