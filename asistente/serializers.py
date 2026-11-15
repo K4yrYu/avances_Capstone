@@ -15,7 +15,7 @@ class ConsultaAsistenteSerializer(serializers.Serializer):
         child=serializers.IntegerField(min_value=1),
         required=False,
         default=list,
-        max_length=8,
+        max_length=18,
     )
 
     def validate_historial(self, value):

@@ -360,6 +360,238 @@ def resolver_proyecto_generico(
     """Convierte un plan libre de Gemini en resultados verificados por Django."""
     proyecto = _texto_seguro(datos.get("proyecto"), 120)
     tareas = _extraer_tareas(datos)
+    contexto_inicial = _normalizar(" ".join([
+        proyecto,
+        *(busqueda for tarea in tareas for busqueda in tarea.get("busquedas", [])),
+    ]))
+    es_porton_automatico = (
+        "porton" in contexto_inicial
+        and any(termino in contexto_inicial for termino in (
+            "electrico", "automatico", "automatizacion", "motor",
+        ))
+    )
+    es_quincho_estandar = (
+        'quincho' in contexto_inicial
+        and (
+            datos.get('_proyecto_estandar') is True
+            or datos.get('modo_orientacion') == 'propuesta_estandar'
+            or 'estandar' in _normalizar(proyecto)
+        )
+    )
+    es_bodega_estandar = (
+        'bodega' in contexto_inicial
+        and (
+            datos.get('_proyecto_estandar') is True
+            or datos.get('modo_orientacion') == 'propuesta_estandar'
+            or 'estandar' in _normalizar(proyecto)
+        )
+    )
+    if es_bodega_estandar:
+        # La bodega debe contemplar cerramiento, acceso, techumbre y aguas
+        # lluvia. Los elementos ausentes se informarán como faltantes.
+        tareas = [
+            {
+                'nombre': 'Anclaje a la base',
+                'busquedas': [
+                    'perno anclaje expansion M12 x 120 mm',
+                    'barrera humedad bajo solera',
+                ],
+                'usos': {
+                    _normalizar('perno anclaje expansion M12 x 120 mm'): 'Fijar la estructura a la base firme de hormigón.',
+                    _normalizar('barrera humedad bajo solera'): 'Separar la solera inferior de la humedad del hormigón.',
+                },
+            },
+            {
+                'nombre': 'Estructura de madera',
+                'busquedas': [
+                    'pino dimensionado 2 x 4 pulgadas',
+                    'escuadra metalica reforzada',
+                    'tornillo estructural para madera',
+                ],
+                'usos': {
+                    _normalizar('pino dimensionado 2 x 4 pulgadas'): 'Formar pilares, soleras y vigas de la estructura.',
+                    _normalizar('escuadra metalica reforzada'): 'Reforzar encuentros entre piezas estructurales.',
+                    _normalizar('tornillo estructural para madera'): 'Unir las piezas principales de madera.',
+                },
+            },
+            {
+                'nombre': 'Muros y protección exterior',
+                'busquedas': [
+                    'tablero OSB estructural 9,5 mm',
+                    'membrana hidrofuga para muros',
+                    'plancha fibrocemento exterior 8 mm',
+                    'tornillo fibrocemento exterior',
+                ],
+                'usos': {
+                    _normalizar('tablero OSB estructural 9,5 mm'): 'Rigidizar y cerrar la estructura de los muros.',
+                    _normalizar('membrana hidrofuga para muros'): 'Proteger el cerramiento frente a humedad exterior.',
+                    _normalizar('plancha fibrocemento exterior 8 mm'): 'Formar el revestimiento exterior expuesto a la intemperie.',
+                    _normalizar('tornillo fibrocemento exterior'): 'Fijar las planchas exteriores a la estructura.',
+                },
+            },
+            {
+                'nombre': 'Cubierta y remates',
+                'busquedas': [
+                    'plancha zinc acanalado 0,35 mm x 3 m',
+                    'tornillo techo autoperforante',
+                    'membrana impermeable para techumbre',
+                    'cumbrera galvanizada',
+                ],
+                'usos': {
+                    _normalizar('plancha zinc acanalado 0,35 mm x 3 m'): 'Cubrir la bodega y evacuar el agua de lluvia.',
+                    _normalizar('tornillo techo autoperforante'): 'Fijar la cubierta a la estructura de techumbre.',
+                    _normalizar('membrana impermeable para techumbre'): 'Crear una protección secundaria bajo la cubierta.',
+                    _normalizar('cumbrera galvanizada'): 'Cerrar y proteger el encuentro superior del techo.',
+                },
+            },
+            {
+                'nombre': 'Acceso y seguridad',
+                'busquedas': [
+                    'puerta exterior para bodega',
+                    'bisagra reforzada para puerta',
+                    'cerradura exterior para puerta',
+                ],
+                'usos': {
+                    _normalizar('puerta exterior para bodega'): 'Cerrar el acceso principal de la bodega.',
+                    _normalizar('bisagra reforzada para puerta'): 'Permitir el giro y sostener la hoja de la puerta.',
+                    _normalizar('cerradura exterior para puerta'): 'Asegurar el acceso a los elementos almacenados.',
+                },
+            },
+            {
+                'nombre': 'Evacuación de aguas lluvia',
+                'busquedas': [
+                    'canaleta aguas lluvia',
+                    'bajada aguas lluvia PVC',
+                ],
+                'usos': {
+                    _normalizar('canaleta aguas lluvia'): 'Recoger el agua que cae desde la cubierta.',
+                    _normalizar('bajada aguas lluvia PVC'): 'Conducir el agua desde la canaleta hasta la descarga.',
+                },
+            },
+        ]
+    if es_quincho_estandar:
+        # Una referencia de quincho debe mostrar el sistema completo y no una
+        # muestra abreviada dependiente de cuántas etapas devolvió Gemini.
+        tareas = [
+            {
+                'nombre': 'Preparación, base y radier',
+                'busquedas': [
+                    'base estabilizada radier saco 25 kg',
+                    'polietileno construccion 200 micras',
+                    'malla electrosoldada C92',
+                    'hormigon predosificado H20 saco 25 kg',
+                ],
+                'usos': {
+                    _normalizar('base estabilizada radier saco 25 kg'): 'Preparar y nivelar el terreno bajo el radier.',
+                    _normalizar('polietileno construccion 200 micras'): 'Formar una barrera de humedad bajo el hormigón.',
+                    _normalizar('malla electrosoldada C92'): 'Reforzar el radier de acuerdo con el diseño del proyecto.',
+                    _normalizar('hormigon predosificado H20 saco 25 kg'): 'Construir la losa o radier que sirve de base al quincho.',
+                },
+            },
+            {
+                'nombre': 'Muretes y albañilería',
+                'busquedas': [
+                    'ladrillo fiscal',
+                    'mortero pega ladrillos saco 25 kg',
+                ],
+                'usos': {
+                    _normalizar('ladrillo fiscal'): 'Levantar los muretes y cerramientos de albañilería.',
+                    _normalizar('mortero pega ladrillos saco 25 kg'): 'Asentar y unir los ladrillos de los muretes.',
+                },
+            },
+            {
+                'nombre': 'Zona de fuego',
+                'busquedas': [
+                    'ladrillo refractario',
+                    'mortero refractario',
+                ],
+                'usos': {
+                    _normalizar('ladrillo refractario'): 'Revestir el sector interior expuesto directamente al calor.',
+                    _normalizar('mortero refractario'): 'Unir los ladrillos de la zona de fuego.',
+                },
+            },
+            {
+                'nombre': 'Estructura de techumbre',
+                'busquedas': [
+                    'perfil tubular acero 80 x 80 x 3 mm',
+                    'perfil costanera acero 100 x 50 x 2 mm',
+                ],
+                'usos': {
+                    _normalizar('perfil tubular acero 80 x 80 x 3 mm'): 'Formar los pilares principales de la techumbre.',
+                    _normalizar('perfil costanera acero 100 x 50 x 2 mm'): 'Sostener la cubierta entre los apoyos principales.',
+                },
+            },
+            {
+                'nombre': 'Cubierta y fijaciones',
+                'busquedas': [
+                    'plancha zinc acanalado 0,35 mm x 3 m',
+                    'tornillo techo autoperforante 12 x 2 pulgadas',
+                    'cumbrera galvanizada 0,35 mm x 2 m',
+                    'cinta butilica impermeable',
+                ],
+                'usos': {
+                    _normalizar('plancha zinc acanalado 0,35 mm x 3 m'): 'Cubrir la parte superior del quincho.',
+                    _normalizar('tornillo techo autoperforante 12 x 2 pulgadas'): 'Fijar las planchas a la estructura metálica.',
+                    _normalizar('cumbrera galvanizada 0,35 mm x 2 m'): 'Cerrar el encuentro superior de las aguas del techo.',
+                    _normalizar('cinta butilica impermeable'): 'Sellar traslapes y encuentros expuestos al agua.',
+                },
+            },
+            {
+                'nombre': 'Evacuación de aguas lluvia',
+                'busquedas': [
+                    'canaleta aguas lluvia',
+                    'bajada aguas lluvia PVC',
+                ],
+                'usos': {
+                    _normalizar('canaleta aguas lluvia'): 'Recoger el agua que escurre desde la cubierta.',
+                    _normalizar('bajada aguas lluvia PVC'): 'Conducir el agua recogida desde la canaleta hasta la descarga.',
+                },
+            },
+        ]
+    if es_porton_automatico:
+        # La propuesta debe representar el sistema completo. Lo que no exista
+        # quedará declarado como faltante en vez de ocultarse.
+        tareas = [
+            {
+                "nombre": "Estructura y anclaje",
+                "busquedas": [
+                    "perfil tubular acero 80 x 80 x 3 mm",
+                    "perno anclaje expansion M12 x 120 mm",
+                ],
+            },
+            {
+                "nombre": "Hoja y cerramiento del portón",
+                "busquedas": [
+                    "hoja porton corredera vehicular",
+                    "panel cerco electrosoldado 2,50 x 2 m",
+                ],
+            },
+            {
+                "nombre": "Rodadura y recorrido",
+                "busquedas": [
+                    "riel porton corredera",
+                    "rueda porton corredera",
+                    "tope mecanico final de carrera",
+                ],
+            },
+            {
+                "nombre": "Automatización y seguridad",
+                "busquedas": [
+                    "motor porton corredera hasta 600 kg",
+                    "cremallera nylon porton automatico",
+                    "fotocelda seguridad porton automatico",
+                    "control remoto porton automatico 433 MHz",
+                ],
+            },
+            {
+                "nombre": "Alimentación y protección eléctrica",
+                "busquedas": [
+                    "conduit PVC electrico 20 mm",
+                    "cable electrico 2,5 mm2",
+                    "interruptor automatico 16 A curva C",
+                ],
+            },
+        ]
     if not proyecto or not tareas:
         return {
             "tipo": "aclaracion",
@@ -459,6 +691,7 @@ def resolver_proyecto_generico(
             "sugerencias": sugerencias[:3],
         }
 
+    material_principal_faltante = ""
     material_principal = _texto_seguro(
         datos.get("material_principal_proyecto"), 100
     )
@@ -495,44 +728,10 @@ def resolver_proyecto_generico(
             and _coincidencia_suficiente(producto, material_principal)
         ), None)
         if principal_disponible is None:
-            etapas_orientativas = []
-            for tarea in tareas:
-                materiales_etapa = ", ".join(tarea.get("busquedas", []))
-                if materiales_etapa:
-                    etapas_orientativas.append(
-                        f"• {tarea['nombre']}: {materiales_etapa}."
-                    )
-            return {
-                "tipo": "plan_proyecto_sin_producto",
-                "mensaje": "\n".join([
-                    "ORIENTACIÓN PARA TU PROYECTO",
-                    f"Puedo ayudarte a planificar “{proyecto}” aunque SFI no tenga todos "
-                    "los productos necesarios.",
-                    "",
-                    "ETAPAS Y ELEMENTOS A CONSIDERAR",
-                    *(etapas_orientativas or [
-                        "• Revisa preparación, estructura, fijaciones y terminaciones "
-                        "según las condiciones reales del lugar."
-                    ]),
-                    "",
-                    "NO DISPONIBLE EN SFI",
-                    f"No encontré “{material_principal}” con stock. Por eso no mostraré "
-                    "un sustituto como si fuera equivalente ni calcularé su precio.",
-                    "",
-                    "Puedes continuar consultando etapas, medidas, herramientas, "
-                    "profesionales o alternativas compatibles para este mismo proyecto.",
-                ]),
-                "productos": [],
-                "maestros": [],
-                "faltantes_catalogo": [material_principal],
-                "sugerencias": [
-                    "Ver alternativas compatibles disponibles",
-                    "¿Qué herramientas necesito?",
-                    "¿Qué maestro realiza este trabajo?",
-                ],
-            }
+            material_principal_faltante = material_principal
         if not any(
-            _normalizar(material_principal) == _normalizar(busqueda)
+            _normalizar(material_principal) in _normalizar(busqueda)
+            or _normalizar(busqueda) in _normalizar(material_principal)
             for tarea in tareas for busqueda in tarea["busquedas"]
         ):
             tareas.insert(0, {
@@ -543,7 +742,8 @@ def resolver_proyecto_generico(
 
     productos = []
     productos_usados = set()
-    faltantes = []
+    faltantes = [material_principal_faltante] if material_principal_faltante else []
+    faltantes_detalle = []
     cantidades_calculadas = []
     texto_plan = [proyecto]
     try:
@@ -603,7 +803,17 @@ def resolver_proyecto_generico(
                 default=None,
             )
             if producto is None:
-                faltantes.append(consulta)
+                if consulta not in faltantes:
+                    faltantes.append(consulta)
+                uso_faltante = tarea.get("usos", {}).get(
+                    _normalizar(consulta),
+                    f"Se utiliza en la etapa «{tarea['nombre']}» del proyecto.",
+                )
+                faltantes_detalle.append({
+                    "nombre": consulta,
+                    "etapa": tarea["nombre"],
+                    "uso": uso_faltante,
+                })
                 continue
             item = producto_publico(producto)
             uso_material = tarea.get("usos", {}).get(
@@ -845,9 +1055,30 @@ def resolver_proyecto_generico(
                 "de instalación."
             )
     if faltantes:
+        detalles_por_nombre = {
+            detalle["nombre"]: detalle for detalle in faltantes_detalle
+        }
+        lineas_faltantes = []
+        for faltante in dict.fromkeys(faltantes):
+            detalle = detalles_por_nombre.get(faltante)
+            if detalle:
+                lineas_faltantes.append(
+                    f"• {faltante} — {detalle['uso']}"
+                )
+            else:
+                lineas_faltantes.append(f"• {faltante}")
         partes.append(
             "NO DISPONIBLE EN EL CATÁLOGO\n"
-            "No encontré en el catálogo: " + ", ".join(faltantes) + "."
+            "Estos elementos también se usan para completar el proyecto, pero no están "
+            "disponibles actualmente en SFI:\n"
+            + "\n".join(lineas_faltantes)
+        )
+    if es_porton_automatico:
+        partes.append(
+            "IMPORTANTE\n"
+            "La hoja, el riel y las ruedas deben dimensionarse según el ancho, peso y recorrido "
+            "real del portón. La alimentación, las protecciones y la puesta en servicio deben "
+            "ser revisadas por un instalador eléctrico autorizado."
         )
     if maestros:
         partes.append(f"También encontré {len(maestros)} maestro(s) aprobado(s) en {comuna}.")
@@ -880,7 +1111,8 @@ def resolver_proyecto_generico(
         "maestros": maestros,
         "tareas": tareas,
         "especialidades": especialidades,
-        "faltantes_catalogo": faltantes,
+        "faltantes_catalogo": list(dict.fromkeys(faltantes)),
+        "faltantes_catalogo_detalle": faltantes_detalle,
         "total_calculado": int(total_calculado),
         "total_es_parcial": bool(cantidad_referenciales),
         "calculo_orientativo": True,

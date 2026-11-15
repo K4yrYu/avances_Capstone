@@ -332,10 +332,19 @@ Reglas obligatorias:
   y búsquedas de una configuración base coherente. Conserva
   los datos desconocidos en datos_faltantes_proyecto: Django mostrará materiales reales como
   referencia, sin presentar cantidades exactas ni supuestos como datos entregados por el cliente.
+- En todo proyecto estándar enumera todos los materiales funcionalmente necesarios, aunque
+  sospeches que alguno no está en SFI. Para cada búsqueda escribe en usos_materiales una razón
+  específica dentro de ese proyecto. Django verificará el catálogo y separará lo disponible de
+  lo faltante; nunca omitas un elemento necesario solo para que la propuesta parezca completa.
 - Una propuesta_estandar también debe ser coherente y suficientemente completa para orientar:
   incluye material principal, estructura o soporte, uniones, protección o cubierta y remates
   cuando correspondan. No entregues una muestra de dos productos si el proyecto requiere más
   familias para entenderse. Los elementos inciertos deben quedar como referencia, no omitirse.
+- Para cualquier proyecto entrega el conjunto funcional más completo que puedas: preparación,
+  elemento principal, estructura o soporte, uniones, instalaciones, seguridad, terminaciones y
+  herramientas cuando correspondan. No omitas una etapa necesaria porque su producto no esté
+  en SFI. Inclúyela igualmente en tareas_proyecto, explica para qué se usa y deja que Django la
+  marque como no disponible sin inventar precio, stock ni un sustituto equivalente.
 - Para techos y techumbres usa ancho_cm y fondo_cm como ancho y largo del área a cubrir.
   Extrae material_estructura (madera, metal, hormigón, otra o desconocido),
   estado_estructura (nueva, reutilizable, reparar, reemplazar o desconocido) y tipo_cubierta.

@@ -89,6 +89,21 @@ def _texto_normalizado(valor):
     )
 
 
+def _usuario_delega_eleccion(texto):
+    """Reconoce formas naturales de pedir que el asistente decida."""
+    normalizado = _texto_normalizado(texto)
+    return bool(re.search(
+        r'\belige(?:lo|la|los|las)?\s+tu\b|\btu\s+elige(?:lo|la|los|las)?\b',
+        normalizado,
+    )) or any(frase in normalizado for frase in (
+        'elige tu', 'tu elige', 'elige por mi', 'damelo tu', 'dame tu',
+        'decide tu', 'tu decide', 'recomiendame', 'recomienda tu',
+        'que me recomiendas', 'cual me recomiendas', 'lo que recomiendes',
+        'la que recomiendes', 'el que recomiendes',
+        'lo dejo a tu criterio',
+    ))
+
+
 def _presupuesto_desde_texto(texto):
     """Obtiene un presupuesto explícito sin depender de la interpretación externa."""
     normalizado = _texto_normalizado(texto)
@@ -498,6 +513,42 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
             datos['presupuesto'] = presupuesto_detectado
 
     texto_mensaje = _texto_normalizado(mensaje)
+    delega_eleccion = _usuario_delega_eleccion(texto_usuario)
+    datos['_delega_eleccion'] = delega_eleccion
+
+    # Regla transversal: las medidas expresadas por el cliente pertenecen al
+    # proyecto completo, aunque Gemini no las repita en una respuesta breve.
+    ancho_cm, fondo_cm = _dimensiones_rectangulares_cm(texto_usuario)
+    if ancho_cm and fondo_cm:
+        datos['ancho_cm'] = ancho_cm
+        datos['fondo_cm'] = fondo_cm
+
+    # "Elige tú" resuelve preferencias comerciales o estéticas, pero nunca
+    # omite datos que afectan cálculo, compatibilidad o seguridad.
+    if delega_eleccion:
+        preferencias_delegables = (
+            'preferencia', 'formato', 'espesor', 'color', 'estilo',
+            'terminacion', 'acabado', 'marca', 'modelo', 'diseno',
+            'tipo de piso', 'tipo de cubierta', 'tipo de revestimiento',
+        )
+        patron_datos_criticos = re.compile(
+            r'\b(?:medidas?|ancho|largo|fondo|alto|altura|area|estado|base|'
+            r'soporte|estructura|pendiente|drenaje|capacidad|peso|voltaje|'
+            r'electrica?|electrico|gas)\b'
+        )
+        datos['datos_faltantes_proyecto'] = [
+            faltante
+            for faltante in (datos.get('datos_faltantes_proyecto') or [])
+            if not (
+                any(
+                    termino in _texto_normalizado(faltante)
+                    for termino in preferencias_delegables
+                )
+                and not patron_datos_criticos.search(
+                    _texto_normalizado(faltante)
+                )
+            )
+        ]
     ultimo_asistente = next((
         _texto_normalizado(item.get('content'))
         for item in reversed(historial)
@@ -643,24 +694,24 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
             'estructura nueva', 'nueva estructura', 'construir la estructura',
             'hacer la estructura', 'reemplazar la estructura',
         ))
-        es_renovacion_existente = any(frase in contexto_techumbre for frase in (
-            'cambiar', 'cambio', 'renovar', 'renovacion', 'reemplazar el techo',
-            'reemplazo de techo',
+        proyecto_con_soporte_nuevo_explicito = bool(re.search(
+            r'\b(?:construir|hacer|armar|levantar)\b.{0,35}'
+            r'\b(?:cobertizo|quincho|pergola|estructura|soporte)\b',
+            texto_usuario,
         ))
         if (
             datos.get('estado_estructura') == 'nueva'
-            and es_renovacion_existente
             and not estructura_nueva_explicita
+            and not proyecto_con_soporte_nuevo_explicito
         ):
             # Cambiar la cubierta no significa construir automáticamente una
             # estructura nueva. Se debe confirmar el estado de la existente.
             datos['estado_estructura'] = ''
 
-        autoriza_recomendacion_cubierta = any(
+        autoriza_recomendacion_cubierta = delega_eleccion or any(
             frase in texto_mensaje for frase in (
                 'recomiendame tu', 'recomiendamelo tu', 'tu recomiendame',
-                'elige tu', 'tu elige', 'lo demas recomienda',
-                'lo que recomiendes', 'la que recomiendes', 'el que recomiendes',
+                'lo demas recomienda',
             )
         )
         cubierta = ''
@@ -811,6 +862,26 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
             datos[campo] = incluir
 
     return datos
+
+
+def _plan_estandar_incompleto(datos):
+    """Detecta propuestas estándar abreviadas antes de buscar inventario."""
+    if not (
+        datos.get('_proyecto_estandar') is True
+        or datos.get('modo_orientacion') == 'propuesta_estandar'
+    ):
+        return False
+    tareas = [
+        tarea for tarea in (datos.get('tareas_proyecto') or [])
+        if isinstance(tarea, dict)
+    ]
+    busquedas = {
+        _texto_normalizado(busqueda)
+        for tarea in tareas
+        for busqueda in (tarea.get('busquedas') or [])
+        if str(busqueda or '').strip()
+    }
+    return len(tareas) < 5 or len(busquedas) < 12
 
 
 def _producto_publico(producto):
@@ -1664,7 +1735,7 @@ def _buscar_productos(consulta, limite=6):
 
 
 def _aplicar_contexto_productos(datos, mensaje, productos_contexto):
-    ids = list(dict.fromkeys(productos_contexto or []))[:8]
+    ids = list(dict.fromkeys(productos_contexto or []))[:18]
     if not ids:
         return datos
     productos = {
@@ -1790,10 +1861,7 @@ def _mantener_cuestionario_antes_de_recomendar(mensaje, historial):
         return None
 
     texto = _texto_normalizado(mensaje)
-    delega_eleccion = any(frase in texto for frase in (
-        'que me recomiendas', 'cual me recomiendas', 'me recomiendas', 'recomiendame',
-        'elige tu', 'tu elige', 'el que recomiendes', 'la que recomiendes',
-    ))
+    delega_eleccion = _usuario_delega_eleccion(texto)
     if not delega_eleccion:
         return None
 
@@ -2309,7 +2377,7 @@ def resolver_interpretacion(datos):
 
 def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
     """Explica las tarjetas actuales sin reinterpretar ni reconstruir el proyecto."""
-    ids = list(dict.fromkeys(productos_contexto or []))[:8]
+    ids = list(dict.fromkeys(productos_contexto or []))[:18]
     if not ids:
         return None
 
@@ -2377,6 +2445,64 @@ def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
     }
 
 
+def _explicar_faltantes_del_proyecto(mensaje, historial, productos_contexto):
+    """Recupera materiales no disponibles del proyecto sin reinterpretarlo."""
+    texto = _texto_normalizado(mensaje)
+    pregunta_faltantes = bool(re.search(
+        r'\b(?:falta|faltan|faltaria|faltarian)\b.{0,45}'
+        r'\b(?:material|materiales|producto|productos|algo|alguno)\b|'
+        r'\b(?:que|cual(?:es)?)\b.{0,20}\b(?:materiales?|productos?)\b'
+        r'.{0,25}\b(?:falta|faltan|faltaria|faltarian)\b',
+        texto,
+    ))
+    if not pregunta_faltantes or not productos_contexto:
+        return None
+
+    ultimo_plan = next((
+        str(item.get('content') or '')
+        for item in reversed(historial)
+        if item.get('role') == 'assistant'
+        and (
+            'PRODUCTOS POR ETAPA' in str(item.get('content') or '')
+            or 'MATERIALES POR ETAPA' in str(item.get('content') or '')
+            or 'NO DISPONIBLE EN EL CATÁLOGO' in str(item.get('content') or '')
+        )
+    ), '')
+    marcador = 'NO DISPONIBLE EN EL CATÁLOGO'
+    if marcador in ultimo_plan:
+        seccion = ultimo_plan.split(marcador, 1)[1].strip()
+        for siguiente in ('\n\nIMPORTANTE', '\n\nTOTAL CALCULADO'):
+            seccion = seccion.split(siguiente, 1)[0].strip()
+        return {
+            'tipo': 'explicacion_faltantes_proyecto',
+            'mensaje': '\n'.join([
+                'MATERIALES NO DISPONIBLES EN SFI',
+                seccion,
+                '',
+                'Estos elementos forman parte de la orientación del proyecto, pero no los '
+                'presentaré como productos comprables mientras no estén disponibles.',
+            ]),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': [
+                'Ver alternativas disponibles',
+                'Volver al resumen del proyecto',
+            ],
+        }
+
+    return {
+        'tipo': 'explicacion_faltantes_proyecto',
+        'mensaje': (
+            'En la propuesta actual no quedó ningún material necesario marcado como no '
+            'disponible en SFI. Las cantidades y requisitos estructurales todavía deben '
+            'confirmarse con las medidas y condiciones reales del lugar.'
+        ),
+        'productos': [],
+        'maestros': [],
+        'sugerencias': ['Volver al resumen del proyecto'],
+    }
+
+
 def _comparar_alternativas_economicas(mensaje, productos_contexto):
     """Compara las tarjetas actuales sin mezclar familias ni reiniciar el proyecto."""
     texto = _texto_normalizado(mensaje)
@@ -2393,7 +2519,7 @@ def _comparar_alternativas_economicas(mensaje, productos_contexto):
     if not pide_alternativa_economica:
         return None
 
-    ids = list(dict.fromkeys(productos_contexto or []))[:8]
+    ids = list(dict.fromkeys(productos_contexto or []))[:18]
     encontrados = {
         producto.pk: producto
         for producto in Producto.objects.filter(pk__in=ids, activo=True)
@@ -3005,6 +3131,13 @@ def procesar_consulta(mensaje, historial, productos_contexto=None):
     )
     if explicacion_contextual:
         return explicacion_contextual
+    explicacion_faltantes = _explicar_faltantes_del_proyecto(
+        mensaje,
+        historial,
+        productos_contexto or [],
+    )
+    if explicacion_faltantes:
+        return explicacion_faltantes
     cuestionario_pendiente = _mantener_cuestionario_antes_de_recomendar(
         mensaje, historial,
     )
@@ -3022,6 +3155,40 @@ def procesar_consulta(mensaje, historial, productos_contexto=None):
         mensaje,
         historial,
     )
+    if _plan_estandar_incompleto(interpretacion):
+        proyecto = str(interpretacion.get('proyecto') or mensaje).strip()
+        solicitud_completa = (
+            'COMPLETA LA PROPUESTA ESTÁNDAR SIN CAMBIAR EL PROYECTO NI LOS DATOS DEL '
+            f'CLIENTE. Proyecto: {proyecto}. La primera propuesta quedó abreviada. '
+            'Devuelve entre 5 y 8 etapas coherentes y entre 12 y 18 búsquedas de '
+            'materiales funcionalmente necesarios. Incluye preparación, elemento principal, '
+            'estructura o soporte, uniones, protección, terminaciones y seguridad solamente '
+            'cuando correspondan. Para cada búsqueda explica su uso específico en el proyecto. '
+            'No asumas que un producto está disponible: Django verificará el inventario.'
+        )
+        try:
+            propuesta_completa = interpretar_con_gemini(
+                solicitud_completa,
+                [*historial, {'role': 'user', 'content': mensaje}],
+                productos_contexto or [],
+            )
+        except GeminiNoDisponible:
+            propuesta_completa = None
+        if isinstance(propuesta_completa, dict):
+            for campo in (
+                'proyecto', 'ancho_cm', 'fondo_cm', 'alto_cm', 'superficie',
+                'superficie_muros', 'material_principal_proyecto',
+                'material_estructura', 'estado_estructura', 'tipo_cubierta',
+                'alcance_bano', 'comuna_maestro',
+            ):
+                if not propuesta_completa.get(campo) and interpretacion.get(campo):
+                    propuesta_completa[campo] = interpretacion[campo]
+            propuesta_completa['modo_orientacion'] = 'propuesta_estandar'
+            interpretacion = _normalizar_preferencias_extraidas(
+                propuesta_completa,
+                mensaje,
+                historial,
+            )
     interpretacion = _completar_intencion_maestro(
         interpretacion,
         mensaje,

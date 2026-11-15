@@ -53,8 +53,8 @@
     function rememberMessage(role, text, products = [], masters = []) {
       conversationEntries.push({
         role,
-        text: String(text || "").slice(0, 1400),
-        products: Array.isArray(products) ? products.slice(0, 8) : [],
+        text: String(text || "").slice(0, 4000),
+        products: Array.isArray(products) ? products.slice(0, 18) : [],
         masters: Array.isArray(masters) ? masters.slice(0, 5) : [],
       });
       conversationEntries = conversationEntries.slice(-24);
@@ -66,7 +66,7 @@
         entry.role === "assistant" && Array.isArray(entry.products) && entry.products.length
       );
       if (!lastResult) return [];
-      return [...new Set(lastResult.products.map(product => Number(product.id)).filter(id => Number.isInteger(id) && id > 0))].slice(0, 8);
+      return [...new Set(lastResult.products.map(product => Number(product.id)).filter(id => Number.isInteger(id) && id > 0))].slice(0, 18);
     }
 
     function getCookie(name) {
