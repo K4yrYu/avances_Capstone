@@ -440,7 +440,7 @@
       calculations = new Map();
       cartItems = new Map();
       messages.innerHTML = "";
-      addMessage("assistant", "Empecemos de nuevo. Cuéntame qué necesitas para tu proyecto.");
+      addMessage("assistant", "Hola, soy el asistente SFI. Cuéntame qué necesitas para tu proyecto.");
       suggestions.innerHTML = "";
       input.placeholder = defaultInputPlaceholder;
       errorBox.hidden = true;

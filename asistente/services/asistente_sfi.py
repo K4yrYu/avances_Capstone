@@ -639,6 +639,23 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
         elif datos.get('estado_estructura') not in {'nueva', 'reutilizable', 'reparar', 'reemplazar'}:
             datos['estado_estructura'] = ''
 
+        estructura_nueva_explicita = any(frase in texto_usuario for frase in (
+            'estructura nueva', 'nueva estructura', 'construir la estructura',
+            'hacer la estructura', 'reemplazar la estructura',
+        ))
+        es_renovacion_existente = any(frase in contexto_techumbre for frase in (
+            'cambiar', 'cambio', 'renovar', 'renovacion', 'reemplazar el techo',
+            'reemplazo de techo',
+        ))
+        if (
+            datos.get('estado_estructura') == 'nueva'
+            and es_renovacion_existente
+            and not estructura_nueva_explicita
+        ):
+            # Cambiar la cubierta no significa construir automáticamente una
+            # estructura nueva. Se debe confirmar el estado de la existente.
+            datos['estado_estructura'] = ''
+
         autoriza_recomendacion_cubierta = any(
             frase in texto_mensaje for frase in (
                 'recomiendame tu', 'recomiendamelo tu', 'tu recomiendame',
@@ -667,6 +684,8 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
             if detalles:
                 partes.extend(valor for valor in detalles.groups() if valor)
             cubierta = ' '.join(partes)
+        elif re.search(r'\btejas?\s+asfaltic[ao]s?\b', texto_usuario):
+            cubierta = 'teja asfaltica'
         elif re.search(r'\btejas?\b', texto_usuario):
             cubierta = 'tejas'
         elif re.search(r'\bzinc\b', texto_usuario):
@@ -1849,14 +1868,14 @@ def _mantener_cuestionario_antes_de_recomendar(mensaje, historial):
         sugerencias = [
             'Mide 3 × 4 m; la estructura es de madera y está firme',
             'La estructura es de metal y está en buen estado',
-            'No sé evaluar la estructura; adjuntaré una fotografía',
+            'No sé evaluarla; veo la estructura firme y sin daños visibles',
         ]
     else:
         ejemplo = 'Ejemplo: “La base es de hormigón y está en buen estado”.'
         sugerencias = [
             'La base es de hormigón y está en buen estado',
             'La base es de madera/OSB y está en buen estado',
-            'No sé identificar la base; adjuntaré una fotografía',
+            'No sé identificar la base; describiré su color, textura y estado',
         ]
 
     return {
@@ -1935,14 +1954,11 @@ def _resolver_recomendacion_color(datos):
     return {
         'tipo': 'recomendacion_color',
         'contexto_pintura': contexto,
-        'mensaje': (
-            f'{explicacion} Colores disponibles encontrados: {colores}. '
-            'Puedes probarlos en el visualizador con una fotografía.'
-        ),
+        'mensaje': f'{explicacion} Colores disponibles encontrados: {colores}.',
         'productos': recomendaciones,
         'sugerencias': [
             'Quiero calcular cuánta pintura necesito',
-            'Probar un color en mi fotografía',
+            'Mostrar otros colores disponibles',
             'Mostrar otro ambiente',
         ],
     }
@@ -2561,7 +2577,7 @@ def _resolver_diagnostico_filtracion_inicial(mensaje):
             '• Flexible o conexión de agua.\n'
             '• Llave del lavaplatos.\n'
             '• Borde o unión del lavaplatos con el mueble.\n'
-            '• No logro identificarlo; puedo adjuntar una fotografía.\n\n'
+            '• No logro identificarlo; describiré dónde aparece la primera gota.\n\n'
             'Cuando sepamos el origen te mostraré solamente los repuestos y herramientas '
             'compatibles que estén disponibles en SFI.'
         ),

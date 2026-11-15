@@ -175,3 +175,96 @@ Al confirmar, se abrirá un modal con todos los productos solicitados. Cada fila
 - `Envío aprobado` representa la solicitud enviada correctamente al proveedor.
 - Las unidades no recibidas, dañadas o equivocadas no ingresan al stock y permanecen pendientes.
 - Las diferencias generan una incidencia trazable en Movimientos y no crean otra solicitud automáticamente.
+
+---
+
+## Ampliación de productos básicos y variedades de iluminación
+
+**Estado:** Propuesta para evaluación
+
+**Tipo:** Catálogo y asistente IA
+
+**Registrada el:** 14/11/2026
+
+### Productos básicos sugeridos
+
+#### Techumbres
+
+- Tapagoteras para techo.
+- Clavos galvanizados para teja asfáltica.
+- Adhesivo o cemento asfáltico para techumbre.
+- Cortagoteras metálico.
+- Limahoya galvanizada.
+- Forro o *flashing* para encuentros con muros.
+- Remate lateral para techumbre.
+- Sombrerete o ventilación de techo.
+- Sellador asfáltico en cartucho.
+- Grapas o fijaciones para membrana.
+- Coplas, tapas y soportes para canaletas y bajadas.
+
+#### Gasfitería
+
+- Empaquetaduras para sifón y flexibles.
+- Llave ajustable.
+- Alicate bomba de agua.
+- Cortatubo PVC.
+- Abrazaderas para tuberías.
+- Pasta selladora para roscas.
+- Kit de reparación para llave de lavaplatos.
+
+#### Electricidad
+
+- Coplas para conduit PVC de 20 y 25 mm.
+- Curvas para conduit PVC de 20 y 25 mm.
+- Abrazaderas para conduit.
+- Caja eléctrica estanca.
+- Huincha aisladora.
+- Probador de voltaje.
+- Conectores eléctricos.
+- Cable a tierra y barra de puesta a tierra.
+
+#### Pintura y terminaciones
+
+- Bandeja para rodillo.
+- Espátulas de diferentes tamaños.
+- Extensión telescópica para rodillo.
+- Sellador acrílico pintable.
+- Paños y plástico protector.
+- Raspador de pintura.
+- Mezclador para pintura.
+
+### Variedades de ampolletas sugeridas
+
+- Ampolleta LED E27 9 W, luz cálida.
+- Ampolleta LED E27 9 W, luz fría.
+- Ampolleta LED E27 12 W, luz neutra.
+- Ampolleta LED E27 12 W, luz fría.
+- Ampolleta LED E27 15 W, luz cálida.
+- Ampolleta LED E27 15 W, luz fría.
+- Ampolleta LED E27 20 W, alta luminosidad.
+- Ampolleta LED E14 6 W tipo vela, luz cálida.
+- Ampolleta LED GU10 7 W, luz cálida.
+- Ampolleta LED GU10 7 W, luz fría.
+- Ampolleta LED dicroica MR16 7 W, 12 V.
+- Ampolleta LED E27 con sensor de movimiento.
+- Ampolleta LED E27 con sensor día/noche.
+- Ampolleta LED E27 regulable.
+- Ampolleta LED inteligente RGB Wi-Fi.
+- Ampolleta LED de emergencia con batería.
+- Ampolleta LED exterior resistente a humedad.
+- Ampolleta LED industrial E27 o E40 de 30 a 50 W.
+
+### Datos necesarios en cada ficha de iluminación
+
+- Potencia en watts.
+- Flujo luminoso en lúmenes.
+- Temperatura de color.
+- Tipo de soquete.
+- Voltaje.
+- Vida útil estimada.
+- Compatibilidad con regulación.
+- Ambiente de uso.
+- Eficiencia energética.
+- Gama económica, intermedia o premium para comparar precios.
+
+Esta propuesta no autoriza todavía la creación de productos ni cambios en la base de datos.

@@ -68,6 +68,12 @@ class AsistenteSfiTests(TestCase):
         self.assertContains(pagina, 'data-mask-tool="erase"')
         self.assertContains(pagina, 'id="toggle-paint-mask"')
         self.assertContains(pagina, 'id="auto-paint-surface"')
+        self.assertContains(pagina, 'Hola, soy el asistente SFI.')
+        self.assertContains(pagina, 'necesitas para tu proyecto.')
+        self.assertNotContains(
+            pagina,
+            'calcular o encontrar productos',
+        )
         self.assertContains(pagina, 'id="apply-paint-mask"')
         self.assertContains(pagina, 'data-suggestion="Quiero renovar mi baño"')
         self.assertNotContains(pagina, reverse('mi_historial_compras'))
@@ -1724,6 +1730,25 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
 class PlanificadorGenericoProyectosTests(TestCase):
+    def test_preguntas_guiadas_no_solicitan_fotografias(self):
+        from .services.planificador_proyectos import (
+            _preguntas_guiadas,
+            _sugerencias_respuesta,
+        )
+
+        preguntas = _preguntas_guiadas([
+            'material y estado de la estructura',
+            'resultado esperado',
+        ], 'Reparación de estructura')
+        sugerencias = _sugerencias_respuesta(
+            'Proyecto general',
+            ['material de la superficie'],
+        )
+        contenido = ' '.join([*preguntas, *sugerencias]).casefold()
+
+        self.assertNotIn('foto', contenido)
+        self.assertNotIn('adjunt', contenido)
+
     def test_instrucciones_exigen_lenguaje_natural_y_prudente_para_todos(self):
         instrucciones = _instrucciones()
 
@@ -2509,6 +2534,52 @@ class PlanificadorGenericoProyectosTests(TestCase):
             'zinc' in producto['nombre'].casefold()
             for producto in resultado['productos']
         ))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_renovacion_no_inventa_estructura_nueva_ni_pide_altura(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Renovación de techumbre con teja asfáltica',
+            'ancho_cm': 300,
+            'fondo_cm': 400,
+            'material_estructura': 'madera',
+            'estado_estructura': 'nueva',
+            'tipo_cubierta': 'tejas',
+            'datos_faltantes_proyecto': [],
+            'tareas_proyecto': [],
+        }
+
+        resultado = procesar_consulta(
+            'Quiero cambiar mi techo de 3 x 4 metros. La estructura es de madera '
+            'y quiero teja asfáltica.',
+            [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        mensaje = resultado['mensaje'].casefold()
+        self.assertIn('estado de la estructura de apoyo', mensaje)
+        self.assertNotIn('altura de la estructura nueva', mensaje)
+
+    def test_techumbre_asfaltica_no_se_sustituye_por_teja_colonial(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Renovación de techumbre con teja asfáltica',
+            'ancho_cm': 300,
+            'fondo_cm': 400,
+            'material_estructura': 'madera',
+            'estado_estructura': 'reutilizable',
+            'tipo_cubierta': 'teja asfaltica',
+            'datos_faltantes_proyecto': [],
+            'tareas_proyecto': [],
+        })
+
+        cubiertas = [
+            producto['nombre'].casefold()
+            for producto in resultado['productos']
+            if producto['rol'] == 'Cubierta'
+        ]
+        self.assertTrue(any('asf' in nombre for nombre in cubiertas))
+        self.assertFalse(any('colonial' in nombre for nombre in cubiertas))
 
     def test_proyecto_muestra_mas_de_seis_materiales_planificados(self):
         nombres = [
@@ -3396,4 +3467,4 @@ class PlanificadorGenericoProyectosTests(TestCase):
 
         self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
         self.assertEqual(resultado['productos'], [])
-        self.assertIn('altura de la estructura nueva', resultado['mensaje'])
+        self.assertIn('altura de la estructura nueva', resultado['mensaje'].casefold())

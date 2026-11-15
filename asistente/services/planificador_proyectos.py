@@ -132,7 +132,7 @@ def _preguntas_guiadas(faltantes, proyecto=''):
                 "• Indica si la estructura es de madera, metal, hormigón u otro material.",
                 "• Señala si está firme y reutilizable, necesita reparación o será reemplazada.",
                 "• Si será nueva, agrega la altura aproximada en metros.",
-                "• Si no sabes evaluarla, descríbela o adjunta una fotografía; no asumiré su capacidad.",
+                "• Si no sabes evaluarla, describe si ves humedad, grietas, deformaciones o piezas sueltas.",
             ])
         elif "vano" in clave or (
             "puerta" in clave
@@ -142,7 +142,7 @@ def _preguntas_guiadas(faltantes, proyecto=''):
                 "• Indica ancho × alto en centímetros; por ejemplo: 80 × 200 cm.",
                 "• Mide el vano en la parte superior, central e inferior y usa la medida menor.",
                 "• Indica también el espesor del muro o marco si lo conoces.",
-                "• Si no puedes medirlo, adjunta una fotografía junto a una cinta métrica.",
+                "• Si no puedes medirlo con precisión, entrega una medida aproximada y acláralo.",
             ])
         elif "puerta" in clave and any(
             termino in clave for termino in ("interior", "exterior", "ubicacion")
@@ -158,21 +158,21 @@ def _preguntas_guiadas(faltantes, proyecto=''):
                 "• Bueno: está firme, derecho y sin humedad ni partes sueltas.",
                 "• Deteriorado: está deformado, podrido, oxidado o se mueve.",
                 "• Indica si deseas conservarlo o reemplazarlo junto con la puerta.",
-                "• Si no lo sabes, adjunta una fotografía del marco completo.",
+                "• Si no lo sabes, indica si el marco se mueve, está deformado o presenta humedad.",
             ])
         elif "estado" in clave:
             lineas.extend([
                 "• Bueno: firme, seco, nivelado y sin daños visibles.",
                 "• Regular: tiene daños o desniveles menores.",
                 "• Malo: presenta humedad, grietas, piezas sueltas o deformación.",
-                "• No lo sé: describe los daños visibles o adjunta una fotografía.",
+                "• No lo sé: describe si ves humedad, grietas, piezas sueltas o deformación.",
             ])
         elif any(termino in clave for termino in ("medida", "ancho", "largo", "alto", "altura", "superficie", "area")):
             if any(termino in contexto for termino in ("mueble", "repisa", "estante", "gabinete")):
                 lineas.extend([
                     "• Indica ancho × alto × fondo en centímetros; por ejemplo: 120 × 80 × 35 cm.",
                     "• Señala si las medidas corresponden al espacio disponible o al mueble terminado.",
-                    "• Si hay obstáculos, indica su posición o adjunta una fotografía.",
+                    "• Si hay obstáculos, indica su posición y sus medidas aproximadas.",
                 ])
             elif any(termino in contexto for termino in ("cerco", "reja", "cierre", "porton")):
                 lineas.extend([
@@ -197,7 +197,7 @@ def _preguntas_guiadas(faltantes, proyecto=''):
         elif any(termino in clave for termino in ("material", "base", "soporte", "estructura", "superficie")):
             lineas.extend([
                 "• Describe lo que ves: hormigón, madera/OSB, metal, cerámica u otro.",
-                "• No lo sé: describe color, textura y dureza, o adjunta una fotografía.",
+                "• No lo sé: describe su color, textura, dureza y cómo suena al golpear suavemente.",
             ])
         elif any(termino in clave for termino in ("ambiente", "ubicacion", "exterior", "interior", "humedad", "exposicion")):
             lineas.extend([
@@ -218,7 +218,7 @@ def _preguntas_guiadas(faltantes, proyecto=''):
         else:
             lineas.extend([
                 "• Responde con la información que conozcas.",
-                "• No lo sé: describe el resultado que buscas o adjunta una fotografía.",
+                "• No lo sé: describe el resultado que buscas con tus propias palabras.",
             ])
     return lineas
 
@@ -238,7 +238,7 @@ def _sugerencias_respuesta(proyecto, faltantes):
             partes.append("elige tú una cubierta compatible")
         sugerencias = ["; ".join(partes)] if partes else []
         if "estructura" in claves:
-            sugerencias.append("No sé evaluar la estructura; adjuntaré una fotografía")
+            sugerencias.append("No sé evaluarla; veo la estructura firme y sin daños visibles")
         sugerencias.append("Usa una opción estándar disponible y deja lo estructural como referencia")
         return [item for item in sugerencias if item][:3]
 
@@ -246,13 +246,13 @@ def _sugerencias_respuesta(proyecto, faltantes):
         return [
             "Es interior seco; el vano mide 80 × 200 cm; cambiaré hoja y marco",
             "Es exterior protegida; mide 90 × 200 cm; conservaré el marco",
-            "No sé evaluar el marco; adjuntaré una fotografía",
+            "No sé evaluarlo; el marco no se mueve y no veo humedad",
         ]
     if any(termino in contexto for termino in ("mueble", "repisa", "estante", "gabinete")):
         return [
             "El espacio mide 120 × 80 × 35 cm; elige tú el material",
             "Son medidas del mueble terminado y el ambiente es interior seco",
-            "No sé identificar el material; adjuntaré una fotografía",
+            "No sé identificar el material; describiré su color y textura",
         ]
     if any(termino in contexto for termino in ("cerco", "reja", "cierre", "porton")):
         return [
@@ -264,13 +264,13 @@ def _sugerencias_respuesta(proyecto, faltantes):
         return [
             "Mide 3 × 5 m; la base es de hormigón firme y seca",
             "Es exterior y recibe lluvia; elige tú una opción compatible",
-            "No sé identificar la base; adjuntaré una fotografía",
+            "No sé identificar la base; describiré su color, textura y estado",
         ]
 
     return [
         "Responderé las medidas y condiciones en un solo mensaje",
         "Elige tú las preferencias no críticas con productos disponibles",
-        "No sé identificarlo; adjuntaré una fotografía",
+        "No sé identificarlo; describiré lo que veo",
     ]
 
 
@@ -419,7 +419,7 @@ def resolver_proyecto_generico(
                         "• Hormigón: superficie gris, dura y continua.",
                         "• Madera/OSB: tablas o paneles de madera prensada.",
                         "• Cerámica: palmetas existentes con juntas visibles.",
-                        "• No lo sé: describe lo que ves o adjunta una fotografía.",
+                        "• No lo sé: describe el color, la textura y las juntas que ves.",
                     ])
                 elif "estado" in clave:
                     lineas.extend([
@@ -997,6 +997,8 @@ def resolver_proyecto_techumbre(
         if "policarbonato" in texto
         else "plancha zinc acanalado"
         if "zinc" in texto
+        else "teja asfaltica"
+        if "teja asfaltica" in texto
         else "teja"
         if "teja" in texto
         else cubierta
