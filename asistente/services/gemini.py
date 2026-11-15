@@ -454,22 +454,37 @@ def interpretar_con_gemini(mensaje, historial, productos_contexto=None):
         'contents': contenidos,
         'generationConfig': {
             'temperature': 0.1,
-            'maxOutputTokens': 1400,
+            # Los proyectos estandar pueden incluir hasta ocho etapas y varios
+            # materiales por etapa. Un limite menor cortaba el JSON antes de
+            # cerrarlo y la API terminaba respondiendo 503 al cliente.
+            'maxOutputTokens': 4096,
             'responseMimeType': 'application/json',
             'responseJsonSchema': _esquema_respuesta(),
         },
     }
     try:
-        respuesta = cliente_gemini.post(
-            endpoint,
-            headers={'x-goog-api-key': api_key},
-            json=payload,
-            timeout=settings.GEMINI_TIMEOUT_SECONDS,
-        )
-        respuesta.raise_for_status()
-        datos = respuesta.json()
-        texto = datos['candidates'][0]['content']['parts'][0]['text']
-        return json.loads(texto)
+        for intento in range(2):
+            respuesta = cliente_gemini.post(
+                endpoint,
+                headers={'x-goog-api-key': api_key},
+                json=payload,
+                timeout=settings.GEMINI_TIMEOUT_SECONDS,
+            )
+            respuesta.raise_for_status()
+            datos = respuesta.json()
+            candidato = datos['candidates'][0]
+            texto = candidato['content']['parts'][0]['text']
+            try:
+                return json.loads(texto)
+            except json.JSONDecodeError:
+                logger.warning(
+                    'Gemini devolvio JSON incompleto (intento %s/2, motivo=%s).',
+                    intento + 1,
+                    candidato.get('finishReason', 'no_informado'),
+                )
+                if intento == 0:
+                    continue
+                raise
     except (requests.RequestException, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
         logger.warning(
             'Gemini no pudo interpretar una consulta SFI (%s).',

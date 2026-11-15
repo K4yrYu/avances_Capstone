@@ -55,7 +55,9 @@
       conversationEntries.push({
         role,
         text: String(text || "").slice(0, 4000),
-        products: Array.isArray(products) ? products.slice(0, 18) : [],
+        // Conservamos todas las tarjetas para restaurar la propuesta completa.
+        // El contexto enviado al backend se limita por separado.
+        products: Array.isArray(products) ? products : [],
         masters: Array.isArray(masters) ? masters.slice(0, 5) : [],
       });
       conversationEntries = conversationEntries.slice(-24);
@@ -207,7 +209,19 @@
       const content = document.createElement("div");
       content.className = "message-content";
       const paragraph = document.createElement("p");
-      paragraph.textContent = text;
+      const importantMarker = "\n\nIMPORTANTE\n";
+      const importantIndex = role === "assistant"
+        ? String(text).lastIndexOf(importantMarker)
+        : -1;
+      if (importantIndex >= 0) {
+        paragraph.appendChild(document.createTextNode(String(text).slice(0, importantIndex)));
+        const important = document.createElement("span");
+        important.className = "assistant-important-notice";
+        important.textContent = String(text).slice(importantIndex + 2);
+        paragraph.appendChild(important);
+      } else {
+        paragraph.textContent = text;
+      }
       content.appendChild(paragraph);
       article.append(avatar, content);
       if (role === "assistant") attachMessageSpeechButton(article, paragraph);
@@ -301,7 +315,6 @@
     async function askAssistant(message) {
       errorBox.hidden = true;
       addMessage("user", message);
-      rememberMessage("user", message);
       const historyForRequest = history.slice(-10);
       const queryModeForRequest = selectedQueryMode;
       selectedQueryMode = "auto";
@@ -326,6 +339,7 @@
         typing.remove();
         const answer = String(data.mensaje || "Cuéntame un poco más sobre tu proyecto.");
         addMessage("assistant", answer);
+        rememberMessage("user", message);
         rememberMessage("assistant", answer, data.productos, data.maestros);
         history.push({role: "assistant", content: answer});
         history = history.slice(-10);
@@ -334,9 +348,15 @@
         renderSuggestions(data.sugerencias);
       } catch (error) {
         typing.remove();
+        if (
+          history.length
+          && history[history.length - 1].role === "user"
+          && history[history.length - 1].content === message
+        ) {
+          history.pop();
+        }
         const messageText = error.message || "No fue posible consultar al asistente.";
         addMessage("assistant", messageText);
-        rememberMessage("assistant", messageText);
         errorBox.textContent = messageText;
         errorBox.hidden = false;
       } finally {

@@ -760,6 +760,36 @@ class AsistenteSfiTests(TestCase):
         opciones = post.call_args.kwargs
         self.assertNotIn('clave-secreta-prueba', url)
         self.assertEqual(opciones['headers']['x-goog-api-key'], 'clave-secreta-prueba')
+        self.assertEqual(opciones['json']['generationConfig']['maxOutputTokens'], 4096)
+
+    @override_settings(
+        GEMINI_API_KEY='clave-secreta-prueba',
+        GEMINI_MODEL='gemini-3.5-flash-lite',
+        GEMINI_TIMEOUT_SECONDS=10,
+    )
+    @patch('asistente.services.gemini.cliente_gemini.post')
+    def test_gemini_reintenta_una_respuesta_json_truncada(self, post):
+        truncada = Mock()
+        truncada.raise_for_status.return_value = None
+        truncada.json.return_value = {
+            'candidates': [{
+                'finishReason': 'MAX_TOKENS',
+                'content': {'parts': [{'text': '{"intencion":"planificar_proyecto"'}]},
+            }],
+        }
+        completa = Mock()
+        completa.raise_for_status.return_value = None
+        completa.json.return_value = {
+            'candidates': [{'content': {'parts': [{'text': (
+                '{"intencion":"aclarar","respuesta":"Indica tus medidas"}'
+            )}]}}],
+        }
+        post.side_effect = [truncada, completa]
+
+        resultado = interpretar_con_gemini('Quiero hacer un quincho estándar', [])
+
+        self.assertEqual(resultado['intencion'], 'aclarar')
+        self.assertEqual(post.call_count, 2)
 
     @patch.object(cliente_gemini.session, 'post')
     def test_cliente_gemini_exige_tls_y_endpoint_oficial(self, post):
@@ -2084,7 +2114,7 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.perfil.especialidades.add(especialidad)
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
-    def test_proyecto_libre_usa_productos_reales_y_maestro_aprobado(self, interpretar):
+    def test_proyecto_libre_incompleto_pide_medidas_antes_de_recomendar(self, interpretar):
         interpretar.return_value = {
             'intencion': 'planificar_proyecto',
             'respuesta': 'Prepararé una orientación con el catálogo disponible.',
@@ -2116,27 +2146,39 @@ class PlanificadorGenericoProyectosTests(TestCase):
             [],
         )
 
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('ancho', resultado['mensaje'].casefold())
+        self.assertIn('alto', resultado['mensaje'].casefold())
+        self.assertIn('profundidad', resultado['mensaje'].casefold())
+
+    def test_proyecto_libre_completo_usa_catalogo_y_maestro_aprobado(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Casita de madera exterior para perro',
+            'ancho_cm': 100,
+            'alto_cm': 110,
+            'fondo_cm': 120,
+            'tareas_proyecto': [
+                {'nombre': 'Construir la estructura', 'busquedas': [
+                    'pino dimensionado exterior', 'tornillos para madera',
+                ]},
+                {'nombre': 'Proteger contra la lluvia', 'busquedas': [
+                    'barniz madera exterior',
+                ]},
+            ],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': ['Carpintería'],
+            'datos_faltantes_proyecto': [],
+            'comuna_maestro': 'Maipú',
+        })
+
         self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
-        ids_recomendados = {producto['id'] for producto in resultado['productos']}
-        self.assertEqual(len(ids_recomendados), 3)
-        self.assertEqual(
-            Producto.objects.filter(pk__in=ids_recomendados, activo=True).count(),
-            3,
-        )
-        self.assertTrue(
-            any('tornillo' in producto['nombre'].casefold() for producto in resultado['productos'])
-        )
-        self.assertTrue(
-            any('barniz' in producto['nombre'].casefold() for producto in resultado['productos'])
-        )
-        self.assertTrue(
-            any('pino' in producto['nombre'].casefold() for producto in resultado['productos'])
-        )
+        self.assertEqual(len(resultado['productos']), 3)
         self.assertTrue(all(producto['stock'] > 0 for producto in resultado['productos']))
+        self.assertTrue(all(producto.get('uso_en_proyecto') for producto in resultado['productos']))
         self.assertEqual(resultado['especialidades'], ['Carpintería'])
         self.assertEqual([maestro['id'] for maestro in resultado['maestros']], [self.perfil.id])
-        self.assertIn('ancho, alto, profundidad', resultado['mensaje'])
-        self.assertTrue(resultado['calculo_orientativo'])
 
     def test_proyecto_generico_no_inventa_producto_ausente(self):
         resultado = resolver_interpretacion({
@@ -2232,7 +2274,10 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertTrue(resultado['productos'])
         self.assertIn('PROPUESTA ESTÁNDAR PARA TU PROYECTO', resultado['mensaje'])
         self.assertIn('PRODUCTOS POR ETAPA', resultado['mensaje'])
-        self.assertIn('Construir los elementos de albañilería', resultado['mensaje'])
+        self.assertTrue(all(
+            producto.get('uso_en_proyecto')
+            for producto in resultado['productos']
+        ))
         self.assertIn('Son una estim', resultado['mensaje'])
         self.assertNotIn('ANTES DE RECOMENDAR PRODUCTOS', resultado['mensaje'])
         self.assertTrue(all(
@@ -2993,8 +3038,41 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertGreaterEqual(len(resultado['productos']), 12)
         mensaje = resultado['mensaje'].casefold()
         self.assertIn('reforzar el radier', mensaje)
-        self.assertIn('zona interior expuesta al fuego', mensaje)
-        self.assertIn('apoyos donde se fija la cubierta', mensaje)
+        self.assertIn('ladrillo refractario', mensaje)
+        self.assertIn('expuesto directamente al calor', mensaje)
+        self.assertIn('sostener la cubierta entre los apoyos', mensaje)
+
+    def test_quincho_estandar_declara_materiales_necesarios_no_disponibles(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Quincho estándar',
+            '_proyecto_estandar': True,
+            'tareas_proyecto': [{
+                'nombre': 'Referencia inicial',
+                'busquedas': ['ladrillo fiscal'],
+            }],
+            'datos_faltantes_proyecto': [],
+        })
+
+        faltantes = ' '.join(resultado['faltantes_catalogo']).casefold()
+        self.assertIn('parrilla acero inoxidable quincho', faltantes)
+        self.assertIn('campana humo quincho', faltantes)
+        self.assertIn('ducto chimenea quincho', faltantes)
+        self.assertIn('anticorrosivo metal exterior', faltantes)
+        self.assertIn('NO DISPONIBLE EN EL CATÁLOGO', resultado['mensaje'])
+        self.assertTrue(all(
+            detalle.get('uso')
+            for detalle in resultado['faltantes_catalogo_detalle']
+        ))
+        nombres_disponibles = ' '.join(
+            producto['nombre'] for producto in resultado['productos']
+        ).casefold()
+        self.assertIn('extintor abc de polvo químico seco 6 kg', nombres_disponibles)
+        self.assertNotIn('parrilla acero inoxidable quincho', nombres_disponibles)
+        self.assertIn('solo una estimación orientativa', resultado['mensaje'])
+        self.assertTrue(
+            resultado['mensaje'].endswith('consulta con un profesional calificado.')
+        )
 
     def test_quincho_calcula_cada_material_con_su_superficie_correcta(self):
         resultado = resolver_interpretacion({
@@ -3191,9 +3269,9 @@ class PlanificadorGenericoProyectosTests(TestCase):
             historial,
         )
 
-        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
-        self.assertIn('HERRAMIENTAS PARA TU TECHUMBRE', resultado['mensaje'])
-        self.assertIn('COSTO OPCIONAL DE HERRAMIENTAS', resultado['mensaje'])
+        self.assertEqual(resultado['tipo'], 'seguimiento_herramientas')
+        self.assertIn('HERRAMIENTAS PARA REALIZAR EL TRABAJO', resultado['mensaje'])
+        self.assertIn('COSTO OPCIONAL', resultado['mensaje'])
         self.assertNotIn('PROYECTO\nAnalicé', resultado['mensaje'])
         self.assertTrue(resultado['productos'])
         self.assertTrue(all(
@@ -3318,7 +3396,10 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertIn('ANTES DE RECOMENDAR PRODUCTOS\n', resultado['mensaje'])
         self.assertIn('RESPONDE TODO EN UN MENSAJE\n', resultado['mensaje'])
         self.assertNotIn('A cuál de los productos', resultado['mensaje'])
-        self.assertIn('hormigón, madera/OSB o cerámica', resultado['mensaje'])
+        self.assertIn('BASE ACTUAL', resultado['mensaje'])
+        self.assertIn('Hormigón:', resultado['mensaje'])
+        self.assertIn('Madera/OSB:', resultado['mensaje'])
+        self.assertIn('Cerámica:', resultado['mensaje'])
         self.assertNotIn('demolición', resultado['mensaje'].casefold())
         self.assertEqual(resultado['productos'], [])
 
@@ -3447,7 +3528,7 @@ class PlanificadorGenericoProyectosTests(TestCase):
             [producto.id],
         )
 
-        self.assertEqual(resultado['tipo'], 'orientacion')
+        self.assertEqual(resultado['tipo'], 'seguimiento_proyecto')
         self.assertNotIn('A cuál de los productos', resultado['mensaje'])
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
@@ -3592,10 +3673,21 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertEqual(cubierta['carrito_cantidad'], 5)
         self.assertEqual(cubierta['subtotal'], 5 * policarbonato.precio)
         self.assertFalse(cubierta['recomendacion_orientativa'])
+        self.assertIn('alveolar 6 mm', cubierta['nombre'].casefold())
         self.assertIn('5 unidad(es)', resultado['mensaje'])
         self.assertEqual(resultado['total_calculado'], 5 * policarbonato.precio)
         self.assertIn('TOTAL CALCULADO', resultado['mensaje'])
         self.assertIn('$149.950 CLP', resultado['mensaje'])
+        bloques = resultado['mensaje'].split('\n\n')
+        self.assertTrue(bloques[0].startswith((
+            'PROPUESTA ESTÁNDAR PARA TU PROYECTO',
+            'PROYECTO',
+        )))
+        self.assertTrue(bloques[1].startswith('DATOS CONSIDERADOS'))
+        self.assertEqual(resultado['mensaje'].count('Cantidad calculada:'), 0)
+        self.assertTrue(
+            resultado['mensaje'].endswith('consulta con un profesional calificado.')
+        )
 
     def test_techumbre_zinc_no_confunde_cubierta_con_producto_zincado(self):
         Producto.objects.create(
@@ -3701,7 +3793,7 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertEqual(item['cantidad_requerida'], 7)
         self.assertEqual(item['carrito_cantidad'], 7)
         self.assertFalse(item['recomendacion_orientativa'])
-        self.assertIn('Cantidades calculadas con fichas verificadas', resultado['mensaje'])
+        self.assertIn('Estas cantidades usan las fichas verificadas', resultado['mensaje'])
 
     def test_proyecto_libre_orienta_aunque_falte_material_principal(self):
         resultado = resolver_interpretacion({

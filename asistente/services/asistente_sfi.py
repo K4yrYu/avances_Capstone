@@ -18,6 +18,7 @@ from .sinonimos_ferreteros import (
     anclas_semanticas, corregir_terminos, expandir_consulta,
 )
 from .planificador_proyectos import resolver_proyecto_generico, resolver_proyecto_techumbre
+from .situaciones_cotidianas import detectar_situacion_cotidiana
 
 
 class AsistenteNoDisponible(Exception):
@@ -93,7 +94,9 @@ def _usuario_delega_eleccion(texto):
     """Reconoce formas naturales de pedir que el asistente decida."""
     normalizado = _texto_normalizado(texto)
     return bool(re.search(
-        r'\belige(?:lo|la|los|las)?\s+tu\b|\btu\s+elige(?:lo|la|los|las)?\b',
+        r'\belige(?:lo|la|los|las)?\s+tu\b|\btu\s+elige(?:lo|la|los|las)?\b|'
+        r'\bque\s+(?:\w+\s+){0,3}me\s+recomiendas\b|'
+        r'\bcual\s+(?:\w+\s+){0,3}(?:conviene|recomiendas)\b',
         normalizado,
     )) or any(frase in normalizado for frase in (
         'elige tu', 'tu elige', 'elige por mi', 'damelo tu', 'dame tu',
@@ -1875,7 +1878,8 @@ def _mantener_cuestionario_antes_de_recomendar(mensaje, historial):
         preguntas = [
             coincidencia.group(1).strip().rstrip('?.')
             for coincidencia in re.finditer(
-                r'(?m)^\s*[•*-]\s*(.+?)\s*$', ultimo_asistente
+                r'(?m)^\s*(?:\u2022|\u00e2\u20ac\u00a2|[-*])\s*(.+?)\s*$',
+                ultimo_asistente,
             )
         ]
     preferencias_delegables = (
@@ -2717,6 +2721,89 @@ def _resolver_diagnostico_filtracion_inicial(mensaje):
     }
 
 
+def _resolver_situacion_cotidiana(mensaje):
+    """Orienta expresiones comunes sin invadir los cálculos de proyectos."""
+    situacion = detectar_situacion_cotidiana(mensaje)
+    if not situacion:
+        return None
+
+    if situacion['tipo'] == 'riesgo':
+        especialidad = situacion.get('especialidad', 'el área correspondiente')
+        return {
+            'tipo': 'orientacion_seguridad',
+            'mensaje': (
+                f"{situacion['mensaje']} Solicita la revisión de un profesional de "
+                f'{especialidad}; SFI no recomendará materiales sin un diagnóstico seguro. '
+                'Esta orientación no reemplaza una evaluación presencial.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': [f'Buscar profesional de {especialidad}'],
+        }
+
+    if situacion['tipo'] == 'aclaracion':
+        preguntas = '\n'.join(
+            f'{indice}. {pregunta}'
+            for indice, pregunta in enumerate(situacion['preguntas'][:3], start=1)
+        )
+        especialidad = situacion.get('especialidad')
+        cierre = (
+            f' Si no puedes comprobarlo con seguridad, consulta a un profesional de '
+            f'{especialidad}.' if especialidad else
+            ' Si detectas daño importante o no puedes comprobarlo con seguridad, consulta a un profesional.'
+        )
+        return {
+            'tipo': 'aclaracion_cotidiana',
+            'mensaje': (
+                f"{situacion['contexto']}. Respóndeme estos datos:\n{preguntas}\n\n"
+                'Con eso buscaré únicamente productos reales y con stock en SFI.' + cierre
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': list(situacion.get('sugerencias', ()))[:3],
+        }
+
+    consulta = situacion['consulta']
+    uso = situacion['uso']
+    candidatos = [
+        producto for producto in _buscar_productos(consulta, limite=10)
+        if producto.stock > 0
+        and 'herramienta' in _texto_normalizado(producto.categoria)
+    ]
+    if not candidatos:
+        return {
+            'tipo': 'sin_resultados',
+            'mensaje': (
+                f'Para {uso} necesitas una herramienta del tipo {consulta}, pero actualmente '
+                'no encontré una disponible con stock en el catálogo SFI.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': ['Buscar otra herramienta', 'Explicar el trabajo con más detalle'],
+        }
+
+    productos = []
+    for producto in candidatos[:4]:
+        item = _producto_publico(producto)
+        item.update({
+            'rol': 'Herramienta para la tarea',
+            'carrito_cantidad': 1,
+            'es_opcional': False,
+        })
+        productos.append(item)
+    return {
+        'tipo': 'productos',
+        'mensaje': (
+            f'Para {uso}, la herramienta adecuada es un {consulta}. '
+            f'Encontré {len(productos)} opción(es) disponible(s) con stock en SFI. '
+            'Confirma que sea compatible con el material y las condiciones reales antes de usarla.'
+        ),
+        'productos': productos,
+        'maestros': [],
+        'sugerencias': ['Muéstrame la opción más económica', 'Ver herramientas similares'],
+    }
+
+
 def _resolver_herramienta_por_tarea(mensaje):
     """Traduce una tarea cotidiana a una herramienta real del catálogo."""
     texto = _texto_normalizado(mensaje)
@@ -2800,7 +2887,11 @@ def _resolver_producto_breve(mensaje):
     if any(termino in palabras for termino in (
         'que', 'como', 'cuales', 'material', 'materiales', 'herramienta',
         'herramientas', 'proyecto', 'construir', 'hacer', 'instalar',
-        'cambiar', 'reparar', 'necesito', 'quiero',
+        'cambiar', 'reparar', 'necesito', 'quiero', 'maestro', 'maestros',
+        'profesional', 'profesionales', 'presupuesto', 'precio', 'cuanto',
+        'cuesta', 'sale', 'total', 'barato', 'barata', 'economico', 'economica',
+        'ese', 'esa', 'esos', 'esas', 'primero', 'primera', 'segundo', 'segunda',
+        'mil', 'lucas',
     )):
         return None
     return resolver_interpretacion({
@@ -3153,10 +3244,13 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
 
 
 def procesar_consulta(mensaje, historial, productos_contexto=None, modo_consulta='auto'):
-    herramienta_por_tarea = _resolver_herramienta_por_tarea(mensaje)
-    if herramienta_por_tarea:
-        return herramienta_por_tarea
-    producto_breve = _resolver_producto_breve(mensaje)
+    situacion_cotidiana = _resolver_situacion_cotidiana(mensaje)
+    if situacion_cotidiana:
+        return situacion_cotidiana
+    producto_breve = (
+        None if historial or productos_contexto
+        else _resolver_producto_breve(mensaje)
+    )
     if producto_breve:
         return producto_breve
     diagnostico_filtracion = _resolver_diagnostico_filtracion_inicial(mensaje)
@@ -3167,6 +3261,23 @@ def procesar_consulta(mensaje, historial, productos_contexto=None, modo_consulta
     )
     if herramientas_iniciales:
         return herramientas_iniciales
+    texto_actual = _texto_normalizado(mensaje)
+    contexto_ids = list(dict.fromkeys(productos_contexto or []))
+    referencia_singular = bool(re.search(
+        r'\b(?:ese|esa|aquel|aquella|el producto|la opcion)\b',
+        texto_actual,
+    ))
+    if referencia_singular and len(contexto_ids) > 1:
+        return {
+            'tipo': 'aclaracion',
+            'mensaje': (
+                '¿A cuál de los productos mostrados te refieres? Indica su nombre '
+                'o su posición para entregarte el dato correcto.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': ['El primero', 'El segundo'],
+        }
     flujo_natural = _clasificar_seguimiento_natural(
         mensaje,
         productos_contexto or [],

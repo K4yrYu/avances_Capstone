@@ -25,6 +25,18 @@
   overflow-wrap: anywhere;
 }
 
+.assistant-important-notice {
+  display: block;
+  margin-top: 1rem;
+  padding: .8rem .9rem;
+  color: var(--navy);
+  background: #eaf4fb;
+  border-left: 4px solid var(--blue);
+  border-radius: 0 10px 10px 0;
+  font-weight: 850;
+  white-space: pre-line;
+}
+
 .assistant-products {
   width: min(100%, 900px);
   grid-template-columns: minmax(0, 1fr);

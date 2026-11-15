@@ -302,7 +302,7 @@ def _extraer_tareas(datos):
                 break
             if base in {
                 'superficie_piso', 'superficie_cubierta', 'superficie_muros',
-                'perimetro', 'referencial',
+                'superficie_general', 'perimetro', 'referencial',
             }:
                 bases[_normalizar(busquedas[indice])] = base
         cupo = MAX_BUSQUEDAS - total_busquedas
@@ -480,12 +480,16 @@ def resolver_proyecto_generico(
                     'polietileno construccion 200 micras',
                     'malla electrosoldada C92',
                     'hormigon predosificado H20 saco 25 kg',
+                    'madera moldaje radier',
+                    'clavo corriente moldaje',
                 ],
                 'usos': {
                     _normalizar('base estabilizada radier saco 25 kg'): 'Preparar y nivelar el terreno bajo el radier.',
                     _normalizar('polietileno construccion 200 micras'): 'Formar una barrera de humedad bajo el hormigón.',
                     _normalizar('malla electrosoldada C92'): 'Reforzar el radier de acuerdo con el diseño del proyecto.',
                     _normalizar('hormigon predosificado H20 saco 25 kg'): 'Construir la losa o radier que sirve de base al quincho.',
+                    _normalizar('madera moldaje radier'): 'Formar y contener los bordes del radier durante el hormigonado.',
+                    _normalizar('clavo corriente moldaje'): 'Armar y fijar temporalmente el moldaje del radier.',
                 },
             },
             {
@@ -504,10 +508,16 @@ def resolver_proyecto_generico(
                 'busquedas': [
                     'ladrillo refractario',
                     'mortero refractario',
+                    'parrilla acero inoxidable quincho',
+                    'campana humo quincho',
+                    'ducto chimenea quincho',
                 ],
                 'usos': {
                     _normalizar('ladrillo refractario'): 'Revestir el sector interior expuesto directamente al calor.',
                     _normalizar('mortero refractario'): 'Unir los ladrillos de la zona de fuego.',
+                    _normalizar('parrilla acero inoxidable quincho'): 'Sostener los alimentos sobre la zona de cocción.',
+                    _normalizar('campana humo quincho'): 'Captar el humo generado sobre la zona de fuego.',
+                    _normalizar('ducto chimenea quincho'): 'Evacuar el humo captado hacia el exterior de forma segura.',
                 },
             },
             {
@@ -515,10 +525,16 @@ def resolver_proyecto_generico(
                 'busquedas': [
                     'perfil tubular acero 80 x 80 x 3 mm',
                     'perfil costanera acero 100 x 50 x 2 mm',
+                    'perno anclaje expansion M12',
+                    'electrodo soldadura E6013',
+                    'anticorrosivo metal exterior',
                 ],
                 'usos': {
                     _normalizar('perfil tubular acero 80 x 80 x 3 mm'): 'Formar los pilares principales de la techumbre.',
                     _normalizar('perfil costanera acero 100 x 50 x 2 mm'): 'Sostener la cubierta entre los apoyos principales.',
+                    _normalizar('perno anclaje expansion M12'): 'Anclar los pilares metálicos a una base firme de hormigón.',
+                    _normalizar('electrodo soldadura E6013'): 'Realizar las uniones soldadas de la estructura metálica.',
+                    _normalizar('anticorrosivo metal exterior'): 'Proteger la estructura metálica frente a corrosión e intemperie.',
                 },
             },
             {
@@ -545,6 +561,15 @@ def resolver_proyecto_generico(
                 'usos': {
                     _normalizar('canaleta aguas lluvia'): 'Recoger el agua que escurre desde la cubierta.',
                     _normalizar('bajada aguas lluvia PVC'): 'Conducir el agua recogida desde la canaleta hasta la descarga.',
+                },
+            },
+            {
+                'nombre': 'Seguridad recomendada',
+                'busquedas': [
+                    'extintor ABC 6 kg',
+                ],
+                'usos': {
+                    _normalizar('extintor ABC 6 kg'): 'Disponer de protección inicial ante un principio de incendio.',
                 },
             },
         ]
@@ -608,7 +633,7 @@ def resolver_proyecto_generico(
         }
 
     datos_faltantes_iniciales = _lista_textos(
-        datos.get("datos_faltantes_proyecto"), 3, 100
+        datos.get("datos_faltantes_proyecto"), 4, 100
     )
     modo_estandar = (
         datos.get("_proyecto_estandar") is True
@@ -797,9 +822,19 @@ def resolver_proyecto_generico(
                     and _coincidencia_suficiente(candidato, consulta)
                 )
             ]
+            hay_medidas = any((superficie_m2, superficie_planta, superficie_muros))
             producto = max(
                 disponibles,
-                key=lambda candidato: _puntaje_directo(candidato, consulta),
+                key=lambda candidato: (
+                    _puntaje_directo(candidato, consulta),
+                    int(bool(
+                        hay_medidas
+                        and candidato.informacion_tecnica_verificada
+                        and candidato.tipo_calculo == "superficie"
+                        and candidato.rendimiento
+                        and candidato.unidad_rendimiento == "m2_unidad"
+                    )),
+                ),
                 default=None,
             )
             if producto is None:
@@ -831,10 +866,27 @@ def resolver_proyecto_generico(
             base_calculo = tarea.get("bases", {}).get(
                 _normalizar(consulta), 'referencial',
             )
+            if base_calculo == 'referencial' and producto.tipo_calculo == 'superficie':
+                contexto_base = _normalizar(f"{tarea['nombre']} {consulta}")
+                if any(termino in contexto_base for termino in (
+                    'cubierta', 'techo', 'techumbre', 'plancha zinc',
+                )):
+                    base_calculo = 'superficie_cubierta'
+                elif any(termino in contexto_base for termino in (
+                    'muro', 'muros', 'pared', 'revestimiento vertical',
+                )):
+                    base_calculo = 'superficie_muros'
+                elif any(termino in contexto_base for termino in (
+                    'piso', 'radier', 'base', 'baldosa', 'malla', 'polietileno',
+                )):
+                    base_calculo = 'superficie_piso'
+                elif superficie_m2 > 0:
+                    base_calculo = 'superficie_general'
             superficie_base = {
                 'superficie_piso': superficie_planta or superficie_m2,
                 'superficie_cubierta': superficie_planta or superficie_m2,
                 'superficie_muros': superficie_muros,
+                'superficie_general': superficie_m2,
             }.get(base_calculo, Decimal("0"))
             if (
                 superficie_base > 0
@@ -1087,6 +1139,14 @@ def resolver_proyecto_generico(
     if maestros:
         partes.append(f"También encontré {len(maestros)} maestro(s) aprobado(s) en {comuna}.")
 
+    partes.append(
+        "IMPORTANTE\n"
+        "Esta propuesta es solo una estimación orientativa basada en los productos y "
+        "antecedentes disponibles. Las cantidades, compatibilidad y condiciones de "
+        "instalación deben verificarse en terreno. Antes de comprar o ejecutar el "
+        "trabajo, consulta con un profesional calificado."
+    )
+
     sugerencias = []
     if falta_base_piso:
         sugerencias.extend([
@@ -1233,7 +1293,7 @@ def resolver_proyecto_techumbre(
     consulta_cubierta = (
         cubierta_recomendada.nombre
         if cubierta_recomendada
-        else "policarbonato"
+        else cubierta
         if "policarbonato" in texto
         else "plancha zinc acanalado"
         if "zinc" in texto
@@ -1383,7 +1443,6 @@ def resolver_proyecto_techumbre(
         })
         return resultado
     superficie = round((ancho_cm * largo_cm) / 10000, 2)
-    cantidades_calculadas = []
     for item in resultado.get("productos", []):
         if _normalizar(item.get("rol")) != "cubierta":
             continue
@@ -1415,28 +1474,25 @@ def resolver_proyecto_techumbre(
                 f"cada unidad cubre {producto.rendimiento:g} m²."
             ),
         })
-        cantidades_calculadas.append(f"{cantidad} unidad(es) de {producto.nombre}")
         if cantidad > producto.stock:
             resultado.setdefault("faltantes_catalogo", []).append(
                 f"{producto.nombre}: se requieren {cantidad} y hay {producto.stock} en stock"
             )
 
     resultado["superficie_m2"] = superficie
-    resumen_cantidad = (
-        " Cantidad calculada: " + ", ".join(cantidades_calculadas) + "."
-        if cantidades_calculadas else ""
+    datos_considerados = (
+        "DATOS CONSIDERADOS\n"
+        f"El área informada es de {superficie:g} m²."
     )
-    resultado["mensaje"] = (
-        f"El área informada es de {superficie:g} m². "
-        + (
+    if cubierta_recomendada:
+        datos_considerados += (
+            " "
             f"Como pediste una recomendación, seleccioné {cubierta_recomendada.nombre} "
-            "por ser una cubierta disponible con ficha técnica verificada. "
-            if cubierta_recomendada else ""
+            "por ser una cubierta disponible con ficha técnica verificada."
         )
-        + resultado["mensaje"]
-        + resumen_cantidad
-        + " Antes de instalar, confirma la solución final con un profesional."
-    )
+    bloques_mensaje = resultado["mensaje"].split("\n\n")
+    bloques_mensaje.insert(1, datos_considerados)
+    resultado["mensaje"] = "\n\n".join(bloques_mensaje)
     productos_con_cantidad = [
         producto for producto in resultado.get("productos", [])
         if not producto.get("recomendacion_orientativa")
