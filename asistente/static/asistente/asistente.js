@@ -32,6 +32,7 @@
     }
     sessionStorage.setItem(sessionOwnerKey, userKey);
     let history = [];
+    let selectedQueryMode = "auto";
     let conversationEntries = [];
     let calculations = new Map();
     let cartItems = new Map();
@@ -292,7 +293,7 @@
         return;
       }
       const examples = items.slice(0, 3);
-      suggestions.innerHTML = '<span style="flex-basis:100%;color:#657d8f;font-size:.6rem;font-weight:750">Puedes responder asÃ­:</span>'
+      suggestions.innerHTML = '<span style="flex-basis:100%;color:#657d8f;font-size:.6rem;font-weight:750">Puedes responder:</span>'
         + examples.map(item => `<button type="button" data-suggestion="${escapeHtml(item)}"><i class="fa-regular fa-message"></i> ${escapeHtml(item)}</button>`).join("");
       input.placeholder = `Ej.: ${String(examples[0]).slice(0, 140)}`;
     }
@@ -302,6 +303,8 @@
       addMessage("user", message);
       rememberMessage("user", message);
       const historyForRequest = history.slice(-10);
+      const queryModeForRequest = selectedQueryMode;
+      selectedQueryMode = "auto";
       history.push({role: "user", content: message});
       const typing = addTyping();
       submit.disabled = true;
@@ -311,7 +314,12 @@
           method: "POST",
           credentials: "same-origin",
           headers: {"Content-Type": "application/json", Accept: "application/json", "X-CSRFToken": getCookie("csrftoken")},
-          body: JSON.stringify({mensaje: message, historial: historyForRequest, productos_contexto: contextProductIds()}),
+          body: JSON.stringify({
+            mensaje: message,
+            historial: historyForRequest,
+            productos_contexto: contextProductIds(),
+            modo_consulta: queryModeForRequest,
+          }),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(firstError(data) || "No fue posible consultar al asistente.");
@@ -354,6 +362,7 @@
       }
       const button = event.target.closest("[data-suggestion]");
       if (!button || submit.disabled) return;
+      selectedQueryMode = button.dataset.queryMode || "auto";
       input.value = button.dataset.suggestion || "";
       form.requestSubmit();
     });
@@ -439,6 +448,7 @@
       sessionStorage.removeItem(conversationStorageKey);
       calculations = new Map();
       cartItems = new Map();
+      selectedQueryMode = "auto";
       messages.innerHTML = "";
       addMessage("assistant", "Hola, soy el asistente SFI. Cuéntame qué necesitas para tu proyecto.");
       suggestions.innerHTML = "";

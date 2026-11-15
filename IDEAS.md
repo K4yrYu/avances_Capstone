@@ -268,3 +268,118 @@ Al confirmar, se abrirá un modal con todos los productos solicitados. Cada fila
 - Gama económica, intermedia o premium para comparar precios.
 
 Esta propuesta no autoriza todavía la creación de productos ni cambios en la base de datos.
+
+---
+
+## Mejoras asistente técnico 14-11
+
+**Estado:** Posible
+
+**Fecha de registro:** 14/11/2026
+
+**Tipo:** Asistente IA, orientación técnica y catálogo
+
+**Decisión actual:** Mantener la lógica existente hasta autorizar expresamente esta implementación.
+
+### Objetivo
+
+Permitir que el asistente ayude tanto a clientes que buscan un producto concreto como a personas que describen un problema cotidiano o un proyecto completo, utilizando siempre productos reales del catálogo y sin ocultar materiales necesarios que SFI no tenga disponibles.
+
+### Selector inicial de consulta
+
+El cambio se aplicaría a las opciones de prerespuesta que actualmente aparecen bajo la conversación. No reemplazaría los módulos especializados ni las sugerencias contextuales generadas después de cada respuesta.
+
+Al comenzar una nueva conversación, el asistente podría mostrar:
+
+> ¿Con qué necesitas ayuda hoy?
+
+- **Probar color en mi foto:** conserva el acceso directo al visualizador de pintura existente.
+- **Buscar un producto:** inicia una búsqueda por nombre, uso, marca, característica o presupuesto.
+- **Elegir una herramienta:** pregunta qué trabajo se realizará, sobre qué material y con qué frecuencia.
+- **Ayuda con un proyecto o reparación:** orienta proyectos completos, calcula materiales y solicita medidas progresivamente.
+- **Tengo un problema y no sé qué necesito:** permite describir una situación cotidiana y completar especificaciones guiadas antes de recomendar.
+
+La selección orientaría la interpretación y los filtros iniciales, pero no debería bloquear el cambio de intención durante la conversación. Si el usuario escribe directamente su consulta, Gemini podría clasificarla sin obligarlo a seleccionar una opción.
+
+Los accesos actuales `Pintar 50 m²`, `Renovar mi baño`, `Buscar un taladro` y `Preparar un muro` se reemplazarían por estas rutas generales. Sus capacidades no se eliminarían: pasarían a ser ejemplos o continuaciones dentro de la ruta correspondiente.
+
+### Interpretación de las rutas
+
+Cada botón debería enviar al backend un modo estructurado y permitido, además del texto visible:
+
+- `producto`
+- `herramienta`
+- `proyecto_reparacion`
+- `problema_cotidiano`
+- `auto`, cuando el usuario escribe sin seleccionar una ruta
+
+El modo funcionaría como contexto inicial, no como bloqueo permanente. La prioridad recomendada sería:
+
+1. Intención explícita del mensaje actual.
+2. Ruta seleccionada por el cliente.
+3. Contexto reciente de la conversación.
+4. Clasificación automática cuando no exista información suficiente.
+
+De esta forma, alguien que comience buscando un producto podría después pedir ayuda para instalarlo sin iniciar otra conversación.
+
+### Preguntas iniciales por ruta
+
+- **Producto:** qué busca, para qué lo usará y si tiene alguna preferencia o presupuesto.
+- **Herramienta:** trabajo que realizará, material sobre el que trabajará y uso ocasional o frecuente.
+- **Proyecto o reparación:** qué quiere construir o reparar y cuáles son las medidas o condiciones conocidas.
+- **Problema cotidiano:** qué ocurre, dónde ocurre, desde cuándo y qué características puede describir.
+
+El asistente no debería mostrar todas estas preguntas juntas; seleccionaría como máximo dos o tres según la ruta y la información ya escrita.
+
+Para problemas, proyectos y reparaciones se priorizarán las especificaciones escritas y preguntas guiadas. No se dependerá del análisis de fotografías para diagnosticar o calcular, porque exigiría instrucciones visuales mucho más extensas y aumentaría tiempo y ambigüedad. El uso de fotografías se mantendrá en el módulo especializado de pintura ya existente.
+
+### Flujo conversacional propuesto
+
+1. Clasificar la consulta como producto, herramienta, proyecto o problema cotidiano.
+2. Solicitar como máximo dos o tres datos simples por mensaje.
+3. Evitar inicialmente términos técnicos que un cliente común pueda desconocer.
+4. Transformar las respuestas cotidianas en datos estructurados para Django.
+5. Consultar productos, precios y stock reales.
+6. Calcular cantidades mediante reglas verificadas en Python.
+7. Entregar una solución accionable y distinguir claramente lo disponible de lo faltante.
+
+### Resultado esperado
+
+La respuesta final debería separar:
+
+- Solución recomendada.
+- Productos disponibles en SFI, con cantidades y precios.
+- Materiales necesarios que no existen actualmente en el catálogo.
+- Elementos opcionales o dependientes de las condiciones del lugar.
+- Presupuesto completo o indicación explícita de que es parcial.
+- Opción de agregar al carrito los productos válidos.
+- Maestros aprobados de la especialidad y comuna como ayuda opcional.
+
+Un proyecto no debe presentarse como completo si falta un componente obligatorio. Si SFI no dispone de ese componente, el asistente debe nombrarlo y explicar su función, sin inventar un sustituto.
+
+### Guías técnicas profesionales
+
+Como evolución futura, se podrían crear guías por sistema constructivo revisadas por maestros aprobados y posteriormente autorizadas por administración. Cada guía conservaría especialidad, profesional revisor, fecha, versión, condiciones de uso y reglas de cálculo.
+
+Gemini interpretaría y explicaría la consulta; Django seleccionaría productos y ejecutaría las fórmulas aprobadas. Contactar a un profesional seguiría siendo una opción del cliente, no una acción automática ni un reemplazo de los cálculos del sistema.
+
+### Reglas obligatorias
+
+- No inventar productos, compatibilidades, rendimientos, precios ni stock.
+- No reemplazar automáticamente un material faltante por otro incompatible.
+- No presentar un presupuesto parcial como costo completo.
+- Solicitar solamente datos que influyan realmente en la recomendación.
+- Mantener las validaciones y cálculos importantes en Django.
+- Permitir que una consulta cambie de producto a proyecto o herramienta sin reiniciar innecesariamente la conversación.
+- No contactar a terceros ni compartir datos del cliente sin una acción y consentimiento explícitos.
+
+### Primera etapa sugerida
+
+Evaluar primero el selector inicial porque es un cambio pequeño y puede mejorar la clasificación sin reemplazar la lógica actual. Antes de implementarlo se deberá comprobar que:
+
+- Mejora la precisión de producto, herramienta y proyecto.
+- No obliga a realizar pasos adicionales a quien escribe una consulta directa.
+- Conserva correctamente el contexto cuando cambia la intención.
+- Es accesible mediante teclado y funciona en dispositivos móviles.
+- Conserva el acceso directo al visualizador de pintura.
+- No altera los cálculos, la búsqueda de productos ni las sugerencias contextuales existentes.

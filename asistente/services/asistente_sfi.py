@@ -2717,6 +2717,78 @@ def _resolver_diagnostico_filtracion_inicial(mensaje):
     }
 
 
+def _resolver_herramienta_por_tarea(mensaje):
+    """Traduce una tarea cotidiana a una herramienta real del catálogo."""
+    texto = _texto_normalizado(mensaje)
+    tareas = (
+        (
+            r'\b(?:poner|meter|clavar|afirmar|fijar)\b.{0,24}\bclavos?\b|\bclavar\b',
+            'martillo',
+            'clavar o poner clavos',
+        ),
+        (
+            r'\b(?:hacer|abrir)\b.{0,18}\b(?:agujeros?|hoyos?)\b|\bperforar\b',
+            'taladro',
+            'hacer perforaciones',
+        ),
+        (
+            r'\b(?:cortar|trozar)\b.{0,24}\b(?:madera|tabla|tablero|melamina)\b',
+            'sierra',
+            'cortar madera o tableros',
+        ),
+        (
+            r'\b(?:poner|apretar|soltar|sacar)\b.{0,24}\btornillos?\b',
+            'destornillador',
+            'trabajar con tornillos',
+        ),
+    )
+    coincidencia = next((
+        (consulta, uso)
+        for patron, consulta, uso in tareas
+        if re.search(patron, texto)
+    ), None)
+    if not coincidencia:
+        return None
+
+    consulta, uso = coincidencia
+    candidatos = [
+        producto for producto in _buscar_productos(consulta, limite=10)
+        if producto.stock > 0
+        and 'herramienta' in _texto_normalizado(producto.categoria)
+    ]
+    if not candidatos:
+        return {
+            'tipo': 'sin_resultados',
+            'mensaje': (
+                f'Para {uso} necesitas una herramienta del tipo {consulta}, pero actualmente '
+                'no encontré una disponible con stock en el catálogo SFI.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': ['Buscar otra herramienta', 'Explicar el trabajo con más detalle'],
+        }
+
+    productos = []
+    for producto in candidatos[:4]:
+        item = _producto_publico(producto)
+        item.update({
+            'rol': 'Herramienta para la tarea',
+            'carrito_cantidad': 1,
+            'es_opcional': False,
+        })
+        productos.append(item)
+    return {
+        'tipo': 'productos',
+        'mensaje': (
+            f'Para {uso}, la herramienta adecuada es un {consulta}. '
+            f'Encontré {len(productos)} opción(es) disponible(s) con stock en SFI.'
+        ),
+        'productos': productos,
+        'maestros': [],
+        'sugerencias': ['Muéstrame la opción más económica', 'Ver herramientas similares'],
+    }
+
+
 def _resolver_producto_breve(mensaje):
     """Trata una frase nominal corta como producto, no como proyecto completo."""
     texto = _texto_normalizado(mensaje)
@@ -3080,7 +3152,10 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
     return None
 
 
-def procesar_consulta(mensaje, historial, productos_contexto=None):
+def procesar_consulta(mensaje, historial, productos_contexto=None, modo_consulta='auto'):
+    herramienta_por_tarea = _resolver_herramienta_por_tarea(mensaje)
+    if herramienta_por_tarea:
+        return herramienta_por_tarea
     producto_breve = _resolver_producto_breve(mensaje)
     if producto_breve:
         return producto_breve
@@ -3144,6 +3219,31 @@ def procesar_consulta(mensaje, historial, productos_contexto=None):
     if cuestionario_pendiente:
         return cuestionario_pendiente
     mensaje_para_ia = _mensaje_para_continuar_guia(mensaje, historial)
+    contextos_iniciales = {
+        'producto': (
+            'El cliente inició la consulta desde Buscar un producto. '
+            'Orienta primero la interpretación a identificar nombre, uso, marca, '
+            'característica o presupuesto.'
+        ),
+        'herramienta': (
+            'El cliente inició la consulta desde Elegir una herramienta. '
+            'Orienta primero la interpretación al trabajo, material y frecuencia de uso.'
+        ),
+        'proyecto_reparacion': (
+            'El cliente inició la consulta desde Proyecto o reparación. '
+            'Orienta primero la interpretación al objetivo, condiciones y medidas necesarias.'
+        ),
+        'problema_cotidiano': (
+            'El cliente indicó que no sabe qué necesita. Interpreta primero el problema '
+            'cotidiano y solicita solo los datos indispensables antes de recomendar.'
+        ),
+    }
+    contexto_inicial = contextos_iniciales.get(modo_consulta)
+    if contexto_inicial:
+        mensaje_para_ia = (
+            f'{contexto_inicial} Esta ruta es solo una orientación inicial: si el mensaje '
+            f'actual expresa otra intención, prioriza el mensaje.\n\n{mensaje_para_ia}'
+        )
     try:
         interpretacion = interpretar_con_gemini(
             mensaje_para_ia, historial, productos_contexto or [],

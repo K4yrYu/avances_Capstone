@@ -1035,17 +1035,21 @@ def resolver_proyecto_generico(
                 "con cantidad verificada."
             )
             if cantidad_referenciales:
-                nombres_referenciales = ", ".join(
+                materiales_referenciales = [
                     producto["nombre"] for producto in productos_materiales
                     if producto.get("recomendacion_orientativa")
+                ]
+                lista_referenciales = "\n".join(
+                    f"• {nombre}" for nombre in materiales_referenciales
                 )
                 detalle_total += (
-                    f"\nEste es un total parcial: faltan {cantidad_referenciales} "
+                    f"\n\nEste es un total parcial: faltan {cantidad_referenciales} "
                     f"{'material referencial' if cantidad_referenciales == 1 else 'materiales referenciales'} "
                     "por cuantificar, por lo que todavía no "
                     "representa el costo completo del proyecto."
-                    f"\nPendientes: {nombres_referenciales}. No se sumaron porque su ficha "
-                    "no define un rendimiento compatible con las medidas del proyecto."
+                    f"\n\nMATERIALES PENDIENTES DE CUANTIFICAR\n{lista_referenciales}"
+                    "\nNo se sumaron porque sus fichas no definen un rendimiento "
+                    "compatible con las medidas del proyecto."
                 )
             partes.append(detalle_total)
         else:
@@ -1096,8 +1100,12 @@ def resolver_proyecto_generico(
         sugerencias.extend([
             "¿Por qué elegiste estos materiales?",
             "Muéstrame alternativas más económicas",
-            "¿Qué herramientas necesito para este proyecto?",
         ])
+        sugerencias.append(
+            "¿Qué herramientas necesito para este proyecto?"
+            if datos.get("incluir_herramientas") is True
+            else "Ajustar medidas o materiales del proyecto"
+        )
     else:
         sugerencias.append("Ajustar el proyecto")
 
@@ -1455,16 +1463,20 @@ def resolver_proyecto_techumbre(
             "con cantidad verificada."
         )
         if cantidad_referenciales:
-            nombres_referenciales = ", ".join(
+            materiales_referenciales = [
                 producto["nombre"] for producto in productos_materiales
                 if producto.get("recomendacion_orientativa")
+            ]
+            lista_referenciales = "\n".join(
+                f"• {nombre}" for nombre in materiales_referenciales
             )
             resumen_total += (
-                f"\nEs un total parcial: faltan {cantidad_referenciales} "
+                f"\n\nEs un total parcial: faltan {cantidad_referenciales} "
                 f"{'material referencial' if cantidad_referenciales == 1 else 'materiales referenciales'} "
                 "por cuantificar."
-                f"\nPendientes: {nombres_referenciales}. No se sumaron porque su ficha "
-                "no define un rendimiento compatible con las medidas del proyecto."
+                f"\n\nMATERIALES PENDIENTES DE CUANTIFICAR\n{lista_referenciales}"
+                "\nNo se sumaron porque sus fichas no definen un rendimiento "
+                "compatible con las medidas del proyecto."
             )
         if "TOTAL CALCULADO" not in resultado["mensaje"]:
             resultado["mensaje"] += resumen_total

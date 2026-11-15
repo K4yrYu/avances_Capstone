@@ -10,6 +10,11 @@ class MensajeHistorialSerializer(serializers.Serializer):
 
 class ConsultaAsistenteSerializer(serializers.Serializer):
     mensaje = serializers.CharField(min_length=2, max_length=700, trim_whitespace=True)
+    modo_consulta = serializers.ChoiceField(
+        choices=['auto', 'producto', 'herramienta', 'proyecto_reparacion', 'problema_cotidiano'],
+        required=False,
+        default='auto',
+    )
     historial = MensajeHistorialSerializer(many=True, required=False, default=list)
     productos_contexto = serializers.ListField(
         child=serializers.IntegerField(min_value=1),

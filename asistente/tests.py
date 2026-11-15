@@ -75,7 +75,13 @@ class AsistenteSfiTests(TestCase):
             'calcular o encontrar productos',
         )
         self.assertContains(pagina, 'id="apply-paint-mask"')
-        self.assertContains(pagina, 'data-suggestion="Quiero renovar mi baño"')
+        self.assertContains(pagina, 'data-open-visualizer')
+        self.assertContains(pagina, 'Pintar 50 m&sup2;')
+        self.assertContains(pagina, 'data-query-mode="producto"')
+        self.assertContains(pagina, 'data-query-mode="herramienta"')
+        self.assertContains(pagina, 'data-query-mode="proyecto_reparacion"')
+        self.assertContains(pagina, 'data-query-mode="problema_cotidiano"')
+        self.assertNotContains(pagina, 'data-suggestion="Quiero renovar mi baño"')
         self.assertNotContains(pagina, reverse('mi_historial_compras'))
         self.assertContains(pagina, 'Compra protegida con Webpay')
         self.assertContains(inicio, reverse('asistente_sfi'))
@@ -690,7 +696,42 @@ class AsistenteSfiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['mensaje'], 'Usa protección personal.')
-        procesar.assert_called_once()
+        procesar.assert_called_once_with(
+            '¿Qué necesito para lijar?', [], [], 'auto',
+        )
+
+    def test_api_acepta_modo_inicial_sin_bloquear_la_consulta(self):
+        serializer = ConsultaAsistenteSerializer(data={
+            'mensaje': 'Necesito reparar una filtración',
+            'modo_consulta': 'problema_cotidiano',
+        })
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(
+            serializer.validated_data['modo_consulta'],
+            'problema_cotidiano',
+        )
+
+    def test_tarea_cotidiana_de_clavar_recomienda_martillo_real(self):
+        martillo = Producto.objects.create(
+            nombre='Martillo carpintero de prueba 16 oz',
+            descripcion='Martillo para clavar y retirar clavos.',
+            precio=8990,
+            imagen='productos/martillo-prueba.webp',
+            stock=6,
+            categoria='Herramientas',
+            marca='SFI',
+            activo=True,
+        )
+
+        resultado = procesar_consulta(
+            'Necesito algo para poner los clavos',
+            [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'productos')
+        self.assertEqual(resultado['productos'][0]['id'], martillo.id)
+        self.assertIn('martillo', resultado['mensaje'].casefold())
 
     @override_settings(
         GEMINI_API_KEY='clave-secreta-prueba',
@@ -3746,6 +3787,14 @@ class PlanificadorGenericoProyectosTests(TestCase):
             producto['rol'] != 'Herramientas recomendadas'
             for producto in resultado['productos']
         ))
+        self.assertNotIn(
+            '¿Qué herramientas necesito para este proyecto?',
+            resultado['sugerencias'],
+        )
+        self.assertIn(
+            'Ajustar medidas o materiales del proyecto',
+            resultado['sugerencias'],
+        )
 
     def test_cobertizo_nuevo_pide_altura_antes_de_mostrar_materiales(self):
         resultado = resolver_interpretacion({
