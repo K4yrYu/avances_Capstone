@@ -72,6 +72,22 @@
       return [...new Set(lastResult.products.map(product => Number(product.id)).filter(id => Number.isInteger(id) && id > 0))].slice(0, 18);
     }
 
+    function estimateContext() {
+      const lastResult = [...conversationEntries].reverse().find(entry =>
+        entry.role === "assistant" && Array.isArray(entry.products) && entry.products.length
+      );
+      if (!lastResult) return [];
+      return lastResult.products.slice(0, 18).map(product => ({
+        id: Number(product.id),
+        carrito_cantidad: Number(product.carrito_cantidad) || 1,
+        cantidad_requerida: Number(product.cantidad_requerida) || 0,
+        rol: String(product.rol || "").slice(0, 100),
+        detalle_material: String(product.detalle_material || "").slice(0, 500),
+        es_opcional: Boolean(product.es_opcional),
+        incluido_en_total: product.incluido_en_total !== false,
+      })).filter(product => Number.isInteger(product.id) && product.id > 0);
+    }
+
     function getCookie(name) {
       const prefix = `${name}=`;
       const cookie = document.cookie.split(";").map(value => value.trim()).find(value => value.startsWith(prefix));
@@ -331,6 +347,7 @@
             mensaje: message,
             historial: historyForRequest,
             productos_contexto: contextProductIds(),
+            estimacion_contexto: estimateContext(),
             modo_consulta: queryModeForRequest,
           }),
         });

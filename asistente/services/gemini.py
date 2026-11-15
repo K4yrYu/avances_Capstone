@@ -258,6 +258,12 @@ Reglas obligatorias:
 - Interpreta también proyectos libres que SFI no tenga programados de forma especializada:
   cercos, terrazas, cobertizos, muebles, reparaciones y otras mejoras domésticas. Resume el
   objetivo en proyecto y divídelo en 2 a 8 etapas materiales coherentes.
+- En muebles, nunca trates "mueble estándar" como un tipo suficiente. Conserva en proyecto
+  la función concreta: clóset/ropero, escritorio, estante, mueble de cocina, baño, TV,
+  zapatero u otra indicada por el cliente. Si no conoce el nombre, pregunta qué necesita
+  guardar o hacer. El tipo o función y las medidas ancho, alto y fondo son datos críticos;
+  inclúyelos en datos_faltantes_proyecto y no inventes puertas, cajones, cubiertas ni mesones.
+  "Elige tú" puede resolver material, color o terminación, pero no la función del mueble.
 - No elijas silenciosamente zinc, policarbonato, tejas ni otra cubierta si el cliente solo dice
   "techo" o "techumbre". Conserva tipo_cubierta vacío para que Django ofrezca opciones. Solo
   elige una familia cuando el cliente la indique o escriba expresamente "elige tú".

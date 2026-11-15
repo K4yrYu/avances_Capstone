@@ -1757,11 +1757,13 @@ def _aplicar_contexto_productos(datos, mensaje, productos_contexto):
     ))
     if referencia_proyecto:
         return datos
-    referencia_contextual = any(frase in texto for frase in (
-        'este', 'esta', 'ese', 'esa', 'estos', 'estas', 'esos', 'esas',
-        'anterior', 'anteriores', 'de los que mostraste', 'de esas opciones',
-        'similar', 'similares', 'parecido', 'parecida', 'mismo', 'misma',
-        'primero', 'primera', 'segundo', 'segunda', 'tercero', 'tercera',
+    referencia_contextual = bool(re.search(
+        r'\b(?:este|esta|ese|esa|estos|estas|esos|esas|anterior|anteriores|'
+        r'similar|similares|parecido|parecida|mismo|misma|primero|primera|'
+        r'segundo|segunda|tercero|tercera)\b',
+        texto,
+    )) or any(frase in texto for frase in (
+        'de los que mostraste', 'de esas opciones',
     ))
     comparacion_contextual = any(frase in texto for frase in (
         'mas barato', 'mas economico', 'menor precio',
@@ -1882,16 +1884,31 @@ def _mantener_cuestionario_antes_de_recomendar(mensaje, historial):
                 ultimo_asistente,
             )
         ]
+    es_mueble_pendiente = any(
+        termino in _texto_normalizado(ultimo_asistente)
+        for termino in ('mueble', 'gabinete')
+    )
     preferencias_delegables = (
         'tipo de piso', 'estilo', 'terminacion', 'acabado', 'color',
         'formato', 'espesor', 'cubierta', 'policarbonato', 'teja',
+    ) + (
+        ('material principal deseado', 'material del mueble')
+        if es_mueble_pendiente else ()
     )
     responde_medidas = bool(re.search(
         r'\b\d+(?:[.,]\d+)?\s*(?:x|por|×)\s*\d+(?:[.,]\d+)?\b',
         texto,
     ))
     responde_material = bool(re.search(
-        r'\b(?:madera|osb|metal|acero|hormigon|concreto|ceramica|ladrillo)\b',
+        r'\b(?:madera|osb|metal|acero|hormigon|concreto|ceramica|ladrillo|'
+        r'melamina|mdf|terciado|pino)\b',
+        texto,
+    ))
+    responde_tipo_mueble = bool(re.search(
+        r'\b(?:closet|ropero|armario|escritorio|estante|repisero|biblioteca|'
+        r'rack|zapatero|velador|cajonera|comoda|despensa|vanitorio)\b|'
+        r'\bmueble\s+(?:de\s+)?(?:cocina|bano|lavamanos)\b|'
+        r'\b(?:guardar ropa|guardar zapatos|guardar libros|trabajar|estudiar)\b',
         texto,
     ))
     responde_estado = bool(re.search(
@@ -1902,6 +1919,12 @@ def _mantener_cuestionario_antes_de_recomendar(mensaje, historial):
 
     def ya_respondida(pregunta):
         clave = _texto_normalizado(pregunta)
+        if (
+            responde_tipo_mueble
+            and 'tipo' in clave
+            and 'mueble' in clave
+        ):
+            return True
         if responde_medidas and any(
             termino in clave for termino in ('medida', 'ancho', 'largo', 'alto', 'area')
         ):
@@ -1941,6 +1964,16 @@ def _mantener_cuestionario_antes_de_recomendar(mensaje, historial):
             'Mide 3 × 4 m; la estructura es de madera y está firme',
             'La estructura es de metal y está en buen estado',
             'No sé evaluarla; veo la estructura firme y sin daños visibles',
+        ]
+    elif any(termino in proyecto_normalizado for termino in ('mueble', 'gabinete')):
+        ejemplo = (
+            'Ejemplo: “Necesito un clóset para ropa; el espacio mide '
+            '120 × 200 × 55 cm; elige tú el material”.'
+        )
+        sugerencias = [
+            'Necesito un clóset para ropa; mide 120 × 200 × 55 cm',
+            'Quiero un escritorio; mide 120 × 75 × 60 cm',
+            'Necesito un estante para libros; elige tú el material',
         ]
     else:
         ejemplo = 'Ejemplo: “La base es de hormigón y está en buen estado”.'
@@ -2996,6 +3029,118 @@ def _clasificar_seguimiento_natural(mensaje, productos_contexto):
     return ''
 
 
+def _resolver_agregado_estimacion(mensaje, productos_contexto, estimacion_contexto):
+    """Añade un producto solicitado sin reconstruir la propuesta vigente."""
+    if not productos_contexto:
+        return None
+    texto = _texto_normalizado(mensaje)
+    coincidencia = re.search(
+        r'\b(?:agrega(?:me)?|anade(?:me)?|incluye(?:me)?|incorpora(?:me)?|suma(?:me)?)\b\s+(.+)',
+        texto,
+    )
+    if not coincidencia:
+        return None
+
+    consulta = coincidencia.group(1)
+    consulta = re.split(
+        r'\s+(?:a|en)\s+(?:la\s+)?(?:lista|estimacion|propuesta|presupuesto|proyecto)\b|'
+        r'\s+(?:eso|que)\s+falt\w*\b',
+        consulta,
+        maxsplit=1,
+    )[0]
+    consulta = re.sub(r'^(?:una?|el|la|los|las)\s+', '', consulta).strip()
+    if len(consulta) < 3:
+        return None
+
+    ids_actuales = list(dict.fromkeys(productos_contexto))[:18]
+    detalles = {
+        int(item['id']): item
+        for item in (estimacion_contexto or [])
+        if isinstance(item, dict) and item.get('id')
+    }
+    productos_bd = Producto.objects.filter(pk__in=ids_actuales, activo=True)
+    por_id = {producto.pk: producto for producto in productos_bd}
+    productos = []
+    for producto_id in ids_actuales:
+        producto = por_id.get(producto_id)
+        if not producto:
+            continue
+        item = _producto_publico(producto)
+        detalle = detalles.get(producto_id, {})
+        for campo in (
+            'carrito_cantidad', 'cantidad_requerida', 'rol', 'detalle_material',
+            'es_opcional', 'incluido_en_total',
+        ):
+            if campo in detalle:
+                item[campo] = detalle[campo]
+        cantidad_carrito = int(item.get('carrito_cantidad') or 1)
+        if item.get('cantidad_requerida'):
+            item['subtotal'] = producto.precio * cantidad_carrito
+        productos.append(item)
+
+    candidatos = [
+        producto for producto in _buscar_productos(consulta, limite=10)
+        if producto.stock > 0
+    ]
+    solicitado = next(
+        (producto for producto in candidatos if producto.pk in ids_actuales),
+        candidatos[0] if candidatos else None,
+    )
+    if not solicitado:
+        return {
+            'tipo': 'seguimiento_estimacion',
+            'mensaje': (
+                f'No encontré un producto activo con stock relacionado con “{consulta}”. '
+                'Conservé la estimación actual sin cambios.'
+            ),
+            'productos': productos,
+            'maestros': [],
+            'sugerencias': ['Buscar un producto similar', 'Volver al resumen del proyecto'],
+        }
+    if solicitado.pk in ids_actuales:
+        return {
+            'tipo': 'seguimiento_estimacion',
+            'mensaje': f'{solicitado.nombre} ya se encuentra incluido en la estimación.',
+            'productos': productos,
+            'maestros': [],
+            'sugerencias': ['Agregar otro producto', 'Volver al resumen del proyecto'],
+        }
+
+    agregado = _producto_publico(solicitado)
+    texto_producto = _texto_normalizado(
+        f'{solicitado.nombre} {solicitado.categoria} {solicitado.uso_recomendado}'
+    )
+    es_herramienta = (
+        'herramienta' in _texto_normalizado(solicitado.categoria)
+        or any(nombre in texto_producto for nombre in (
+            'brocha', 'rodillo', 'taladro', 'sierra', 'martillo', 'lijadora',
+            'cinta metrica',
+        ))
+    )
+    agregado.update({
+        'rol': 'Herramienta opcional' if es_herramienta else 'Material agregado',
+        'carrito_cantidad': 1,
+        'es_opcional': es_herramienta,
+        'incluido_en_total': not es_herramienta,
+    })
+    productos.append(agregado)
+    mensaje_tipo = 'herramienta opcional' if es_herramienta else 'material'
+    return {
+        'tipo': 'seguimiento_estimacion',
+        'mensaje': (
+            f'Añadí {solicitado.nombre} como {mensaje_tipo} a la estimación actual. '
+            + (
+                'No modifica el total de materiales hasta que decidas incluirla.'
+                if es_herramienta else
+                'Su cantidad inicial es una unidad y puedes ajustarla antes de agregarla al carrito.'
+            )
+        ),
+        'productos': productos,
+        'maestros': [],
+        'sugerencias': ['Agregar otro producto', 'Volver al resumen del proyecto'],
+    }
+
+
 def _resolver_total_contextual(historial):
     """Recupera el último total ya calculado sin reconstruir el proyecto."""
     ultimo_total = None
@@ -3057,21 +3202,31 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             f'{producto.nombre} {producto.categoria} {producto.uso_recomendado}'
             for producto in materiales
         ))
+        consultas = []
         if any(termino in contexto for termino in (
             'techo', 'techumbre', 'zinc', 'teja', 'policarbonato', 'cubierta',
         )):
+            consultas.extend(['cinta metrica', 'taladro percutor'])
+        if any(termino in contexto for termino in ('madera', 'pino', 'tablero', 'melamina')):
+            consultas.extend(['cinta metrica', 'taladro percutor', 'sierra circular'])
+        if any(termino in contexto for termino in ('pintura', 'latex', 'esmalte', 'barniz')):
+            consultas.extend(['rodillo', 'brocha'])
+        if any(termino in contexto for termino in ('radier', 'hormigon', 'mortero', 'tierra')):
+            consultas.extend(['cinta metrica', 'pala'])
+        if not consultas:
             consultas = ['cinta metrica', 'taladro percutor']
-        elif any(termino in contexto for termino in ('madera', 'pino', 'tablero', 'melamina')):
-            consultas = ['cinta metrica', 'taladro percutor', 'sierra circular']
-        elif any(termino in contexto for termino in ('pintura', 'latex', 'esmalte', 'barniz')):
-            consultas = ['rodillo pintura', 'brocha pintura']
-        elif any(termino in contexto for termino in ('radier', 'hormigon', 'mortero', 'tierra')):
-            consultas = ['cinta metrica', 'pala']
-        else:
-            consultas = ['cinta metrica', 'taladro percutor']
+        consultas = list(dict.fromkeys(consultas))
 
         herramientas = []
         usadas = set()
+        usos_herramientas = {
+            'cinta metrica': 'Medir y marcar las dimensiones antes de cortar o montar.',
+            'taladro percutor': 'Perforar y colocar las fijaciones del proyecto.',
+            'sierra circular': 'Cortar madera o tableros a las medidas necesarias.',
+            'rodillo': 'Aplicar barniz o pintura uniformemente en superficies amplias.',
+            'brocha': 'Aplicar barniz o pintura en bordes, uniones y zonas de detalle.',
+            'pala': 'Mover y mezclar materiales para preparar la base del proyecto.',
+        }
         for consulta in consultas:
             herramienta = next((
                 producto for producto in _buscar_productos(consulta, limite=10)
@@ -3085,6 +3240,10 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
                 'rol': 'Herramienta opcional',
                 'carrito_cantidad': 1,
                 'es_opcional': True,
+                'detalle_material': usos_herramientas.get(
+                    consulta,
+                    'Apoyar la ejecución segura y precisa de esta etapa del proyecto.',
+                ),
             })
             herramientas.append(item)
             usadas.add(herramienta.pk)
@@ -3101,6 +3260,14 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
                     '\n'.join(f"• {herramienta['nombre']}" for herramienta in herramientas)
                     if herramientas
                     else 'No encontré herramientas compatibles con stock en SFI.'
+                )
+                + (
+                    '\n\nPARA QUÉ SE UTILIZA CADA UNA\n'
+                    + '\n'.join(
+                        f"- {herramienta['nombre']}: {herramienta['detalle_material']}"
+                        for herramienta in herramientas
+                    )
+                    if herramientas else ''
                 )
                 + (
                     f'\n\nCOSTO OPCIONAL\n{_formatear_clp(total_opcional)} CLP '
@@ -3243,7 +3410,10 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
     return None
 
 
-def procesar_consulta(mensaje, historial, productos_contexto=None, modo_consulta='auto'):
+def procesar_consulta(
+    mensaje, historial, productos_contexto=None, modo_consulta='auto',
+    estimacion_contexto=None,
+):
     situacion_cotidiana = _resolver_situacion_cotidiana(mensaje)
     if situacion_cotidiana:
         return situacion_cotidiana
@@ -3263,6 +3433,13 @@ def procesar_consulta(mensaje, historial, productos_contexto=None, modo_consulta
         return herramientas_iniciales
     texto_actual = _texto_normalizado(mensaje)
     contexto_ids = list(dict.fromkeys(productos_contexto or []))
+    agregado_estimacion = _resolver_agregado_estimacion(
+        mensaje,
+        productos_contexto or [],
+        estimacion_contexto or [],
+    )
+    if agregado_estimacion:
+        return agregado_estimacion
     referencia_singular = bool(re.search(
         r'\b(?:ese|esa|aquel|aquella|el producto|la opcion)\b',
         texto_actual,

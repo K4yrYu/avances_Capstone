@@ -8,6 +8,16 @@ class MensajeHistorialSerializer(serializers.Serializer):
     content = serializers.CharField(min_length=1, max_length=4000, trim_whitespace=True)
 
 
+class ProductoContextoSerializer(serializers.Serializer):
+    id = serializers.IntegerField(min_value=1)
+    carrito_cantidad = serializers.IntegerField(min_value=1, max_value=10000, required=False)
+    cantidad_requerida = serializers.FloatField(min_value=0, max_value=100000, required=False)
+    rol = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    detalle_material = serializers.CharField(max_length=500, required=False, allow_blank=True)
+    es_opcional = serializers.BooleanField(required=False)
+    incluido_en_total = serializers.BooleanField(required=False)
+
+
 class ConsultaAsistenteSerializer(serializers.Serializer):
     mensaje = serializers.CharField(min_length=2, max_length=700, trim_whitespace=True)
     modo_consulta = serializers.ChoiceField(
@@ -22,6 +32,11 @@ class ConsultaAsistenteSerializer(serializers.Serializer):
         default=list,
         max_length=18,
     )
+    estimacion_contexto = ProductoContextoSerializer(
+        many=True,
+        required=False,
+        default=list,
+    )
 
     def validate_historial(self, value):
         if len(value) > 10:
@@ -30,6 +45,12 @@ class ConsultaAsistenteSerializer(serializers.Serializer):
 
     def validate_productos_contexto(self, value):
         return list(dict.fromkeys(value))
+
+    def validate_estimacion_contexto(self, value):
+        unicos = {}
+        for item in value[:18]:
+            unicos.setdefault(item['id'], item)
+        return list(unicos.values())
 
 
 class ConfiguracionFotoPinturaSerializer(ConsultaAsistenteSerializer):

@@ -127,7 +127,25 @@ def _preguntas_guiadas(faltantes, proyecto=''):
         pregunta = faltante.strip().lstrip("¿").rstrip("?.")
         clave = _normalizar(pregunta)
         lineas.extend(["", f"{indice}. {pregunta.upper()}"])
-        if "material" in clave and "estado" in clave and "estructura" in clave:
+        if (
+            any(termino in contexto for termino in ("mueble", "gabinete"))
+            and "tipo" in clave
+            and "mueble" in clave
+        ):
+            lineas.extend([
+                "• Indica su función: clóset, escritorio, estante, mueble de cocina, baño, TV u otro.",
+                "• Si no conoces el nombre, explica qué necesitas guardar o hacer en él.",
+                "• El tipo no se elegirá automáticamente porque define su estructura y herrajes.",
+            ])
+        elif (
+            any(termino in contexto for termino in ("mueble", "gabinete"))
+            and "material" in clave
+        ):
+            lineas.extend([
+                "• Puedes elegir melamina, MDF, terciado, pino u otro material disponible.",
+                "• Si no tienes preferencia, escribe “elige tú el material” y compararé opciones compatibles.",
+            ])
+        elif "material" in clave and "estado" in clave and "estructura" in clave:
             lineas.extend([
                 "• Indica si la estructura es de madera, metal, hormigón u otro material.",
                 "• Señala si está firme y reutilizable, necesita reparación o será reemplazada.",
@@ -250,9 +268,9 @@ def _sugerencias_respuesta(proyecto, faltantes):
         ]
     if any(termino in contexto for termino in ("mueble", "repisa", "estante", "gabinete")):
         return [
-            "El espacio mide 120 × 80 × 35 cm; elige tú el material",
-            "Son medidas del mueble terminado y el ambiente es interior seco",
-            "No sé identificar el material; describiré su color y textura",
+            "Necesito un clóset para guardar ropa; el espacio mide 120 × 200 × 55 cm",
+            "Quiero un escritorio; el espacio mide 120 × 75 × 60 cm",
+            "Necesito un estante para libros; elige tú el material",
         ]
     if any(termino in contexto for termino in ("cerco", "reja", "cierre", "porton")):
         return [
@@ -272,6 +290,33 @@ def _sugerencias_respuesta(proyecto, faltantes):
         "Elige tú las preferencias no críticas con productos disponibles",
         "No sé identificarlo; describiré lo que veo",
     ]
+
+
+def _es_proyecto_mueble(proyecto):
+    contexto = _normalizar(proyecto)
+    return any(termino in contexto for termino in (
+        'mueble', 'closet', 'ropero', 'armario', 'escritorio', 'estante',
+        'repisero', 'biblioteca', 'rack', 'zapatero', 'velador', 'cajonera',
+        'despensa',
+    ))
+
+
+def _tiene_tipo_mueble(proyecto):
+    """Distingue el uso funcional del material o del adjetivo 'estándar'."""
+    contexto = _normalizar(proyecto)
+    tipos = (
+        'closet', 'ropero', 'armario', 'escritorio', 'estante', 'repisero',
+        'biblioteca', 'rack', 'televisor', 'zapatero', 'velador', 'cajonera',
+        'comoda', 'despensa', 'mueble de cocina', 'mueble cocina',
+        'mueble de bano', 'mueble bano', 'mueble lavamanos', 'vanitorio',
+        'mesa de trabajo', 'meson de trabajo',
+    )
+    usos = (
+        'guardar ropa', 'guardar zapatos', 'guardar libros', 'guardar vajilla',
+        'organizar cocina', 'trabajar', 'estudiar', 'para la television',
+        'para tv',
+    )
+    return any(termino in contexto for termino in (*tipos, *usos))
 
 
 def _extraer_tareas(datos):
@@ -317,7 +362,7 @@ def _extraer_tareas(datos):
             break
 
     herramientas = (
-        _lista_textos(datos.get("herramientas_proyecto"), 3, 80)
+        _lista_textos(datos.get("herramientas_proyecto"), 6, 80)
         if datos.get("incluir_herramientas") is True
         else []
     )
@@ -639,6 +684,43 @@ def resolver_proyecto_generico(
         datos.get("_proyecto_estandar") is True
         or datos.get("modo_orientacion") == "propuesta_estandar"
     )
+    if _es_proyecto_mueble(proyecto):
+        faltantes_mueble = []
+        if not _tiene_tipo_mueble(proyecto):
+            faltantes_mueble.append("Tipo y uso del mueble")
+        try:
+            dimensiones_mueble = (
+                int(datos.get("ancho_cm") or 0),
+                int(datos.get("alto_cm") or 0),
+                int(datos.get("fondo_cm") or 0),
+            )
+        except (TypeError, ValueError):
+            dimensiones_mueble = (0, 0, 0)
+        if not all(dimensiones_mueble):
+            faltantes_mueble.append(
+                "Dimensiones del espacio disponible (ancho, alto y fondo)"
+            )
+        if faltantes_mueble:
+            lineas = [
+                "PROYECTO",
+                proyecto,
+                "",
+                "ANTES DE RECOMENDAR PRODUCTOS",
+                "Necesito definir la función y el tamaño antes de seleccionar materiales o herrajes.",
+                *_preguntas_guiadas(faltantes_mueble, proyecto),
+                "",
+                "RESPONDE TODO EN UN MENSAJE",
+                "Con esos datos prepararé una propuesta estándar sin inventar el tipo de mueble.",
+            ]
+            return {
+                "tipo": "aclaracion_proyecto",
+                "mensaje": "\n".join(lineas),
+                "productos": [],
+                "maestros": [],
+                "sugerencias": _sugerencias_respuesta(
+                    proyecto, faltantes_mueble,
+                )[:3],
+            }
     if datos_faltantes_iniciales and not modo_estandar:
         proyecto_normalizado = _normalizar(proyecto)
         es_piso = any(

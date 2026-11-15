@@ -32,12 +32,15 @@ def api_consultar_asistente(request):
     entrada = ConsultaAsistenteSerializer(data=request.data)
     entrada.is_valid(raise_exception=True)
     try:
-        resultado = procesar_consulta(
+        argumentos = [
             entrada.validated_data['mensaje'],
             entrada.validated_data['historial'],
             entrada.validated_data['productos_contexto'],
             entrada.validated_data['modo_consulta'],
-        )
+        ]
+        if entrada.validated_data['estimacion_contexto']:
+            argumentos.append(entrada.validated_data['estimacion_contexto'])
+        resultado = procesar_consulta(*argumentos)
     except AsistenteNoDisponible as exc:
         return Response(
             {'detail': str(exc), 'configuracion_pendiente': not bool(settings.GEMINI_API_KEY)},

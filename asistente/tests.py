@@ -2047,6 +2047,64 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertIn('120 × 80 × 35 cm', resultado['mensaje'])
         self.assertNotIn('3 × 4 metros', resultado['mensaje'])
 
+    def test_mueble_estandar_no_inventa_tipo_ni_muestra_productos(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Fabricar mueble de melamina estándar',
+            '_proyecto_estandar': True,
+            'tareas_proyecto': [{
+                'nombre': 'Fabricación',
+                'busquedas': ['plancha melamina blanca 18 mm'],
+            }],
+            'datos_faltantes_proyecto': [],
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('TIPO Y USO DEL MUEBLE', resultado['mensaje'])
+        self.assertIn('ANCHO, ALTO Y FONDO', resultado['mensaje'])
+        self.assertIn('clóset', resultado['mensaje'])
+        self.assertNotIn('PRODUCTOS POR ETAPA', resultado['mensaje'])
+
+    def test_estandar_no_se_confunde_con_referencia_esta(self):
+        from .services.asistente_sfi import _aplicar_contexto_productos
+
+        datos = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Fabricar mueble de melamina estándar',
+        }
+        resultado = _aplicar_contexto_productos(
+            datos,
+            'Quiero un mueble de melamina estándar',
+            [self.madera.pk, self.tornillos.pk],
+        )
+
+        self.assertEqual(resultado['intencion'], 'planificar_proyecto')
+        self.assertNotIn('_contexto_ambiguo', resultado)
+
+    def test_mueble_estandar_con_tipo_y_tres_medidas_puede_avanzar(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Escritorio estándar de melamina',
+            '_proyecto_estandar': True,
+            'ancho_cm': 120,
+            'alto_cm': 75,
+            'fondo_cm': 60,
+            'tareas_proyecto': [{
+                'nombre': 'Cuerpo del escritorio',
+                'busquedas': ['plancha melamina blanca 18 mm'],
+                'usos_materiales': [{
+                    'busqueda': 'plancha melamina blanca 18 mm',
+                    'uso': 'Formar la cubierta y los apoyos del escritorio.',
+                }],
+            }],
+            'datos_faltantes_proyecto': [],
+        })
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertTrue(resultado['productos'])
+        self.assertNotIn('TIPO Y USO DEL MUEBLE', resultado['mensaje'])
+
     def test_historial_acepta_respuesta_guiada_mayor_a_700_caracteres(self):
         serializer = ConsultaAsistenteSerializer(data={
             'mensaje': '3 x 4 y hormigón',
@@ -3907,3 +3965,86 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
         self.assertEqual(resultado['productos'], [])
         self.assertIn('altura de la estructura nueva', resultado['mensaje'].casefold())
+
+    def test_agregar_herramienta_conserva_estimacion_y_no_duplica(self):
+        tablero = Producto.objects.create(
+            nombre='Tablero comedor prueba', descripcion='Madera para mesa.',
+            precio=29990, stock=10, categoria='Maderas', activo=True,
+        )
+        brocha = Producto.objects.create(
+            nombre='Brocha multipropósito 2 pulgadas prueba',
+            descripcion='Aplicación de barniz.', precio=3990, stock=20,
+            categoria='Herramientas', activo=True,
+        )
+        contexto = [{
+            'id': tablero.pk,
+            'carrito_cantidad': 2,
+            'cantidad_requerida': 2,
+            'rol': 'Estructura principal',
+            'detalle_material': 'Dos tableros para la cubierta.',
+            'es_opcional': False,
+            'incluido_en_total': True,
+        }]
+
+        resultado = procesar_consulta(
+            'Agrégame una brocha a la lista, eso faltó',
+            [],
+            [tablero.pk],
+            'auto',
+            contexto,
+        )
+
+        self.assertEqual(resultado['tipo'], 'seguimiento_estimacion')
+        self.assertEqual(resultado['productos'][0]['id'], tablero.pk)
+        self.assertIn('brocha', resultado['productos'][1]['nombre'].casefold())
+        self.assertEqual(resultado['productos'][0]['carrito_cantidad'], 2)
+        self.assertEqual(resultado['productos'][1]['rol'], 'Herramienta opcional')
+        self.assertTrue(resultado['productos'][1]['es_opcional'])
+        self.assertFalse(resultado['productos'][1]['incluido_en_total'])
+
+        brocha_agregada_id = resultado['productos'][1]['id']
+
+        repetido = procesar_consulta(
+            'Añade la brocha a la estimación',
+            [],
+            [tablero.pk, brocha_agregada_id],
+            'auto',
+            [*contexto, {'id': brocha_agregada_id, 'carrito_cantidad': 1}],
+        )
+        self.assertEqual(len(repetido['productos']), 2)
+        self.assertIn('ya se encuentra incluido', repetido['mensaje'])
+
+    def test_herramientas_de_madera_con_barniz_incluyen_brocha(self):
+        madera = Producto.objects.create(
+            nombre='Pino mesa prueba', descripcion='Madera dimensionada.',
+            precio=4990, stock=20, categoria='Maderas', activo=True,
+        )
+        barniz = Producto.objects.create(
+            nombre='Barniz madera prueba', descripcion='Terminación protectora.',
+            precio=8990, stock=20, categoria='Pinturas', activo=True,
+        )
+        for nombre in (
+            'Cinta métrica herramienta prueba',
+            'Taladro percutor herramienta prueba',
+            'Sierra circular herramienta prueba',
+            'Brocha pintura herramienta prueba',
+        ):
+            Producto.objects.create(
+                nombre=nombre, descripcion='Herramienta de prueba.',
+                precio=5990, stock=10, categoria='Herramientas', activo=True,
+            )
+
+        from .services.asistente_sfi import _resolver_accion_seguimiento
+        resultado = _resolver_accion_seguimiento(
+            '¿Qué herramientas necesito para este proyecto?',
+            [madera.pk, barniz.pk],
+        )
+
+        nombres = [item['nombre'].casefold() for item in resultado['productos']]
+        self.assertTrue(any('brocha' in nombre for nombre in nombres))
+        self.assertTrue(any('sierra' in nombre for nombre in nombres))
+        self.assertTrue(all(
+            item.get('detalle_material')
+            for item in resultado['productos']
+        ))
+        self.assertIn('Aplicar barniz o pintura', resultado['mensaje'])
