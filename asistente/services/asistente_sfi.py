@@ -72,6 +72,7 @@ def _texto_normalizado(valor):
     correcciones_accion = {
         'neceisto': 'necesito',
         'nesecito': 'necesito',
+        'quje': 'que',
         'quieor': 'quiero',
         'maetsro': 'maestro',
         'profecional': 'profesional',
@@ -165,6 +166,9 @@ def _dimensiones_rectangulares_cm(texto):
 def _contiene_medida(texto, medida):
     numero = re.match(r'\d+(?:\.\d+)?', medida)
     unidad = medida[len(numero.group(0)):]
+    # La consulta normaliza decimales a punto, pero las fichas pueden haber
+    # sido cargadas con coma. Ambas formas representan la misma medida.
+    patron_numero = re.escape(numero.group(0)).replace(r'\.', r'[.,]')
     unidades_equivalentes = {
         'm': ('m', 'mt', 'mts', 'metro', 'metros'),
         'mt': ('m', 'mt', 'mts', 'metro', 'metros'),
@@ -177,7 +181,7 @@ def _contiene_medida(texto, medida):
     }
     opciones = unidades_equivalentes.get(unidad, (unidad,))
     return any(
-        re.search(rf'(?<!\w){re.escape(numero.group(0))}\s*{re.escape(opcion)}\b', texto)
+        re.search(rf'(?<!\w){patron_numero}\s*{re.escape(opcion)}\b', texto)
         for opcion in opciones
     )
 
@@ -1586,6 +1590,9 @@ FAMILIAS_ESTRICTAS_BUSQUEDA = {
     'perno': ('perno', 'bulon'),
     'latex': ('latex',),
     'oleo': ('oleo',),
+    # Cuando se pregunta por el material, la cubierta es prioritaria frente a
+    # sus perfiles, sellos, tornillos o elementos de protección.
+    'policarbonato': ('policarbonato',),
 }
 
 ACCESORIOS_POR_FAMILIA = {
@@ -1594,6 +1601,10 @@ ACCESORIOS_POR_FAMILIA = {
     'sanitario': (
         'tubo', 'codo', 'tee', 'sifon', 'adhesivo', 'valvula', 'flexible',
         'conexion', 'fitting', 'manguito', 'reduccion', 'cemento',
+    ),
+    'policarbonato': (
+        'perfil', 'sellador', 'silicona', 'tornillo', 'golilla', 'lente',
+        'visor', 'cinta', 'remate',
     ),
 }
 
@@ -1645,6 +1656,11 @@ def _buscar_productos(consulta, limite=6):
         'valores', 'tiene', 'tienen', 'sale', 'salen', 'costo', 'costos',
         'bajo', 'hasta', 'menos', 'maximo', 'maxima', 'tope', 'luca', 'lucas',
         'mil', 'pesos', 'clp', 'quiero', 'necesito',
+        # Conectores propios de una pregunta por función. Se descartan para
+        # que la búsqueda se concentre en la necesidad real: "qué sirve para
+        # tapar grietas" debe consultar "tapar grietas", no la palabra sirve.
+        'sirve', 'sirven', 'sirva', 'funcion', 'funciona', 'funcionan',
+        'uso', 'usar', 'utiliza', 'utilizar', 'puedo', 'podria',
     }
     singulares_busqueda = {
         'pinturas': 'pintura',
@@ -2478,6 +2494,228 @@ def resolver_interpretacion(datos):
     }
 
 
+def _texto_normalizado_pregunta_uso(texto):
+    """Normaliza errores frecuentes sin alterar el nombre del producto."""
+    texto = _texto_normalizado(texto)
+    correcciones = {
+        'pa': 'para',
+        'pra': 'para',
+        'praa': 'para',
+        'q': 'que',
+        'qe': 'que',
+        'ke': 'que',
+        'k': 'que',
+        'quue': 'que',
+        'sirbe': 'sirve',
+        'serbe': 'sirve',
+        'sirvee': 'sirve',
+        'sirben': 'sirven',
+        'sirvenn': 'sirven',
+        'funsion': 'funcion',
+        'funccion': 'funcion',
+        'utilisa': 'utiliza',
+        'utilisan': 'utilizan',
+    }
+    for origen, destino in correcciones.items():
+        texto = re.sub(rf'\b{re.escape(origen)}\b', destino, texto)
+    return texto
+
+
+def _pregunta_uso_producto(texto):
+    """Detecta consultas sobre la función de una ficha, no una nueva búsqueda."""
+    texto = _texto_normalizado_pregunta_uso(texto)
+    return bool(re.search(
+        r'\b(?:para que sirve(?:n)?|cual es su funcion|cuales son sus funciones|'
+        r'que funcion cumple(?:n)?|para que se usa(?:n)?|para que se utiliza(?:n)?|'
+        r'como se usa(?:n)?|cual es el uso|que uso tiene(?:n)?|para que se ocupa(?:n)?|'
+        r'que es|que hace(?:n)?)\b',
+        texto,
+    ))
+
+
+def _consulta_sin_pregunta_de_uso(mensaje):
+    """Obtiene el nombre del producto de una pregunta como «X para qué sirve» ."""
+    texto = _texto_normalizado_pregunta_uso(mensaje)
+    texto = re.sub(
+        r'\b(?:para que sirve(?:n)?|cual es su funcion|cuales son sus funciones|'
+        r'que funcion cumple(?:n)?|para que se usa(?:n)?|para que se utiliza(?:n)?|'
+        r'como se usa(?:n)?|cual es el uso|que uso tiene(?:n)?|para que se ocupa(?:n)?|'
+        r'que es|que hace(?:n)?)\b',
+        ' ', texto,
+    )
+    return ' '.join(texto.split(' ?¿.,;:'))
+
+
+def _producto_mencionado_para_uso(consulta, productos):
+    """Selecciona una ficha cuando el cliente escribió un nombre reconocible.
+
+    La búsqueda puede traer accesorios de la misma familia (por ejemplo, tubo y
+    tee junto a un gotero). Para una pregunta de uso, el nombre expreso del
+    cliente debe prevalecer sobre esos resultados relacionados.
+    """
+    productos = list(productos or [])
+    consulta = _texto_normalizado(consulta).strip()
+    if not consulta or not productos:
+        return productos
+
+    nombres = {
+        producto.pk: _texto_normalizado(producto.nombre).strip()
+        for producto in productos
+    }
+    exactos = [producto for producto in productos if nombres[producto.pk] == consulta]
+    if len(exactos) == 1:
+        return exactos
+
+    contenidos = [
+        producto for producto in productos
+        if consulta in nombres[producto.pk] or nombres[producto.pk] in consulta
+    ]
+    if len(contenidos) == 1:
+        return contenidos
+
+    # Para una familia de material (p. ej. "policarbonato"), una consulta de
+    # uso debe explicar una cubierta real y no un accesorio asociado. Si hay
+    # varias cubiertas válidas, la primera ya viene ordenada por la búsqueda
+    # local y se usa como representante de la familia.
+    _, _, familia, _ = _filtros_explicitos_busqueda(consulta)
+    accesorios = ACCESORIOS_POR_FAMILIA.get(familia, ())
+    principales = [
+        producto for producto in productos
+        if familia and not any(
+            re.search(rf'\b{re.escape(accesorio)}\w*', nombres[producto.pk])
+            for accesorio in accesorios
+        )
+    ]
+    if principales:
+        return principales[:1]
+
+    palabras = set(re.findall(r'[a-z0-9]+', consulta))
+    if not palabras:
+        return productos
+    puntajes = []
+    for producto in productos:
+        palabras_nombre = set(re.findall(r'[a-z0-9]+', nombres[producto.pk]))
+        comunes = len(palabras & palabras_nombre)
+        cobertura = comunes / len(palabras)
+        puntajes.append((cobertura, comunes, producto))
+    puntajes.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    if not puntajes:
+        return productos
+    mejor_cobertura, mejor_comunes, mejor_producto = puntajes[0]
+    segundo_comunes = puntajes[1][1] if len(puntajes) > 1 else -1
+    if mejor_cobertura >= 0.65 and mejor_comunes > segundo_comunes:
+        return [mejor_producto]
+    return productos
+
+
+def _orientacion_de_uso_gemini(producto):
+    """Obtiene una explicación pedagógica sin reemplazar la ficha SFI.
+
+    Gemini puede orientar sobre el uso general, pero los atributos verificables
+    del producto siempre se muestran desde la base de datos local. Si el modelo
+    no está disponible, una pregunta simple sobre un producto no debe fallar.
+    """
+    datos_verificados = {
+        'nombre': producto.nombre,
+        'categoria': producto.categoria,
+        'descripcion': producto.descripcion,
+        'uso_recomendado': producto.uso_recomendado,
+        'ambiente_uso': producto.get_ambiente_uso_display(),
+        'superficies_compatibles': producto.superficies_compatibles_display,
+        'especificaciones': producto.especificaciones or {},
+    }
+    solicitud = (
+        'Explica de manera breve y útil para un cliente el uso general del '
+        'siguiente producto. Complementa la ficha, pero no inventes propiedades, '
+        'compatibilidades, rendimiento, precios, stock, normas ni instrucciones '
+        'de instalación. Si falta un dato, indica que debe verificarse. No '
+        'recomiendes productos distintos.\n\n'
+        f'FICHA VERIFICADA SFI: {datos_verificados}'
+    )
+    try:
+        respuesta = interpretar_con_gemini(solicitud, [], [producto.pk])
+    except GeminiNoDisponible:
+        return ''
+    orientacion = ' '.join(str((respuesta or {}).get('respuesta') or '').split())
+    # Evita agregar salidas vacías o respuestas de clasificación que no ayudan
+    # a entender el artículo.
+    return orientacion[:520] if len(orientacion) >= 20 else ''
+
+
+def _respuesta_uso_producto(productos):
+    """Forma una respuesta de uso desde fichas reales, sin repetir tarjetas."""
+    productos = list(productos or [])
+    if len(productos) != 1:
+        return None
+
+    producto = productos[0]
+    uso = ' '.join(
+        str(producto.uso_recomendado or producto.descripcion or '').split()
+    )[:360]
+    if not uso:
+        uso = (
+            f'Es un producto de {producto.categoria}. Revisa su ficha técnica y '
+            'compatibilidad antes de usarlo.'
+        )
+    detalle_ficha = []
+    descripcion = ' '.join(str(producto.descripcion or '').split())[:300]
+    if descripcion and descripcion.casefold() != uso.casefold():
+        detalle_ficha.append(f'• Descripción: {descripcion}')
+
+    ambiente = producto.get_ambiente_uso_display()
+    if producto.ambiente_uso and producto.ambiente_uso != 'no_aplica':
+        detalle_ficha.append(f'• Ambiente de uso: {ambiente}.')
+
+    superficies = producto.superficies_compatibles_display
+    if superficies:
+        detalle_ficha.append(
+            f'• Superficies compatibles: {", ".join(superficies)}.'
+        )
+
+    preparaciones = [str(item).strip() for item in (producto.preparaciones_recomendadas or [])]
+    preparaciones = [item for item in preparaciones if item]
+    if preparaciones:
+        detalle_ficha.append(
+            f'• Preparación indicada: {"; ".join(preparaciones[:3])}.'
+        )
+
+    especificaciones = producto.especificaciones or {}
+    datos_tecnicos = []
+    if isinstance(especificaciones, dict):
+        for clave, valor in especificaciones.items():
+            if valor in (None, '', [], {}):
+                continue
+            if isinstance(valor, (list, tuple)):
+                valor = ', '.join(str(item) for item in valor)
+            datos_tecnicos.append(f'{clave}: {valor}')
+            if len(datos_tecnicos) == 4:
+                break
+    if datos_tecnicos:
+        detalle_ficha.append(
+            f'• Datos técnicos: {" · ".join(datos_tecnicos)}.'
+        )
+    orientacion_gemini = _orientacion_de_uso_gemini(producto)
+    return {
+        'tipo': 'uso_producto',
+        'mensaje': '\n'.join([
+            'PARA QUÉ SIRVE',
+            '',
+            producto.nombre,
+            uso,
+            *(['', 'FICHA DEL PRODUCTO', *detalle_ficha] if detalle_ficha else []),
+            *(['', 'ORIENTACIÓN DEL ASISTENTE', orientacion_gemini]
+              if orientacion_gemini else []),
+        ]),
+        'productos': [],
+        'maestros': [],
+        'sugerencias': [
+            'Qué herramienta necesito para aplicarlo',
+            'Cómo preparo la superficie',
+            'Ver productos compatibles',
+        ],
+    }
+
+
 def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
     """Explica las tarjetas actuales sin reinterpretar ni reconstruir el proyecto."""
     ids = list(dict.fromkeys(productos_contexto or []))[:18]
@@ -2494,13 +2732,14 @@ def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
         r'seleccion\w*|recomiend\w*)\b',
         texto,
     ))
+    pide_uso = _pregunta_uso_producto(mensaje)
     ultimo_asistente = next((
         _texto_normalizado(item.get('content'))
         for item in reversed(historial)
         if item.get('role') == 'assistant'
     ), '')
     responde_ambiguedad = 'a cual de los productos mostrados' in ultimo_asistente
-    if not pide_motivo and not responde_ambiguedad:
+    if not pide_motivo and not pide_uso and not responde_ambiguedad:
         return None
 
     encontrados = {
@@ -2508,6 +2747,32 @@ def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
         for producto in Producto.objects.filter(pk__in=ids, activo=True)
     }
     productos = [encontrados[pk] for pk in ids if pk in encontrados]
+    if pide_uso:
+        consulta = _consulta_sin_pregunta_de_uso(mensaje)
+        productos = _producto_mencionado_para_uso(consulta, productos)
+        palabras_consulta = set(re.findall(r'[a-z0-9]+', consulta))
+        if palabras_consulta and len(productos) > 1:
+            coincidencias = [
+                producto for producto in productos
+                if palabras_consulta & set(re.findall(
+                    r'[a-z0-9]+', _texto_normalizado(producto.nombre),
+                ))
+            ]
+            if len(coincidencias) == 1:
+                productos = coincidencias
+        respuesta_uso = _respuesta_uso_producto(productos)
+        if respuesta_uso:
+            return respuesta_uso
+        return {
+            'tipo': 'aclaracion_producto',
+            'mensaje': (
+                'Puedo explicarte para qué sirve cada producto. Indica su nombre '
+                'o su posición en las tarjetas mostradas.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': ['El primero', 'El segundo', 'Muéstrame las tarjetas'],
+        }
     if responde_ambiguedad and not pide_motivo:
         palabras = set(re.findall(r'[a-z0-9]+', texto))
         coincidencias = [
@@ -3219,6 +3484,13 @@ def _resolver_herramienta_por_tarea(mensaje):
 def _resolver_producto_breve(mensaje):
     """Trata una frase nominal corta como producto, no como proyecto completo."""
     texto = _texto_normalizado(mensaje)
+    if _pregunta_uso_producto(mensaje):
+        consulta = _consulta_sin_pregunta_de_uso(mensaje)
+        productos = _buscar_productos(consulta, limite=3) if consulta else []
+        productos = _producto_mencionado_para_uso(consulta, productos)
+        respuesta_uso = _respuesta_uso_producto(productos)
+        if respuesta_uso:
+            return respuesta_uso
     palabras = re.findall(r'\b\w+\b', texto)
     if not (1 <= len(palabras) <= 7):
         return None
@@ -3237,6 +3509,31 @@ def _resolver_producto_breve(mensaje):
     return resolver_interpretacion({
         'intencion': 'buscar_producto',
         'consulta_producto': mensaje.strip().rstrip(' ?'),
+    })
+
+
+def _resolver_busqueda_por_funcion(mensaje):
+    """Busca opciones por la necesidad descrita, aunque no haya un producto."""
+    texto = _texto_normalizado(mensaje)
+    coincidencia = re.search(
+        r'\b(?:que|cual)\s+(?:sirve|sirva|funciona|funcione)\s+para\s+(.+)',
+        texto,
+    )
+    if not coincidencia:
+        return None
+    necesidad = coincidencia.group(1).strip(' ?¿.,;:')
+    if not necesidad or len(necesidad.split()) > 8:
+        return None
+    productos = _buscar_productos(necesidad)
+    if not productos:
+        return None
+    return resolver_interpretacion({
+        'intencion': 'buscar_producto',
+        'consulta_producto': necesidad,
+        'respuesta': (
+            'La búsqueda se realizó por la función que necesitas, usando los '
+            'usos y descripciones disponibles en las fichas de SFI.'
+        ),
     })
 
 
@@ -3742,6 +4039,9 @@ def procesar_consulta(
     gotera_directa = _resolver_gotera_con_cubierta_identificada(mensaje, historial)
     if gotera_directa:
         return gotera_directa
+    busqueda_por_funcion = _resolver_busqueda_por_funcion(mensaje)
+    if busqueda_por_funcion:
+        return busqueda_por_funcion
     situacion_cotidiana = _resolver_situacion_cotidiana(mensaje)
     if situacion_cotidiana:
         return situacion_cotidiana

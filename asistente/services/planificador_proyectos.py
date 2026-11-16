@@ -182,6 +182,22 @@ _EQUIVALENCIAS_FUNCIONALES_CATALOGO = (
         ('picota acero 2,5 kg mango fibra',),
     ),
     (
+        ('tijera', 'podar'),
+        ('tijera de poda bypass 8 pulgadas',),
+    ),
+    (
+        ('tijeras', 'podar'),
+        ('tijera de poda bypass 8 pulgadas',),
+    ),
+    (
+        ('amarras', 'jardin'),
+        ('amarras plasticas para jardin 20 cm pack 50',),
+    ),
+    (
+        ('amarras', 'plantas'),
+        ('amarras plasticas para jardin 20 cm pack 50',),
+    ),
+    (
         ('puerta', 'exterior', 'bodega'),
         ('puerta exterior de acero 80 x 200 cm',),
     ),
@@ -332,6 +348,29 @@ def _producto_incompatible_con_gas(producto):
         'sanitario', 'inodoro', 'lavamanos', 'lavaplatos', 'ducha',
         'sifon', 'desague', 'wc ',
     ))
+
+
+def _es_herramienta_equivalente_ya_elegida(candidato, productos_elegidos):
+    """Evita repetir herramientas de la misma familia en etapas distintas.
+
+    Un plan puede separar "Herramientas" y "Herramientas recomendadas". Si
+    ambas búsquedas recuperan dos palas, al cliente le basta con la mejor
+    coincidencia: no se deben presentar como herramientas diferentes.
+    """
+    familias = (
+        'pala', 'tijera', 'serrucho', 'taladro', 'sierra', 'martillo',
+        'picota', 'barreta', 'rastrillo', 'llana', 'espatula', 'cortatubo',
+        'alicate', 'destornillador', 'nivel', 'cinta metrica',
+    )
+    nombre_candidato = _normalizar(candidato.nombre)
+    familia = next((familia for familia in familias if familia in nombre_candidato), None)
+    if not familia:
+        return False
+
+    return any(
+        familia in _normalizar(producto.get('nombre'))
+        for producto in productos_elegidos
+    )
 
 
 def _lista_textos(valores, maximo, limite=100):
@@ -1452,6 +1491,9 @@ def resolver_proyecto_generico(
                 candidato for candidato in candidatos
                 if (
                     candidato.pk not in productos_usados
+                    and not _es_herramienta_equivalente_ya_elegida(
+                        candidato, productos,
+                    )
                     and candidato.stock > 0
                     and any(
                         _coincidencia_suficiente(candidato, consulta_catalogo)
@@ -1459,6 +1501,16 @@ def resolver_proyecto_generico(
                     )
                 )
             ]
+            # Ya se mostró una herramienta equivalente (por ejemplo una pala)
+            # desde otra etapa. No la declares como faltante ni la repitas.
+            if (
+                not disponibles
+                and any(
+                    _es_herramienta_equivalente_ya_elegida(candidato, productos)
+                    for candidato in candidatos
+                )
+            ):
+                continue
             hay_medidas = any((superficie_m2, superficie_planta, superficie_muros))
             producto = max(
                 disponibles,

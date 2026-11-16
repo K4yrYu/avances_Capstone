@@ -115,6 +115,18 @@ SINONIMOS: dict[str, tuple[str, ...]] = {
     'pala':             ('pala', 'punta'),
     'picota':           ('picota', 'jardinera'),
     'carretilla':       ('carretilla', 'acero'),
+    # Palanca manual para remover tierra compacta, piedras o demoler. En Chile
+    # suele pedirse como "chuzo" o "barretín", aunque el catálogo la nombra
+    # como barreta.
+    'chuzo':            ('barreta', 'acero'),
+    'barretin':         ('barreta', 'acero'),
+    'palanca fierro':   ('barreta', 'acero'),
+    'palanca acero':    ('barreta', 'acero'),
+    'fierro palanca':   ('barreta', 'acero'),
+    'amarras jardin':   ('amarras', 'plantas'),
+    'amarras plantas':  ('amarras', 'plantas'),
+    'sujetar plantas':  ('amarras', 'plantas'),
+    'amarrar tutor':    ('amarras', 'plantas'),
 
     # ── Gasfitería / grifería ──
     'grifo':            ('combinacion', 'lavaplatos', 'monomando'),
@@ -156,6 +168,18 @@ SINONIMOS: dict[str, tuple[str, ...]] = {
     'sello humedad':    ('membrana', 'impermeable'),
     'sellante':         ('silicona',),
     'sellar':           ('silicona',),
+    # Necesidades de reparación de superficie. Permiten buscar por el
+    # problema del cliente aun cuando no conozca el nombre comercial.
+    'tapar':            ('pasta', 'retape', 'masilla'),
+    'resanar':          ('pasta', 'retape', 'masilla'),
+    'grieta':           ('pasta', 'retape', 'masilla'),
+    'grietas':          ('pasta', 'retape', 'masilla'),
+    'agujero':          ('pasta', 'retape', 'masilla'),
+    'agujeros':         ('pasta', 'retape', 'masilla'),
+    'filtracion':       ('sellador', 'silicona', 'membrana'),
+    'filtraciones':     ('sellador', 'silicona', 'membrana'),
+    'gotera':           ('sellador', 'silicona', 'membrana'),
+    'goteras':          ('sellador', 'silicona', 'membrana'),
 
     # ── Madera ──
     'tabla':            ('pino', 'dimensionado', 'tablero'),

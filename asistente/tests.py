@@ -3023,6 +3023,201 @@ class PlanificadorGenericoProyectosTests(TestCase):
             self.assertIn(producto.nombre, resultado['mensaje'])
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_pregunta_para_que_sirve_usa_la_ficha_del_producto(self, interpretar):
+        interpretar.return_value = {
+            'respuesta': (
+                'Úsala en reparaciones interiores pequeñas y respeta la preparación '
+                'indicada en la ficha antes de aplicar el acabado final.'
+            ),
+        }
+        producto = Producto.objects.create(
+            nombre='Pasta de retape de prueba 1 kg',
+            descripcion='Producto de prueba para muros interiores.',
+            uso_recomendado=(
+                'Rellenar grietas, agujeros e imperfecciones pequeñas en muros '
+                'interiores antes de lijar y pintar.'
+            ),
+            precio=4990,
+            stock=12,
+            categoria='Adhesivos',
+            especificaciones={'Uso': 'Interior', 'Aplicación': 'Espátula'},
+            activo=True,
+        )
+
+        resultado_inicial = procesar_consulta(
+            'Pasta de retape de prueba 1 kg para quje sirve?', [],
+        )
+        resultado_contextual = procesar_consulta(
+            'Cual es su funcion?', [], [producto.id],
+        )
+        resultado_plural = procesar_consulta(
+            'Pasta de retape de prueba 1 kg para que sirven?', [],
+        )
+        resultado_con_errores = procesar_consulta(
+            'Pasta de retape de prueba 1 kg pa q sirbe', [],
+        )
+        resultado_que_es = procesar_consulta(
+            'Pasta de retape de prueba 1 kg que es', [],
+        )
+
+        for resultado in (
+            resultado_inicial, resultado_contextual, resultado_plural,
+            resultado_con_errores, resultado_que_es,
+        ):
+            self.assertEqual(resultado['tipo'], 'uso_producto')
+            self.assertIn('PARA QUÉ SIRVE', resultado['mensaje'])
+            self.assertIn(producto.nombre, resultado['mensaje'])
+            self.assertIn('Rellenar grietas', resultado['mensaje'])
+            self.assertIn('FICHA DEL PRODUCTO', resultado['mensaje'])
+            self.assertIn('Aplicación: Espátula', resultado['mensaje'])
+            self.assertIn('ORIENTACIÓN DEL ASISTENTE', resultado['mensaje'])
+            self.assertEqual(resultado['productos'], [])
+
+        self.assertEqual(interpretar.call_count, 5)
+
+    def test_pregunta_de_uso_prioriza_el_nombre_exacto_sobre_accesorios(self):
+        from .services.asistente_sfi import _producto_mencionado_para_uso
+
+        gotero = Producto.objects.create(
+            nombre='Gotero regulable prueba pack 10',
+            descripcion='Entrega agua de forma localizada.',
+            precio=3990,
+            stock=20,
+            categoria='Jardinería',
+            activo=True,
+        )
+        accesorio = Producto.objects.create(
+            nombre='Tee para riego por goteo prueba pack 10',
+            descripcion='Conector para ramales de riego.',
+            precio=3490,
+            stock=20,
+            categoria='Jardinería',
+            activo=True,
+        )
+
+        seleccion = _producto_mencionado_para_uso(
+            'Gotero regulable prueba pack 10', [gotero, accesorio],
+        )
+
+        self.assertEqual(seleccion, [gotero])
+
+    def test_pregunta_de_uso_policarbonato_prioriza_cubierta_sobre_accesorios(self):
+        from .services.asistente_sfi import _producto_mencionado_para_uso
+
+        cubierta = Producto.objects.create(
+            nombre='Policarbonato alveolar de prueba 6 mm',
+            descripcion='Cubierta liviana para exteriores.',
+            precio=32990,
+            stock=12,
+            categoria='Construcción',
+            activo=True,
+        )
+        perfil = Producto.objects.create(
+            nombre='Perfil U para policarbonato de prueba',
+            descripcion='Accesorio de terminación.',
+            precio=6490,
+            stock=12,
+            categoria='Construcción',
+            activo=True,
+        )
+        lentes = Producto.objects.create(
+            nombre='Lentes de seguridad policarbonato de prueba',
+            descripcion='Protección visual.',
+            precio=3490,
+            stock=12,
+            categoria='Herramientas',
+            activo=True,
+        )
+
+        seleccion = _producto_mencionado_para_uso(
+            'policarbonato', [perfil, lentes, cubierta],
+        )
+
+        self.assertEqual(seleccion, [cubierta])
+
+    def test_busqueda_respeta_medidas_decimales_con_coma_en_ficha(self):
+        from .services.asistente_sfi import _buscar_productos
+
+        producto = Producto.objects.create(
+            nombre='Policarbonato ondulado de prueba 0,8 mm 0,90 x 2,80 m',
+            descripcion='Cubierta liviana para exteriores.',
+            uso_recomendado='Cubiertas livianas con pendiente adecuada.',
+            precio=22990,
+            stock=10,
+            categoria='Construcción',
+            activo=True,
+        )
+
+        resultados = _buscar_productos(
+            'Policarbonato ondulado de prueba 0,8 mm 0,90 x 2,80 m', limite=20,
+        )
+
+        self.assertIn(producto, resultados)
+
+    def test_busqueda_por_funcion_encuentra_producto_sin_conocer_su_nombre(self):
+        producto = Producto.objects.create(
+            nombre='Pasta de retape funcional 1 kg',
+            descripcion='Rellena grietas y pequeñas imperfecciones en muros interiores.',
+            uso_recomendado='Preparar muros interiores antes de lijar y pintar.',
+            precio=4990,
+            stock=12,
+            categoria='Adhesivos',
+            activo=True,
+        )
+
+        resultado = procesar_consulta('¿Qué sirve para tapar grietas?', [])
+
+        self.assertEqual(resultado['tipo'], 'productos')
+        self.assertIn(producto.id, [item['id'] for item in resultado['productos']])
+
+    def test_chuzo_y_barretin_encuentran_la_barreta_del_catalogo(self):
+        from .services.asistente_sfi import _buscar_productos
+
+        barreta = Producto.objects.create(
+            nombre='Barreta de acero de prueba 1,2 m',
+            descripcion='Palanca manual para remover tierra o piedras.',
+            precio=15990,
+            stock=10,
+            categoria='Herramientas',
+            activo=True,
+        )
+
+        for consulta in ('chuzo', 'barretin'):
+            resultados = _buscar_productos(consulta)
+            self.assertIn(barreta, resultados)
+
+    def test_tutor_reconoce_tijera_de_poda_y_no_duplica_palas(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Tutor para plantas',
+            'modo_orientacion': 'propuesta_estandar',
+            'tareas_proyecto': [
+                {
+                    'nombre': 'Preparación y soporte',
+                    'busquedas': ['tutor bambu 1,2 m pack 10'],
+                },
+                {
+                    'nombre': 'Herramientas',
+                    'busquedas': ['pala punta acero mango fibra', 'tijeras de podar'],
+                },
+                {
+                    'nombre': 'Herramientas recomendadas',
+                    'busquedas': ['pala punta huevo mango fibra'],
+                },
+            ],
+            'herramientas_proyecto': [],
+            'datos_faltantes_proyecto': [],
+        })
+
+        nombres = [producto['nombre'].casefold() for producto in resultado['productos']]
+        self.assertTrue(any('tijera de poda' in nombre for nombre in nombres))
+        self.assertEqual(sum('pala ' in nombre for nombre in nombres), 1)
+        self.assertFalse(any(
+            'tijeras de podar' in faltante.casefold()
+            for faltante in resultado['faltantes_catalogo']
+        ))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_bodega_estandar_completa_etapas_y_declara_faltantes(self, interpretar):
         interpretar.return_value = {
             'intencion': 'planificar_proyecto',
