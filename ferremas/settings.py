@@ -240,9 +240,11 @@ PASSWORD_RESET_TIMEOUT = 7200
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash-lite').strip()
 try:
-    GEMINI_TIMEOUT_SECONDS = max(5, min(int(os.getenv('GEMINI_TIMEOUT_SECONDS', '25')), 60))
+    # Un proyecto puede requerir una respuesta estructurada extensa. Se da más
+    # tiempo al modelo sin dejar una petición web abierta indefinidamente.
+    GEMINI_TIMEOUT_SECONDS = max(10, min(int(os.getenv('GEMINI_TIMEOUT_SECONDS', '45')), 90))
 except ValueError:
-    GEMINI_TIMEOUT_SECONDS = 25
+    GEMINI_TIMEOUT_SECONDS = 45
 try:
     GEMINI_IMAGE_TIMEOUT_SECONDS = max(
         15,

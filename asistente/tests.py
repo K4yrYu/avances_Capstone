@@ -18,8 +18,37 @@ from .services.asistente_sfi import (
 )
 from .serializers import ConsultaAsistenteSerializer
 from .services.cliente_gemini import cliente_gemini
-from .services.gemini import GeminiNoDisponible, _instrucciones, interpretar_con_gemini
+from .services.gemini import (
+    GeminiNoDisponible, _catalogo_compacto, _instrucciones, interpretar_con_gemini,
+    _solicitar_gemini_con_reintentos,
+)
 from .services.sinonimos_ferreteros import expandir_consulta
+
+
+class CatalogoGeminiReducidoTests(TestCase):
+    def test_catalogo_compacto_envia_solo_candidatos_relevantes(self):
+        Producto.objects.create(
+            nombre='Membrana impermeable para techumbre prueba',
+            descripcion='Reparación de filtraciones y goteras en cubierta.',
+            precio=9990,
+            stock=12,
+            categoria='Construcción',
+            activo=True,
+        )
+        Producto.objects.create(
+            nombre='Taladro no relacionado prueba',
+            descripcion='Herramienta general.',
+            precio=20000,
+            stock=12,
+            categoria='Herramientas',
+            activo=True,
+        )
+
+        catalogo = _catalogo_compacto('Quiero reparar una gotera en el techo')
+
+        self.assertLessEqual(len(catalogo), 60)
+        nombres = ' '.join(item['nombre'].casefold() for item in catalogo)
+        self.assertIn('membrana impermeable', nombres)
 
 
 class AsistenteSfiTests(TestCase):
@@ -1910,6 +1939,154 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertIn('también se usan para completar', resultado['mensaje'])
         self.assertIn('instalador eléctrico autorizado', resultado['mensaje'])
 
+    def test_pergola_madera_sobre_radier_cubre_estructura_sombra_y_proteccion(self):
+        for indice, nombre in enumerate((
+            'Perno anclaje expansión M12 x 120 mm pack 4',
+            'Pino dimensionado 2 x 4 pulgadas x 3,2 m',
+            'Pino dimensionado 2 x 6 pulgadas x 3,20 m',
+            'Tornillo estructural para madera 6 x 100 mm pack 50',
+            'Escuadra metálica reforzada 50 x 50 mm pack 4',
+            'Malla raschel sombra 80% verde rollo 2 x 10 m',
+            'Barniz al agua para madera satinado 1 litro',
+        ), start=1):
+            Producto.objects.create(
+                sku=f'PERGOLA-PRUEBA-{indice}', nombre=nombre,
+                descripcion='Producto para propuesta de pérgola.', precio=1000 + indice,
+                stock=10, categoria='Construcción', activo=True,
+            )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Construcción de pérgola de madera 3 x 4 metros para dar sombra',
+            'tareas_proyecto': [], 'herramientas_proyecto': [],
+            'datos_faltantes_proyecto': [],
+        })
+
+        roles = {producto['rol'] for producto in resultado['productos']}
+        nombres = ' '.join(producto['nombre'].casefold() for producto in resultado['productos'])
+        self.assertTrue({
+            'Anclaje de pilares', 'Pilares y vigas de madera',
+            'Uniones estructurales', 'Sombra y protección',
+        }.issubset(roles))
+        self.assertIn('malla raschel', nombres)
+        self.assertIn('barniz', nombres)
+
+    def test_pergola_desde_cero_agrega_fundaciones_y_no_reporta_madera_faltante(self):
+        for indice, nombre in enumerate((
+            'Base estabilizada para radier saco 25 kg',
+            'Hormigón predosificado H20 saco 25 kg',
+            'Clavo corriente 4 pulgadas (1 kg)',
+            'Pino dimensionado 2 x 4 pulgadas x 3,2 m',
+            'Pino dimensionado 2 x 6 pulgadas x 3,20 m',
+        ), start=1):
+            Producto.objects.create(
+                sku=f'PERGOLA-CERO-{indice}', nombre=nombre,
+                descripcion='Material para propuesta de pérgola desde cero.',
+                precio=1000 + indice, stock=10, categoria='Construcción', activo=True,
+            )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Construcción de pérgola estándar',
+            'material_principal_proyecto': 'madera dimensionada',
+            '_proyecto_estandar': True,
+            '_parte_desde_cero': True,
+            'tareas_proyecto': [], 'herramientas_proyecto': [],
+            'datos_faltantes_proyecto': [],
+        })
+
+        roles = {producto['rol'] for producto in resultado['productos']}
+        nombres = ' '.join(producto['nombre'].casefold() for producto in resultado['productos'])
+        faltantes = ' '.join(resultado['faltantes_catalogo']).casefold()
+        self.assertIn('Fundaciones de pilares', roles)
+        self.assertIn('Herramientas recomendadas', roles)
+        self.assertIn('base estabilizada', nombres)
+        self.assertIn('hormigón predosificado', nombres)
+        self.assertIn('pino dimensionado', nombres)
+        self.assertNotIn('madera dimensionada', faltantes)
+
+    def test_bodega_desde_cero_con_luz_agrega_fundaciones_e_iluminacion(self):
+        for indice, nombre in enumerate((
+            'Base estabilizada para radier saco 25 kg',
+            'Hormigón predosificado H20 saco 25 kg',
+            'Polietileno construcción 200 micras 4 x 25 m',
+            'Portalámpara E27 sobrepuesto blanco',
+            'Ampolleta LED E27 9 W luz neutra',
+            'Interruptor simple 10 A 250 V blanco',
+            'Cable eléctrico 1,5 mm² rollo 100 m',
+            'Conduit PVC eléctrico 20 mm x 3 m',
+        ), start=1):
+            Producto.objects.create(
+                sku=f'BODEGA-LUZ-{indice}', nombre=nombre,
+                descripcion='Material para bodega exterior con luz interior.',
+                precio=1000 + indice, stock=10, categoria='Construcción', activo=True,
+            )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Construcción bodega exterior estándar de 3 x 4 metros',
+            '_proyecto_estandar': True,
+            '_parte_desde_cero': True,
+            '_contexto_usuario': 'parto desde cero, suelo de tierra y quiero una luz interior',
+            'tareas_proyecto': [], 'herramientas_proyecto': [],
+            'datos_faltantes_proyecto': [],
+        })
+
+        roles = {producto['rol'] for producto in resultado['productos']}
+        nombres = ' '.join(producto['nombre'].casefold() for producto in resultado['productos'])
+        self.assertIn('Preparación y fundaciones', roles)
+        self.assertIn('Iluminación interior', roles)
+        self.assertIn('portalámpara', nombres)
+        self.assertIn('ampolleta', nombres)
+        self.assertIn('interruptor simple', nombres)
+
+    def test_componente_generico_de_gemini_se_traduce_a_producto_real_catalogo(self):
+        Producto.objects.create(
+            sku='PINO-EQUIV-PRUEBA',
+            nombre='Pino dimensionado 2 x 4 pulgadas x 3,2 m',
+            descripcion='Madera estructural para pilares y vigas.',
+            precio=8990, stock=12, categoria='Construcción', activo=True,
+        )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Estructura liviana de madera',
+            'tareas_proyecto': [{
+                'nombre': 'Estructura',
+                'busquedas': ['madera dimensionada'],
+                'usos_materiales': ['Formar pilares y vigas principales.'],
+            }],
+            'herramientas_proyecto': [], 'datos_faltantes_proyecto': [],
+        })
+
+        nombres = ' '.join(producto['nombre'].casefold() for producto in resultado['productos'])
+        self.assertIn('pino dimensionado', nombres)
+        self.assertNotIn('madera dimensionada', ' '.join(resultado['faltantes_catalogo']).casefold())
+
+    def test_zinc_ondulado_de_gemini_encuentra_plancha_zinc_acanalado_del_catalogo(self):
+        Producto.objects.create(
+            sku='ZINC-EQUIV-PRUEBA',
+            nombre='Plancha zinc acanalado 0,35 mm x 3 m',
+            descripcion='Cubierta metálica para techumbre.',
+            precio=15990, stock=12, categoria='Construcción', activo=True,
+        )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Cobertizo de madera',
+            'tareas_proyecto': [{
+                'nombre': 'Cubierta',
+                'busquedas': ['plancha de zinc ondulado'],
+                'usos_materiales': ['Cubrir la techumbre del cobertizo.'],
+            }],
+            'herramientas_proyecto': [], 'datos_faltantes_proyecto': [],
+        })
+
+        nombres = ' '.join(producto['nombre'].casefold() for producto in resultado['productos'])
+        faltantes = ' '.join(resultado['faltantes_catalogo']).casefold()
+        self.assertIn('plancha zinc acanalado', nombres)
+        self.assertNotIn('zinc ondulado', faltantes)
+
     def test_instrucciones_exigen_lenguaje_natural_y_prudente_para_todos(self):
         instrucciones = _instrucciones()
 
@@ -2031,9 +2208,25 @@ class PlanificadorGenericoProyectosTests(TestCase):
             'https://generativelanguage.googleapis.com/'
         )
 
-        self.assertEqual(adaptador.max_retries.total, 2)
+        self.assertEqual(adaptador.max_retries.total, 0)
         self.assertIn(503, adaptador.max_retries.status_forcelist)
         self.assertIn('POST', adaptador.max_retries.allowed_methods)
+
+    @patch('asistente.services.gemini.time.sleep')
+    @patch('asistente.services.gemini.cliente_gemini.post')
+    def test_gemini_reintenta_con_espera_progresiva(self, post, dormir):
+        temporal = Mock(status_code=503)
+        exitosa = Mock(status_code=200)
+        post.side_effect = [temporal, exitosa]
+
+        respuesta = _solicitar_gemini_con_reintentos(
+            'https://generativelanguage.googleapis.com/v1beta/models/prueba:generateContent',
+            headers={'x-goog-api-key': 'clave'}, payload={}, timeout=45,
+        )
+
+        self.assertIs(respuesta, exitosa)
+        self.assertEqual(post.call_count, 2)
+        dormir.assert_called_once_with(2)
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_filtracion_desconocida_en_lavaplatos_pide_diagnostico(self, interpretar):
@@ -3533,6 +3726,44 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertIn('unión cobre', nombres)
         self.assertIn('válvula corte gas', nombres)
         self.assertNotIn('sanitario', nombres)
+
+    def test_luz_exterior_con_sensor_prioriza_luminaria_y_no_asume_automatico(self):
+        for nombre, categoria in (
+            ('Aplique LED exterior IP65 12 W', 'Iluminación'),
+            ('Sensor movimiento exterior 180 grados', 'Electricidad'),
+            ('Conduit PVC eléctrico 20 mm x 3 m', 'Electricidad'),
+            ('Cable eléctrico 1,5 mm² rollo 100 m', 'Electricidad'),
+            ('Caja estanca eléctrica 100 x 100 mm', 'Electricidad'),
+            ('Kit fijación para hormigón y ladrillo pack 10', 'Ferretería'),
+            ('Taladro percutor de prueba', 'Herramientas'),
+            ('Alicate universal aislado de prueba', 'Herramientas'),
+            ('Interruptor automático 16 A curva C', 'Electricidad'),
+            ('Enchufe exterior estanco 16 A con tapa', 'Electricidad'),
+        ):
+            Producto.objects.create(
+                nombre=nombre,
+                descripcion='Producto de prueba.',
+                precio=5990,
+                stock=20,
+                categoria=categoria,
+                activo=True,
+            )
+
+        resultado = _resolver_proyecto({
+            'proyecto': 'Instalación de luz exterior con sensor de movimiento',
+            'tareas_proyecto': [],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': [],
+        })
+
+        nombres = ' '.join(item['nombre'].casefold() for item in resultado['productos'])
+        self.assertIn('aplique led exterior', nombres)
+        self.assertIn('sensor movimiento exterior', nombres)
+        self.assertIn('conduit pvc', nombres)
+        self.assertIn('caja estanca', nombres)
+        self.assertNotIn('interruptor automático', nombres)
+        self.assertNotIn('enchufe exterior', nombres)
+        self.assertIn('electricista autorizado', resultado['mensaje'])
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_techumbre_recomienda_cubierta_si_usuario_delega_eleccion(self, interpretar):

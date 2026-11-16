@@ -110,8 +110,8 @@ SITUACIONES = (
     {
         'codigo': 'filtracion_techo', 'tipo': 'aclaracion',
         'patrones': (
-            r'\b(?:techo|techumbre)\b.{0,35}\b(?:filtra|filtracion|gotea|pasa agua|entra agua)',
-            r'\b(?:filtra|filtracion|gotea|pasa agua|entra agua)\b.{0,35}\b(?:techo|techumbre)',
+            r'\b(?:techo|techumbre)\b.{0,35}\b(?:gotera(?:s)?|filtra|filtracion|gotea|pasa agua|entra agua)',
+            r'\b(?:gotera(?:s)?|filtra|filtracion|gotea|pasa agua|entra agua)\b.{0,35}\b(?:techo|techumbre)',
         ),
         'contexto': 'La filtración puede provenir de la cubierta, una unión o el drenaje',
         'preguntas': ('¿La cubierta es zinc, policarbonato, teja u otro material?',

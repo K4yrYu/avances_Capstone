@@ -12,6 +12,190 @@ MAX_ESPECIALIDADES = 3
 MAX_MAESTROS = 5
 
 
+# Gemini puede describir correctamente la función de un componente usando un
+# nombre genérico, mientras que el catálogo lo comercializa con otra familia o
+# medida. Estos equivalentes NO crean productos: solo abren búsquedas locales
+# adicionales antes de decidir que el componente no está disponible.
+_EQUIVALENCIAS_FUNCIONALES_CATALOGO = (
+    (
+        ('madera', 'dimensionada'),
+        ('pino dimensionado 2 x 4 pulgadas', 'pino dimensionado 2 x 6 pulgadas'),
+    ),
+    (
+        ('madera', 'estructural'),
+        ('pino dimensionado 2 x 4 pulgadas', 'tablero OSB estructural'),
+    ),
+    (
+        ('fijacion', 'madera'),
+        ('tornillo estructural para madera', 'escuadra metalica reforzada'),
+    ),
+    (
+        ('tornillo', 'madera'),
+        ('tornillo estructural para madera', 'tornillos para madera'),
+    ),
+    (
+        ('anclaje', 'hormigon'),
+        ('perno anclaje expansion M12 x 120 mm', 'kit fijacion para hormigon y ladrillo'),
+    ),
+    (
+        ('sombra',),
+        ('malla raschel sombra 80%', 'policarbonato alveolar'),
+    ),
+    (
+        ('cubierta', 'sombra'),
+        ('malla raschel sombra 80%', 'policarbonato alveolar'),
+    ),
+    (
+        ('zinc', 'ondulado'),
+        ('plancha zinc acanalado 0,35 mm x 3 m',),
+    ),
+    (
+        ('zinc', 'galvanizado'),
+        ('plancha zinc acanalado 0,35 mm x 3 m',),
+    ),
+    (
+        ('sellado', 'techumbre'),
+        ('cinta butilica impermeable', 'tapagoteras acrilico impermeabilizante'),
+    ),
+    (
+        ('sellador', 'techo'),
+        ('cinta butilica impermeable', 'tapagoteras acrilico impermeabilizante'),
+    ),
+    (
+        ('canalizacion', 'electrica'),
+        ('conduit PVC electrico 20 mm', 'caja estanca electrica'),
+    ),
+    (
+        ('proteccion', 'electrica'),
+        ('interruptor automatico 16 A curva C', 'interruptor diferencial 25 A 30 mA'),
+    ),
+    (
+        ('conexion', 'agua'),
+        ('flexible agua HI-HI 1/2 pulgada', 'cinta PTFE teflon'),
+    ),
+    # Techumbre, madera y construcción.
+    (
+        ('lamina', 'zinc'),
+        ('plancha zinc acanalado 0,35 mm x 3 m',),
+    ),
+    (
+        ('techo', 'metalico'),
+        ('plancha zinc acanalado 0,35 mm x 3 m',),
+    ),
+    (
+        ('malla', 'sombra'),
+        ('malla raschel sombra 80%',),
+    ),
+    (
+        ('protector', 'madera'),
+        ('impregnante protector madera exterior', 'barniz al agua para madera'),
+    ),
+    (
+        ('cemento', 'radier'),
+        ('hormigon predosificado H20 saco 25 kg', 'base estabilizada para radier'),
+    ),
+    (
+        ('malla', 'radier'),
+        ('malla electrosoldada C92 panel 2,6 x 5 m',),
+    ),
+    # Redes de agua, gasfitería y riego.
+    (
+        ('llave', 'paso', 'gas'),
+        ('valvula corte gas bronce 1/2 pulgada',),
+    ),
+    (
+        ('llave', 'paso', 'agua'),
+        ('valvula bola bronce 1/2 pulgada',),
+    ),
+    (
+        ('teflon',),
+        ('cinta PTFE teflon 12 mm x 12 m',),
+    ),
+    (
+        ('manguera', 'goteo'),
+        ('manguera riego por goteo 16 mm x 25 m',),
+    ),
+    (
+        ('tubo', 'riego'),
+        ('tubo polietileno para riego 16 mm x 50 m',),
+    ),
+    (
+        ('emisor', 'riego'),
+        ('gotero regulable para riego por goteo pack 10',),
+    ),
+    # Electricidad: palabras habituales de clientes para los productos reales.
+    (
+        ('toma', 'corriente'),
+        ('enchufe doble embutido 16 A blanco',),
+    ),
+    (
+        ('tomacorriente',),
+        ('enchufe doble embutido 16 A blanco',),
+    ),
+    (
+        ('breaker',),
+        ('interruptor automatico 16 A curva C',),
+    ),
+    (
+        ('termica',),
+        ('interruptor automatico 16 A curva C',),
+    ),
+    (
+        ('automatico', 'tablero'),
+        ('interruptor automatico 16 A curva C',),
+    ),
+    (
+        ('proteccion', 'diferencial'),
+        ('interruptor diferencial 25 A 30 mA',),
+    ),
+    (
+        ('empalme', 'electrico'),
+        ('conector rapido electrico 3 polos pack 10', 'caja estanca electrica 100 x 100 mm'),
+    ),
+    # Terminaciones, herramientas y jardín.
+    (
+        ('pasta', 'muro'),
+        ('pasta muro interior saco 15 kg',),
+    ),
+    (
+        ('retape',),
+        ('pasta de retape interior 1 kg',),
+    ),
+    (
+        ('espaciar', 'ceramica'),
+        ('separadores para ceramica 3 mm pack 100',),
+    ),
+    (
+        ('junta', 'ceramica'),
+        ('frague flexible gris bolsa 2 kg',),
+    ),
+    (
+        ('sacar', 'tierra'),
+        ('pala punta huevo mango fibra',),
+    ),
+    (
+        ('mover', 'hojas'),
+        ('rastrillo plastico para hojas 22 dientes',),
+    ),
+    (
+        ('picar', 'piedra'),
+        ('picota acero 2,5 kg mango fibra',),
+    ),
+    (
+        ('puerta', 'exterior', 'bodega'),
+        ('puerta exterior de acero 80 x 200 cm',),
+    ),
+    (
+        ('bisagra', 'reforzada', 'puerta'),
+        ('bisagra puerta acero zincado 3 pulgadas',),
+    ),
+    (
+        ('barrera', 'humedad', 'solera'),
+        ('polietileno construccion 200 micras 4 x 25 m',),
+    ),
+)
+
+
 def _normalizar(valor):
     texto = unicodedata.normalize("NFKD", str(valor or "").casefold())
     return " ".join(
@@ -41,6 +225,31 @@ def _palabras_consulta(consulta):
         'amarilla': 'amarillo',
     }
     return [equivalencias.get(palabra, palabra) for palabra in palabras]
+
+
+def _consultas_catalogo_equivalentes(consulta):
+    """Devuelve búsquedas reales para un componente funcional de Gemini."""
+    normalizada = _normalizar(consulta)
+    resultado = [consulta]
+    for claves, equivalentes in _EQUIVALENCIAS_FUNCIONALES_CATALOGO:
+        if all(clave in normalizada for clave in claves):
+            resultado.extend(equivalentes)
+    return _lista_textos(resultado, 5, 80)
+
+
+def _separar_componentes_compuestos(componentes):
+    """Separa solo combinaciones frecuentes que son productos distintos."""
+    resultado = []
+    for componente in componentes:
+        normalizado = _normalizar(componente)
+        if 'pala' in normalizado and 'carretilla' in normalizado:
+            resultado.extend([
+                'pala punta huevo mango fibra',
+                'carretilla acero 90 L rueda neumatica',
+            ])
+            continue
+        resultado.append(componente)
+    return _lista_textos(resultado, 8, 80)
 
 
 def _textos_producto(producto):
@@ -352,7 +561,9 @@ def _extraer_tareas(datos):
         if not isinstance(tarea, dict):
             continue
         nombre = _texto_seguro(tarea.get("nombre"), 100)
-        busquedas = _lista_textos(tarea.get("busquedas"), 5, 80)
+        busquedas = _separar_componentes_compuestos(
+            _lista_textos(tarea.get("busquedas"), 5, 80)
+        )
         usos = {}
         for indice, item in enumerate(tarea.get("usos_materiales") or []):
             if isinstance(item, dict):
@@ -392,6 +603,7 @@ def _extraer_tareas(datos):
         if datos.get("incluir_herramientas") is True or es_propuesta_estandar
         else []
     )
+    herramientas = _separar_componentes_compuestos(herramientas)
     herramientas = herramientas[:max(0, MAX_BUSQUEDAS - total_busquedas)]
     if herramientas:
         tareas = tareas[:max(0, MAX_TAREAS - 1)]
@@ -432,8 +644,10 @@ def resolver_proyecto_generico(
     """Convierte un plan libre de Gemini en resultados verificados por Django."""
     proyecto = _texto_seguro(datos.get("proyecto"), 120)
     tareas = _extraer_tareas(datos)
+    contexto_usuario = _normalizar(datos.get('_contexto_usuario'))
     contexto_inicial = _normalizar(" ".join([
         proyecto,
+        contexto_usuario,
         *(busqueda for tarea in tareas for busqueda in tarea.get("busquedas", [])),
     ]))
     es_porton_automatico = (
@@ -474,6 +688,24 @@ def resolver_proyecto_generico(
             or 'estandar' in _normalizar(proyecto)
         )
     )
+    es_pergola_estandar = (
+        'pergola' in contexto_inicial
+        and not es_intervencion_acotada
+        and (
+            datos.get('_proyecto_estandar') is True
+            or datos.get('modo_orientacion') == 'propuesta_estandar'
+            or 'estandar' in _normalizar(proyecto)
+        )
+    )
+    # Para una pérgola estándar la alternativa inicial es de madera, incluso
+    # si el cliente aún no nombra el material. Así la propuesta sirve como guía
+    # completa; el cliente puede luego pedir una alternativa metálica.
+    es_pergola_madera = (
+        'pergola' in contexto_inicial
+        and ('madera' in contexto_inicial or es_pergola_estandar)
+        and not es_intervencion_acotada
+    )
+    parte_desde_cero = datos.get('_parte_desde_cero') is True
     es_instalacion_gas_cocina = (
         'gas' in contexto_inicial
         and any(termino in contexto_inicial for termino in (
@@ -485,19 +717,46 @@ def resolver_proyecto_generico(
             or 'estandar' in contexto_proyecto
         )
     )
+    es_iluminacion_exterior_con_sensor = (
+        any(termino in contexto_inicial for termino in (
+            'luz exterior', 'luminaria exterior', 'foco exterior',
+            'aplique exterior', 'iluminacion exterior',
+        ))
+        and any(termino in contexto_inicial for termino in (
+            'sensor', 'movimiento', 'presencia',
+        ))
+    )
+    solicita_luz_interior_bodega = (
+        es_bodega_estandar
+        and any(termino in contexto_usuario for termino in (
+            'luz interior', 'iluminacion interior', 'lampara interior',
+            'ampolleta interior',
+        ))
+    )
     if es_bodega_estandar:
         # La bodega debe contemplar cerramiento, acceso, techumbre y aguas
         # lluvia. Los elementos ausentes se informarán como faltantes.
         tareas = [
+            *([{
+                'nombre': 'Preparación y fundaciones',
+                'busquedas': [
+                    'base estabilizada para radier saco 25 kg',
+                    'hormigon predosificado H20 saco 25 kg',
+                    'polietileno construccion 200 micras 4 x 25 m',
+                ],
+                'usos': {
+                    _normalizar('base estabilizada para radier saco 25 kg'): 'Preparar y nivelar el terreno antes de formar las fundaciones.',
+                    _normalizar('hormigon predosificado H20 saco 25 kg'): 'Formar dados o una base de hormigón para recibir la estructura.',
+                    _normalizar('polietileno construccion 200 micras 4 x 25 m'): 'Separar el hormigón de la humedad del terreno cuando corresponda.',
+                },
+            }] if parte_desde_cero else []),
             {
                 'nombre': 'Anclaje a la base',
                 'busquedas': [
                     'perno anclaje expansion M12 x 120 mm',
-                    'barrera humedad bajo solera',
                 ],
                 'usos': {
                     _normalizar('perno anclaje expansion M12 x 120 mm'): 'Fijar la estructura a la base firme de hormigón.',
-                    _normalizar('barrera humedad bajo solera'): 'Separar la solera inferior de la humedad del hormigón.',
                 },
             },
             {
@@ -547,7 +806,7 @@ def resolver_proyecto_generico(
                 'nombre': 'Acceso y seguridad',
                 'busquedas': [
                     'puerta exterior para bodega',
-                    'bisagra reforzada para puerta',
+                    'bisagra puerta acero zincado 3 pulgadas',
                     'cerradura exterior para puerta',
                 ],
                 'usos': {
@@ -556,6 +815,23 @@ def resolver_proyecto_generico(
                     _normalizar('cerradura exterior para puerta'): 'Asegurar el acceso a los elementos almacenados.',
                 },
             },
+            *([{
+                'nombre': 'Iluminación interior',
+                'busquedas': [
+                    'portalámpara E27 sobrepuesto blanco',
+                    'ampolleta LED E27 9 W luz neutra',
+                    'interruptor simple 10 A 250 V blanco',
+                    'cable eléctrico 1,5 mm² rollo 100 m',
+                    'conduit PVC eléctrico 20 mm x 3 m',
+                ],
+                'usos': {
+                    _normalizar('portalámpara E27 sobrepuesto blanco'): 'Sostener la ampolleta en el punto de iluminación interior.',
+                    _normalizar('ampolleta LED E27 9 W luz neutra'): 'Iluminar el interior de la bodega.',
+                    _normalizar('interruptor simple 10 A 250 V blanco'): 'Controlar el encendido de la luz desde un punto compatible.',
+                    _normalizar('cable eléctrico 1,5 mm² rollo 100 m'): 'Alimentar la luminaria desde un circuito dimensionado por personal competente.',
+                    _normalizar('conduit PVC eléctrico 20 mm x 3 m'): 'Proteger el cableado en su recorrido interior.',
+                },
+            }] if solicita_luz_interior_bodega else []),
             {
                 'nombre': 'Evacuación de aguas lluvia',
                 'busquedas': [
@@ -565,6 +841,82 @@ def resolver_proyecto_generico(
                 'usos': {
                     _normalizar('canaleta aguas lluvia'): 'Recoger el agua que cae desde la cubierta.',
                     _normalizar('bajada aguas lluvia PVC'): 'Conducir el agua desde la canaleta hasta la descarga.',
+                },
+            },
+        ]
+    if es_pergola_madera:
+        # Una pérgola de madera para sombra no debe depender de una lista
+        # incompleta del modelo: requiere estructura, anclaje, uniones,
+        # protección y una cubierta de sombra claramente separada.
+        tareas = [
+            *([{
+                'nombre': 'Fundaciones de pilares',
+                'busquedas': [
+                    'base estabilizada para radier saco 25 kg',
+                    'hormigon predosificado H20 saco 25 kg',
+                    'clavo corriente 4 pulgadas',
+                ],
+                'usos': {
+                    _normalizar('base estabilizada para radier saco 25 kg'): 'Preparar y nivelar la base de los dados que recibirán los pilares.',
+                    _normalizar('hormigon predosificado H20 saco 25 kg'): 'Formar los dados de hormigón para apoyar y fijar los pilares.',
+                    _normalizar('clavo corriente 4 pulgadas'): 'Armar moldajes temporales para los dados de hormigón cuando se requiera.',
+                },
+            }] if parte_desde_cero else []),
+            {
+                'nombre': 'Anclaje de pilares',
+                'busquedas': [
+                    'perno anclaje expansion M12 x 120 mm',
+                ],
+                'usos': {
+                    _normalizar('perno anclaje expansion M12 x 120 mm'): 'Fijar los soportes de los pilares al radier de hormigón.',
+                },
+            },
+            {
+                'nombre': 'Pilares y vigas de madera',
+                'busquedas': [
+                    'pino dimensionado 2 x 4 pulgadas x 3,2 m',
+                    'pino dimensionado 2 x 6 pulgadas x 3,20 m',
+                ],
+                'usos': {
+                    _normalizar('pino dimensionado 2 x 4 pulgadas x 3,2 m'): 'Formar pilares, costaneras y elementos secundarios de la estructura.',
+                    _normalizar('pino dimensionado 2 x 6 pulgadas x 3,20 m'): 'Formar vigas principales cuando el diseño y las cargas lo permitan.',
+                },
+            },
+            {
+                'nombre': 'Uniones estructurales',
+                'busquedas': [
+                    'tornillo estructural para madera 6 x 100 mm pack 50',
+                    'escuadra metalica reforzada 50 x 50 mm pack 4',
+                ],
+                'usos': {
+                    _normalizar('tornillo estructural para madera 6 x 100 mm pack 50'): 'Unir vigas y pilares de madera con una fijación estructural.',
+                    _normalizar('escuadra metalica reforzada 50 x 50 mm pack 4'): 'Reforzar los encuentros a 90 grados entre las piezas de madera.',
+                },
+            },
+            {
+                'nombre': 'Sombra y protección',
+                'busquedas': [
+                    'malla raschel sombra 80% verde rollo 2 x 10 m',
+                    'barniz al agua para madera satinado 1 litro',
+                ],
+                'usos': {
+                    _normalizar('malla raschel sombra 80% verde rollo 2 x 10 m'): 'Dar sombra sobre la pérgola dejando circular el aire.',
+                    _normalizar('barniz al agua para madera satinado 1 litro'): 'Proteger y terminar la madera expuesta del proyecto.',
+                },
+            },
+            {
+                'nombre': 'Herramientas recomendadas',
+                'busquedas': [
+                    'taladro percutor',
+                    'nivel de burbuja aluminio 60 cm',
+                    'sierra circular',
+                    'cinta metrica',
+                ],
+                'usos': {
+                    _normalizar('taladro percutor'): 'Perforar para los anclajes y preparar las fijaciones compatibles.',
+                    _normalizar('nivel de burbuja aluminio 60 cm'): 'Comprobar plomo y nivel antes de fijar pilares y vigas.',
+                    _normalizar('sierra circular'): 'Cortar las piezas de madera según las medidas definidas.',
+                    _normalizar('cinta metrica'): 'Trazar la ubicación de pilares y medir las piezas de la estructura.',
                 },
             },
         ]
@@ -618,6 +970,56 @@ def resolver_proyecto_generico(
                 ],
                 'usos': {
                     _normalizar('llave de cañeria ajustable 12 pulgadas'): 'Ajustar conexiones compatibles durante el montaje profesional.',
+                },
+            },
+        ]
+    if es_iluminacion_exterior_con_sensor:
+        # Una instalación exterior debe partir por la luminaria solicitada.
+        # No se asume un enchufe ni la capacidad del tablero: ambos dependen
+        # de cómo está resuelto el circuito existente.
+        tareas = [
+            {
+                'nombre': 'Luminaria y control',
+                'busquedas': [
+                    'aplique LED exterior IP65 12 W',
+                    'sensor movimiento exterior 180 grados',
+                ],
+                'usos': {
+                    _normalizar('aplique LED exterior IP65 12 W'): 'Iluminar el acceso o sector exterior expuesto a la intemperie.',
+                    _normalizar('sensor movimiento exterior 180 grados'): 'Encender la luminaria al detectar movimiento, cuando sea compatible con el circuito.',
+                },
+            },
+            {
+                'nombre': 'Canalización y conexión exterior',
+                'busquedas': [
+                    'conduit PVC electrico 20 mm x 3 m',
+                    'cable electrico 1,5 mm2 rollo 100 m',
+                    'caja estanca electrica 100 x 100 mm',
+                ],
+                'usos': {
+                    _normalizar('conduit PVC electrico 20 mm x 3 m'): 'Proteger el recorrido del cable en una instalación exterior.',
+                    _normalizar('cable electrico 1,5 mm2 rollo 100 m'): 'Conducir la energía hacia la luminaria según el circuito validado.',
+                    _normalizar('caja estanca electrica 100 x 100 mm'): 'Resguardar las uniones de cables frente a humedad y polvo.',
+                },
+            },
+            {
+                'nombre': 'Fijación',
+                'busquedas': [
+                    'kit fijacion para hormigon y ladrillo pack 10',
+                ],
+                'usos': {
+                    _normalizar('kit fijacion para hormigon y ladrillo pack 10'): 'Fijar la luminaria o su soporte a un muro firme.',
+                },
+            },
+            {
+                'nombre': 'Herramientas recomendadas',
+                'busquedas': [
+                    'taladro percutor',
+                    'alicate universal aislado',
+                ],
+                'usos': {
+                    _normalizar('taladro percutor'): 'Perforar el muro para instalar el soporte y la canalización.',
+                    _normalizar('alicate universal aislado'): 'Manipular conductores solo durante una intervención segura y desenergizada.',
                 },
             },
         ]
@@ -943,22 +1345,37 @@ def resolver_proyecto_generico(
                 if busquedas:
                     tareas_filtradas.append({**tarea, 'busquedas': busquedas})
             tareas = tareas_filtradas
-        candidatos_principales = _candidatos_directos(material_principal)
-        ids_principales = {producto.pk for producto in candidatos_principales}
-        candidatos_principales.extend(
-            producto for producto in buscar_productos(material_principal)
-            if producto.pk not in ids_principales
-        )
+        consultas_principales = _consultas_catalogo_equivalentes(material_principal)
+        candidatos_principales = []
+        coincidencias_principales = {}
+        for consulta_principal in consultas_principales:
+            directos = _candidatos_directos(consulta_principal)
+            ids_directos = {producto.pk for producto in directos}
+            for producto in [
+                *directos,
+                *(producto for producto in buscar_productos(consulta_principal)
+                  if producto.pk not in ids_directos),
+            ]:
+                if producto.pk not in coincidencias_principales:
+                    candidatos_principales.append(producto)
+                    coincidencias_principales[producto.pk] = []
+                coincidencias_principales[producto.pk].append(consulta_principal)
         principal_disponible = next((
             producto for producto in candidatos_principales
             if producto.stock > 0
-            and _coincidencia_suficiente(producto, material_principal)
+            and any(
+                _coincidencia_suficiente(producto, consulta_principal)
+                for consulta_principal in coincidencias_principales[producto.pk]
+            )
         ), None)
         if principal_disponible is None:
             material_principal_faltante = material_principal
         if not any(
-            _normalizar(material_principal) in _normalizar(busqueda)
-            or _normalizar(busqueda) in _normalizar(material_principal)
+            any(
+                _normalizar(consulta_principal) in _normalizar(busqueda)
+                or _normalizar(busqueda) in _normalizar(consulta_principal)
+                for consulta_principal in consultas_principales
+            )
             for tarea in tareas for busqueda in tarea["busquedas"]
         ):
             tareas.insert(0, {
@@ -991,12 +1408,21 @@ def resolver_proyecto_generico(
         texto_plan.append(tarea["nombre"])
         for consulta in tarea["busquedas"]:
             texto_plan.append(consulta)
-            candidatos = _candidatos_directos(consulta)
-            ids_candidatos = {producto.pk for producto in candidatos}
-            candidatos.extend(
-                producto for producto in buscar_productos(consulta)
-                if producto.pk not in ids_candidatos
-            )
+            consultas_catalogo = _consultas_catalogo_equivalentes(consulta)
+            candidatos = []
+            coincidencias_catalogo = {}
+            for consulta_catalogo in consultas_catalogo:
+                candidatos_directos = _candidatos_directos(consulta_catalogo)
+                ids_directos = {producto.pk for producto in candidatos_directos}
+                candidatos_consulta = candidatos_directos + [
+                    producto for producto in buscar_productos(consulta_catalogo)
+                    if producto.pk not in ids_directos
+                ]
+                for candidato in candidatos_consulta:
+                    if candidato.pk not in coincidencias_catalogo:
+                        candidatos.append(candidato)
+                        coincidencias_catalogo[candidato.pk] = []
+                    coincidencias_catalogo[candidato.pk].append(consulta_catalogo)
             if es_contexto_gas:
                 candidatos = [
                     candidato for candidato in candidatos
@@ -1027,14 +1453,20 @@ def resolver_proyecto_generico(
                 if (
                     candidato.pk not in productos_usados
                     and candidato.stock > 0
-                    and _coincidencia_suficiente(candidato, consulta)
+                    and any(
+                        _coincidencia_suficiente(candidato, consulta_catalogo)
+                        for consulta_catalogo in coincidencias_catalogo[candidato.pk]
+                    )
                 )
             ]
             hay_medidas = any((superficie_m2, superficie_planta, superficie_muros))
             producto = max(
                 disponibles,
                 key=lambda candidato: (
-                    _puntaje_directo(candidato, consulta),
+                    max(
+                        _puntaje_directo(candidato, consulta_catalogo)
+                        for consulta_catalogo in coincidencias_catalogo[candidato.pk]
+                    ),
                     int(bool(
                         hay_medidas
                         and candidato.informacion_tecnica_verificada
@@ -1048,7 +1480,13 @@ def resolver_proyecto_generico(
             if producto is None:
                 agotados = [
                     candidato for candidato in candidatos
-                    if candidato.stock <= 0 and _coincidencia_suficiente(candidato, consulta)
+                    if (
+                        candidato.stock <= 0
+                        and any(
+                            _coincidencia_suficiente(candidato, consulta_catalogo)
+                            for consulta_catalogo in coincidencias_catalogo[candidato.pk]
+                        )
+                    )
                 ]
                 if agotados:
                     sin_stock_detalle.append({
@@ -1381,6 +1819,13 @@ def resolver_proyecto_generico(
             "La hoja, el riel y las ruedas deben dimensionarse según el ancho, peso y recorrido "
             "real del portón. La alimentación, las protecciones y la puesta en servicio deben "
             "ser revisadas por un instalador eléctrico autorizado."
+        )
+    if es_iluminacion_exterior_con_sensor:
+        partes.append(
+            "CONEXIÓN ELÉCTRICA\n"
+            "La luminaria, el sensor y la canalización son una guía de materiales. "
+            "La conexión al circuito existente y la selección de sus protecciones deben "
+            "ser verificadas por un electricista autorizado."
         )
     if maestros:
         partes.append(f"También encontré {len(maestros)} maestro(s) aprobado(s) en {comuna}.")

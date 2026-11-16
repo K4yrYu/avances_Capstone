@@ -1,8 +1,11 @@
 import json
 import logging
+import re
+import time
 
 import requests
 from django.conf import settings
+from django.db.models import Q
 
 from maestros.models import Especialidad
 from productos.models import Producto
@@ -16,8 +19,88 @@ class GeminiNoDisponible(Exception):
     pass
 
 
-def _catalogo_compacto():
-    productos = Producto.objects.filter(activo=True).order_by('categoria', 'nombre')[:250]
+_ESPERAS_REINTENTO_GEMINI = (2, 5, 10)
+_ESTADOS_TEMPORALES_GEMINI = {429, 500, 502, 503, 504}
+
+
+def _solicitar_gemini_con_reintentos(endpoint, *, headers, payload, timeout):
+    """Hace un solo flujo de reintentos, con espera progresiva y trazable."""
+    ultimo_error = None
+    for intento in range(len(_ESPERAS_REINTENTO_GEMINI) + 1):
+        try:
+            respuesta = cliente_gemini.post(
+                endpoint,
+                headers=headers,
+                json=payload,
+                timeout=timeout,
+            )
+            if respuesta.status_code not in _ESTADOS_TEMPORALES_GEMINI:
+                respuesta.raise_for_status()
+                return respuesta
+            ultimo_error = requests.HTTPError(response=respuesta)
+        except requests.RequestException as exc:
+            ultimo_error = exc
+            respuesta_error = getattr(exc, 'response', None)
+            estado = getattr(respuesta_error, 'status_code', None)
+            if estado is not None and estado not in _ESTADOS_TEMPORALES_GEMINI:
+                raise
+
+        if intento >= len(_ESPERAS_REINTENTO_GEMINI):
+            raise ultimo_error
+        espera = _ESPERAS_REINTENTO_GEMINI[intento]
+        logger.info(
+            'Gemini no está disponible temporalmente; reintento %s/%s en %s segundos.',
+            intento + 1,
+            len(_ESPERAS_REINTENTO_GEMINI),
+            espera,
+        )
+        time.sleep(espera)
+
+
+_PALABRAS_SIN_BUSQUEDA = {
+    'a', 'al', 'algo', 'con', 'como', 'de', 'del', 'el', 'en', 'es', 'esta',
+    'este', 'hacer', 'instalar', 'la', 'las', 'lo', 'los', 'me', 'mi', 'necesito',
+    'para', 'por', 'que', 'quiero', 'se', 'un', 'una', 'unos', 'unas', 'y',
+}
+
+
+def _catalogo_compacto(contexto=''):
+    """Entrega a Gemini solo candidatos relacionados, no el catálogo completo."""
+    texto = str(contexto or '').casefold()
+    terminos = []
+    for termino in re.findall(r'[a-záéíóúüñ0-9]+', texto):
+        if len(termino) < 3 or termino in _PALABRAS_SIN_BUSQUEDA:
+            continue
+        if termino not in terminos:
+            terminos.append(termino)
+
+    activos = Producto.objects.filter(activo=True)
+    consulta = Q()
+    for termino in terminos[:10]:
+        consulta |= (
+            Q(nombre__icontains=termino)
+            | Q(descripcion__icontains=termino)
+            | Q(uso_recomendado__icontains=termino)
+            | Q(categoria__icontains=termino)
+        )
+
+    productos = activos.filter(consulta) if consulta else activos.none()
+    # Cuando el problema se expresa con lenguaje cotidiano (por ejemplo,
+    # "gotera"), los nombres comerciales pueden no repetir la misma palabra.
+    # En ese caso se agregan categorías cercanas, sin volver a enviar 250 ítems.
+    categorias_relacionadas = []
+    if any(termino in texto for termino in ('techo', 'techumbre', 'gotera', 'filtracion', 'cubierta')):
+        categorias_relacionadas.extend(('Construcción', 'Adhesivos', 'Ferretería'))
+    if any(termino in texto for termino in ('riego', 'jardin', 'patio', 'planta', 'goteo')):
+        categorias_relacionadas.extend(('Jardinería', 'Gasfitería'))
+    if any(termino in texto for termino in ('luz', 'enchufe', 'cable', 'electrico', 'eléctrico')):
+        categorias_relacionadas.extend(('Electricidad', 'Iluminación', 'Herramientas'))
+    if categorias_relacionadas:
+        productos = (productos | activos.filter(
+            categoria__in=list(dict.fromkeys(categorias_relacionadas))
+        ))
+
+    productos = productos.order_by('categoria', 'nombre').distinct()[:60]
     return [
         {
             'id': producto.id,
@@ -483,12 +566,20 @@ def interpretar_con_gemini(mensaje, historial, productos_contexto=None):
     productos_conversacion.sort(
         key=lambda producto: ids_contexto.index(producto['id'])
     )
+    contexto_catalogo = ' '.join([
+        str(mensaje),
+        *(
+            str(item.get('content') or '')
+            for item in historial[-6:]
+            if item.get('role') == 'user'
+        ),
+    ])
     contenidos = [{
         'role': 'user',
         'parts': [{
             'text': (
                 'CATÁLOGO SFI ACTUAL:\n'
-                f'{json.dumps(_catalogo_compacto(), ensure_ascii=False)}\n\n'
+                f'{json.dumps(_catalogo_compacto(contexto_catalogo), ensure_ascii=False)}\n\n'
                 'ESPECIALIDADES SFI DISPONIBLES:\n'
                 f'{json.dumps(_especialidades_compactas(), ensure_ascii=False)}\n\n'
                 'HISTORIAL NO CONFIABLE, SOLO PARA CONTEXTO:\n'
@@ -519,10 +610,10 @@ def interpretar_con_gemini(mensaje, historial, productos_contexto=None):
     }
     try:
         for intento in range(2):
-            respuesta = cliente_gemini.post(
+            respuesta = _solicitar_gemini_con_reintentos(
                 endpoint,
                 headers={'x-goog-api-key': api_key},
-                json=payload,
+                payload=payload,
                 timeout=settings.GEMINI_TIMEOUT_SECONDS,
             )
             respuesta.raise_for_status()

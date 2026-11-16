@@ -477,6 +477,10 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
         + [mensaje]
     )
     texto_usuario = _texto_normalizado(texto_usuario)
+    # El planificador determinístico utiliza este resumen solo para conservar
+    # requisitos explícitos del cliente que Gemini pudo omitir al estructurar
+    # su respuesta (por ejemplo, una luz interior en una bodega).
+    datos['_contexto_usuario'] = texto_usuario[:800]
 
     terminacion = datos.get('terminacion') or 'cualquiera'
     alias_terminacion = {
@@ -572,6 +576,12 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
     datos['_proyecto_estandar'] = bool(re.search(
         r'\b(?:estandar|basico|basica)\b|\b(?:de|como) referencia\b',
         texto_mensaje,
+    ))
+    # "No tengo nada" cambia el alcance: se parte desde el terreno o la base,
+    # no desde una estructura o radier existente.
+    datos['_parte_desde_cero'] = bool(re.search(
+        r'\b(?:no tengo nada|part(?:o|ir) de cero|desde cero|no hay nada construido)\b',
+        texto_usuario,
     ))
     indicadores_excluir_herramientas = (
         'excluir herramientas', 'sin herramientas', 'quitar herramientas',
@@ -2830,6 +2840,196 @@ def _resolver_diagnostico_filtracion_inicial(mensaje):
     }
 
 
+def _resolver_gotera_con_cubierta_identificada(mensaje, historial):
+    """Da una primera alternativa útil cuando ya se conoce la cubierta.
+
+    No convierte una reparación localizada en una obra de techumbre ni depende
+    de Gemini para reconocer zinc, teja o policarbonato.
+    """
+    texto = _texto_normalizado(mensaje)
+    es_gotera_techo = (
+        bool(re.search(r'\b(?:gotera|goteras|filtra(?:cion)?|gotea)\b', texto))
+        and any(termino in texto for termino in ('techo', 'techumbre', 'cubierta', 'teja', 'zinc', 'policarbonato'))
+    )
+    if not es_gotera_techo:
+        return None
+    cubierta = next((material for material in ('policarbonato', 'zinc', 'teja')
+                     if material in texto), None)
+    if not cubierta:
+        return None
+
+    opciones = {
+        'policarbonato': (
+            ('sellador neutro compatible con policarbonato', 'Sellar uniones y encuentros de policarbonato'),
+            ('cinta butilica impermeable', 'Sellar traslapes compatibles'),
+        ),
+        'zinc': (
+            ('cinta butilica impermeable', 'Sellar traslapes y encuentros de planchas de zinc'),
+            ('tapagoteras acrilico impermeabilizante', 'Reparar fisuras o encuentros localizados'),
+        ),
+        'teja': (
+            ('tapagoteras acrilico impermeabilizante', 'Sellar un encuentro localizado sin reemplazar una teja sana'),
+            ('sellador poliuretano para exterior', 'Sellar uniones exteriores puntuales compatibles'),
+        ),
+    }
+    productos, usados = [], set()
+    for consulta, rol in opciones[cubierta]:
+        producto = next((candidato for candidato in _buscar_productos(consulta, limite=8)
+                         if candidato.stock > 0 and candidato.pk not in usados), None)
+        if producto:
+            item = _producto_publico(producto)
+            item.update({'rol': rol, 'carrito_cantidad': 1, 'es_opcional': True})
+            productos.append(item)
+            usados.add(producto.pk)
+
+    advertencia_teja = (
+        ' Si encuentras una teja quebrada, corrida o faltante, ese elemento debe reemplazarse; '
+        'un sellador no sustituye una teja dañada.' if cubierta == 'teja' else ''
+    )
+    return {
+        'tipo': 'orientacion_gotera',
+        'mensaje': (
+            f'REPARACIÓN INICIAL DE GOTERA EN TECHO DE {cubierta.upper()}\n'
+            f'Para una filtración puntual en {cubierta}, estos son los materiales de SFI que puedes revisar primero. '
+            'Aplícalos únicamente después de ubicar la unión, traslape o encuentro que pierde agua.'
+            + advertencia_teja
+            + ('\n\nLos productos mostrados son para una reparación localizada; no hace falta medir ni revisar toda la estructura '
+               'para comenzar esta inspección.' if productos else
+               '\n\nNo encontré un material compatible con stock para mostrar en este momento.')
+            + '\n\nNo trabajes sobre una cubierta mojada. Si la filtración no se puede ubicar desde una posición segura, solicita una revisión de Techumbre.'
+        ),
+        'productos': productos,
+        'maestros': [],
+        'sugerencias': [
+            'La gotera aparece en un traslape',
+            'La gotera aparece junto a un tornillo',
+            'Buscar maestro de Techumbre',
+        ],
+    }
+
+
+def _resolver_seguimiento_gotera_techo(mensaje, historial):
+    """Mantiene un diagnóstico de gotera sin convertirlo en obra de techumbre."""
+    contenido_previo = ' '.join(
+        str(item.get('content') or '')
+        for item in (historial or [])[-8:]
+        if item.get('role') == 'assistant'
+    )
+    if 'filtracion puede provenir de la cubierta' not in _texto_normalizado(contenido_previo):
+        return None
+
+    conversacion = _texto_normalizado(' '.join([
+        *(str(item.get('content') or '') for item in (historial or [])[-8:]
+          if item.get('role') == 'user'),
+        mensaje,
+    ]))
+    if not any(material in conversacion for material in (
+        'policarbonato', 'zinc', 'teja', 'cubierta',
+    )):
+        return None
+
+    tiene_ubicacion = any(indicio in conversacion for indicio in (
+        'union', 'junta', 'traslape', 'tornillo', 'borde', 'canaleta',
+        'cumbrera', 'al medio', 'esquina', 'encuentro',
+    ))
+    sabe_si_llueve = any(indicio in conversacion for indicio in (
+        'solo con lluvia', 'cuando llueve', 'con lluvia', 'no llueve',
+    ))
+    no_logra_ubicar = any(frase in conversacion for frase in (
+        'no logro ubicar', 'no identifico el origen', 'no identifico el punto',
+        'no se donde entra', 'no se por donde entra',
+    ))
+    if no_logra_ubicar:
+        cubierta = next((material for material in ('policarbonato', 'zinc', 'teja')
+                         if material in conversacion), 'cubierta')
+        # La recomendación inicial debe respetar el material que el cliente ya
+        # indicó; no corresponde ofrecer sellador para policarbonato si es zinc.
+        opciones_por_cubierta = {
+            'policarbonato': (
+                ('sellador neutro compatible con policarbonato', 'Sellado posible de uniones'),
+                ('cinta butilica impermeable', 'Sellado posible de traslapes'),
+            ),
+            'zinc': (
+                ('cinta butilica impermeable', 'Sellado posible de traslapes de zinc'),
+                ('tapagoteras acrilico impermeabilizante', 'Reparación puntual de fisuras o encuentros'),
+            ),
+            'teja': (
+                ('tapagoteras acrilico impermeabilizante', 'Reparación puntual de encuentros'),
+                ('sellador poliuretano para exterior', 'Sellado exterior localizado'),
+            ),
+        }
+        productos = []
+        usados = set()
+        for consulta, rol in opciones_por_cubierta.get(cubierta, ()):
+            producto = next((candidato for candidato in _buscar_productos(consulta, limite=8)
+                             if candidato.stock > 0 and candidato.pk not in usados), None)
+            if not producto:
+                continue
+            item = _producto_publico(producto)
+            item.update({
+                'rol': rol,
+                'carrito_cantidad': 1,
+                'es_opcional': True,
+            })
+            productos.append(item)
+            usados.add(producto.pk)
+        mensaje_productos = (
+            f'Te muestro materiales reales compatibles con una reparación puntual en una cubierta de {cubierta}. '
+            'Úsalos solo en el punto identificado; no es necesario sellar toda la cubierta.'
+            if productos else
+            f'Por ahora no encontré sellos compatibles disponibles en SFI para una cubierta de {cubierta}.'
+        )
+        return {
+            'tipo': 'orientacion_gotera',
+            'mensaje': (
+                f'REVISIÓN GUIADA DE GOTERA EN {cubierta.upper()}\n'
+                'Como no logras ubicar la entrada, no conviene sellar toda la cubierta al azar. '
+                'En una lluvia leve, observa desde un lugar seguro por dónde aparece la primera gota: '
+                'los traslapes, los tornillos con golilla y el encuentro con el muro o canaleta.\n\n'
+                'Si la primera gota aparece en una unión o traslape, normalmente se revisa el sello '
+                'compatible antes de reemplazar una plancha. Si aparece en borde o canaleta, revisa '
+                'primero el drenaje.\n\n'
+                + mensaje_productos
+                + '\n\nNo subas a la techumbre ni trabajes sobre ella si está mojada. '
+                'Si no puedes identificar el punto desde una posición segura, solicita una revisión de Techumbre.'
+            ),
+            'productos': productos,
+            'maestros': [],
+            'sugerencias': [
+                'La gotera aparece en una unión',
+                'La gotera aparece junto a un tornillo',
+                'Buscar maestro de Techumbre',
+            ],
+        }
+    if tiene_ubicacion and sabe_si_llueve:
+        return None
+
+    cubierta = next((material for material in ('policarbonato', 'zinc', 'teja')
+                     if material in conversacion), 'cubierta')
+    return {
+        'tipo': 'seguimiento_gotera',
+        'mensaje': (
+            'SIGAMOS CON LA GOTERA\n'
+            f'Entiendo que la cubierta es de {cubierta}. No necesito las medidas ni la estructura '
+            'para ubicar primero una filtración puntual.\n\n'
+            'Solo falta identificar el punto por donde entra el agua:\n'
+            '• Cerca de una unión, junta o traslape.\n'
+            '• Junto a un tornillo o fijación.\n'
+            '• En un borde, encuentro con muro o canaleta.\n'
+            '• No logro ubicarlo todavía.\n\n'
+            'Indícame además si ocurre solamente cuando llueve. Con eso te recomendaré '
+            'solo los sellos, fijaciones o materiales compatibles que correspondan.'
+        ),
+        'productos': [],
+        'maestros': [],
+        'sugerencias': [
+            'Entra por una unión y solo cuando llueve',
+            'Entra cerca de un tornillo cuando llueve',
+            'No logro ubicar el punto de entrada',
+        ],
+    }
+
+
 def _resolver_situacion_cotidiana(mensaje):
     """Orienta expresiones comunes sin invadir los cálculos de proyectos."""
     situacion = detectar_situacion_cotidiana(mensaje)
@@ -3539,9 +3739,15 @@ def procesar_consulta(
     mensaje, historial, productos_contexto=None, modo_consulta='auto',
     estimacion_contexto=None,
 ):
+    gotera_directa = _resolver_gotera_con_cubierta_identificada(mensaje, historial)
+    if gotera_directa:
+        return gotera_directa
     situacion_cotidiana = _resolver_situacion_cotidiana(mensaje)
     if situacion_cotidiana:
         return situacion_cotidiana
+    seguimiento_gotera = _resolver_seguimiento_gotera_techo(mensaje, historial)
+    if seguimiento_gotera:
+        return seguimiento_gotera
     producto_breve = (
         None if historial or productos_contexto
         else _resolver_producto_breve(mensaje)

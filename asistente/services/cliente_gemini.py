@@ -39,12 +39,14 @@ class _TruststoreAdapter(HTTPAdapter):
 class ClienteGemini:
     def __init__(self):
         self.session = requests.Session()
+        # Los reintentos se controlan en gemini.py con pausas explícitas para
+        # evitar que urllib3 y la aplicación reintenten a la vez.
         reintentos = Retry(
-            total=2,
-            connect=2,
-            read=2,
-            status=2,
-            backoff_factor=0.5,
+            total=0,
+            connect=0,
+            read=0,
+            status=0,
+            backoff_factor=0,
             status_forcelist=(429, 500, 502, 503, 504),
             allowed_methods=frozenset({'POST'}),
             raise_on_status=False,

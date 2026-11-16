@@ -85,6 +85,33 @@ class CatalogoTecnicoExtendidoTests(TestCase):
             self.assertTrue(default_storage.exists(producto.imagen.name))
 
 
+class CatalogoRiegoPorGoteoTests(TestCase):
+    SKUS = {
+        'SFI-RIE-TUB-PE-16-50',
+        'SFI-RIE-GOT-REG-10',
+        'SFI-HER-TIJ-PE-16-32',
+    }
+
+    def test_componentes_riego_tienen_ficha_y_datos_comerciales(self):
+        productos = Producto.objects.filter(sku__in=self.SKUS)
+
+        self.assertEqual(productos.count(), 3)
+        for producto in productos:
+            self.assertTrue(producto.informacion_tecnica_verificada)
+            self.assertTrue(producto.especificaciones)
+            self.assertTrue(producto.uso_recomendado)
+            self.assertGreater(producto.precio, 0)
+            self.assertGreater(producto.stock, 0)
+            self.assertGreater(producto.contenido, 0)
+
+        tubo = productos.get(sku='SFI-RIE-TUB-PE-16-50')
+        gotero = productos.get(sku='SFI-RIE-GOT-REG-10')
+        tijera = productos.get(sku='SFI-HER-TIJ-PE-16-32')
+        self.assertTrue(tubo.apto_para_calculo)
+        self.assertTrue(gotero.apto_para_calculo)
+        self.assertFalse(tijera.apto_para_calculo)
+
+
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
 class SeguridadProductosTests(TestCase):
     def setUp(self):

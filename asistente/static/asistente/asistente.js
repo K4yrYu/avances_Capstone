@@ -33,6 +33,7 @@
     sessionStorage.setItem(sessionOwnerKey, userKey);
     let history = [];
     let selectedQueryMode = "auto";
+    let consultaEnCurso = false;
     let conversationEntries = [];
     let calculations = new Map();
     let cartItems = new Map();
@@ -329,6 +330,8 @@
     }
 
     async function askAssistant(message) {
+      if (consultaEnCurso) return;
+      consultaEnCurso = true;
       errorBox.hidden = true;
       addMessage("user", message);
       const historyForRequest = history.slice(-10);
@@ -377,6 +380,7 @@
         errorBox.textContent = messageText;
         errorBox.hidden = false;
       } finally {
+        consultaEnCurso = false;
         submit.disabled = false;
         submit.querySelector("span").textContent = "Enviar";
         input.focus();
@@ -385,6 +389,7 @@
 
     form.addEventListener("submit", event => {
       event.preventDefault();
+      if (consultaEnCurso) return;
       const message = input.value.trim();
       if (message.length < 2) return;
       input.value = "";
