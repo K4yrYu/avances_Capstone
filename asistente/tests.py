@@ -11,6 +11,11 @@ from maestros.models import Especialidad, PerfilMaestro
 from productos.models import Producto
 from usuarios.models import Usuario
 from .services import procesar_configuracion_foto, procesar_consulta, resolver_interpretacion
+from .services.asistente_sfi import (
+    _resolver_accion_seguimiento,
+    _resolver_herramientas_iniciales,
+    _resolver_proyecto,
+)
 from .serializers import ConsultaAsistenteSerializer
 from .services.cliente_gemini import cliente_gemini
 from .services.gemini import GeminiNoDisponible, _instrucciones, interpretar_con_gemini
@@ -1279,6 +1284,16 @@ class AsistenteSfiTests(TestCase):
         self.assertIn('Qué trabajo', resultado['mensaje'])
         self.assertFalse(resultado['maestros'])
 
+    def test_cambiar_automatico_del_tablero_se_deriva_a_electricista(self):
+        resultado = procesar_consulta(
+            'Necesito cambiar el automático del tablero eléctrico', [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'orientacion_seguridad')
+        self.assertIn('electricista', resultado['mensaje'].casefold())
+        self.assertFalse(resultado['productos'])
+
+
 class SinonimosYBusquedaSemanticaTests(TestCase):
     """Tests para sinónimos ferreteros y búsqueda semántica."""
 
@@ -1438,6 +1453,20 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
         resultados = _buscar_productos('wincha')
         ids = [p.id for p in resultados]
         self.assertIn(self.cinta.id, ids)
+
+    def test_buscar_corta_tubos_pvc_encuentra_cortatubo_y_no_sierra(self):
+        cortatubo = Producto.objects.create(
+            nombre='Cortatubo plástico PPR hasta 42 mm',
+            descripcion='Herramienta para cortar tubos plásticos de diámetro compatible.',
+            precio=10990, stock=30, categoria='Herramientas', marca='SFI', activo=True,
+        )
+        from .services.asistente_sfi import _buscar_productos
+
+        resultados = _buscar_productos('con qué herramienta puedo cortar tubos de PVC')
+        ids = [producto.id for producto in resultados]
+
+        self.assertIn(cortatubo.id, ids)
+        self.assertNotIn(self.sierra.id, ids)
 
     def test_buscar_picota_no_incluye_macetero_por_sinonimo_jardinera(self):
         picota = Producto.objects.create(
@@ -3424,6 +3453,86 @@ class PlanificadorGenericoProyectosTests(TestCase):
             'herramienta' in producto['rol'].casefold()
             for producto in resultado['productos']
         ))
+
+    def test_pasta_muro_recomienda_espatula_y_lija_no_rodillo(self):
+        pasta = Producto.objects.create(
+            nombre='Pasta muro interior 15 kg',
+            descripcion='Pasta para alisar y reparar muros interiores.',
+            precio=14990,
+            stock=20,
+            categoria='Adhesivos',
+            activo=True,
+        )
+        Producto.objects.create(
+            nombre='Espátula acero flexible 100 mm',
+            descripcion='Espátula para aplicar pasta muro.',
+            precio=3490,
+            stock=20,
+            categoria='Herramientas',
+            activo=True,
+        )
+        Producto.objects.create(
+            nombre='Lija madera y muro grano 120 pack 10',
+            descripcion='Lija para terminación de muros.',
+            precio=5990,
+            stock=20,
+            categoria='Ferretería',
+            activo=True,
+        )
+        Producto.objects.create(
+            nombre='Rodillo pintura muros 23 cm',
+            descripcion='Rodillo para pintar muros.',
+            precio=6990,
+            stock=20,
+            categoria='Herramientas',
+            activo=True,
+        )
+
+        seguimiento = _resolver_accion_seguimiento(
+            '¿Qué herramienta utiliza?', [pasta.pk],
+        )
+        inicial = _resolver_herramientas_iniciales(
+            '¿Qué herramienta se usa para pasta muro?',
+        )
+
+        for resultado in (seguimiento, inicial):
+            nombres = ' '.join(item['nombre'].casefold() for item in resultado['productos'])
+            self.assertIn('espátula', nombres)
+            self.assertIn('lija', nombres)
+            self.assertNotIn('rodillo', nombres)
+
+    def test_instalacion_gas_cocina_no_mezcla_productos_sanitarios(self):
+        for nombre, categoria in (
+            ('Tubo cobre rígido para gas 1/2 pulgada x 3 m', 'Gasfitería'),
+            ('Codo cobre para gas 1/2 pulgada', 'Gasfitería'),
+            ('Unión cobre para gas 1/2 pulgada', 'Gasfitería'),
+            ('Válvula corte gas bronce 1/2 pulgada', 'Gasfitería'),
+            ('Sanitario dos piezas doble descarga con kit de instalación', 'Gasfitería'),
+        ):
+            Producto.objects.create(
+                nombre=nombre,
+                descripcion='Producto de prueba.',
+                precio=2990,
+                stock=20,
+                categoria=categoria,
+                activo=True,
+            )
+
+        resultado = _resolver_proyecto({
+            'proyecto': 'Instalación de gas estándar para cocina',
+            '_proyecto_estandar': True,
+            'modo_orientacion': 'propuesta_estandar',
+            'tareas_proyecto': [],
+            'herramientas_proyecto': [],
+            'especialidades_proyecto': [],
+        })
+
+        nombres = ' '.join(item['nombre'].casefold() for item in resultado['productos'])
+        self.assertIn('tubo cobre', nombres)
+        self.assertIn('codo cobre', nombres)
+        self.assertIn('unión cobre', nombres)
+        self.assertIn('válvula corte gas', nombres)
+        self.assertNotIn('sanitario', nombres)
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_techumbre_recomienda_cubierta_si_usuario_delega_eleccion(self, interpretar):

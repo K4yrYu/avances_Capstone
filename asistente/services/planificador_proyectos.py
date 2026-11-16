@@ -111,6 +111,20 @@ def _candidatos_directos(consulta):
     return candidatos[:20]
 
 
+def _producto_incompatible_con_gas(producto):
+    """Evita que coincidencias genéricas mezclen gas con artefactos sanitarios."""
+    texto = _normalizar(' '.join([
+        producto.nombre,
+        producto.categoria,
+        producto.descripcion,
+        producto.uso_recomendado,
+    ]))
+    return any(termino in texto for termino in (
+        'sanitario', 'inodoro', 'lavamanos', 'lavaplatos', 'ducha',
+        'sifon', 'desague', 'wc ',
+    ))
+
+
 def _lista_textos(valores, maximo, limite=100):
     if not isinstance(valores, list):
         return []
@@ -429,6 +443,9 @@ def resolver_proyecto_generico(
         ))
     )
     contexto_proyecto = _normalizar(proyecto)
+    es_contexto_gas = any(termino in contexto_inicial for termino in (
+        'gas', 'calefont', 'cocina a gas', 'encimera a gas',
+    ))
     es_intervencion_acotada = (
         any(accion in contexto_proyecto for accion in (
             'instalar', 'instalacion', 'reparar', 'reparacion',
@@ -455,6 +472,17 @@ def resolver_proyecto_generico(
             datos.get('_proyecto_estandar') is True
             or datos.get('modo_orientacion') == 'propuesta_estandar'
             or 'estandar' in _normalizar(proyecto)
+        )
+    )
+    es_instalacion_gas_cocina = (
+        'gas' in contexto_inicial
+        and any(termino in contexto_inicial for termino in (
+            'cocina', 'encimera', 'horno', 'artefacto de cocina',
+        ))
+        and (
+            datos.get('_proyecto_estandar') is True
+            or datos.get('modo_orientacion') == 'propuesta_estandar'
+            or 'estandar' in contexto_proyecto
         )
     )
     if es_bodega_estandar:
@@ -537,6 +565,59 @@ def resolver_proyecto_generico(
                 'usos': {
                     _normalizar('canaleta aguas lluvia'): 'Recoger el agua que cae desde la cubierta.',
                     _normalizar('bajada aguas lluvia PVC'): 'Conducir el agua desde la canaleta hasta la descarga.',
+                },
+            },
+        ]
+    if es_instalacion_gas_cocina:
+        # Gas es un caso de seguridad: no se permite que una búsqueda libre
+        # convierta una palabra genérica como "instalación" en un sanitario.
+        # La lista describe el sistema de referencia y deja el montaje a un
+        # instalador autorizado.
+        tareas = [
+            {
+                'nombre': 'Tubería y uniones de gas',
+                'busquedas': [
+                    'tubo cobre rigido para gas 1/2 pulgada x 3 m',
+                    'codo cobre para gas 1/2 pulgada',
+                    'union cobre para gas 1/2 pulgada',
+                ],
+                'usos': {
+                    _normalizar('tubo cobre rigido para gas 1/2 pulgada x 3 m'): 'Conducir el gas por el recorrido definido por el instalador autorizado.',
+                    _normalizar('codo cobre para gas 1/2 pulgada'): 'Resolver cambios de dirección en la tubería de cobre.',
+                    _normalizar('union cobre para gas 1/2 pulgada'): 'Unir tramos compatibles de tubería de cobre.',
+                },
+            },
+            {
+                'nombre': 'Corte y conexión de la cocina',
+                'busquedas': [
+                    'valvula corte gas bronce 1/2 pulgada',
+                    'flexible para gas 1/2 pulgada x 1 m',
+                    'sellador de roscas para gas 50 ml',
+                ],
+                'usos': {
+                    _normalizar('valvula corte gas bronce 1/2 pulgada'): 'Permitir cortar el gas antes de la cocina para una emergencia o mantención.',
+                    _normalizar('flexible para gas 1/2 pulgada x 1 m'): 'Conectar el artefacto a la red fija solo cuando sea compatible y certificado.',
+                    _normalizar('sellador de roscas para gas 50 ml'): 'Sellar uniones roscadas compatibles según la indicación del fabricante.',
+                },
+            },
+            {
+                'nombre': 'Prueba y verificación',
+                'busquedas': [
+                    'detector de fugas para gas spray 250 ml',
+                    'manometro para prueba de presion de gas',
+                ],
+                'usos': {
+                    _normalizar('detector de fugas para gas spray 250 ml'): 'Ayudar a detectar fugas durante la revisión realizada por el instalador.',
+                    _normalizar('manometro para prueba de presion de gas'): 'Verificar la presión de la instalación durante las pruebas técnicas.',
+                },
+            },
+            {
+                'nombre': 'Herramientas recomendadas',
+                'busquedas': [
+                    'llave de cañeria ajustable 12 pulgadas',
+                ],
+                'usos': {
+                    _normalizar('llave de cañeria ajustable 12 pulgadas'): 'Ajustar conexiones compatibles durante el montaje profesional.',
                 },
             },
         ]
@@ -916,6 +997,11 @@ def resolver_proyecto_generico(
                 producto for producto in buscar_productos(consulta)
                 if producto.pk not in ids_candidatos
             )
+            if es_contexto_gas:
+                candidatos = [
+                    candidato for candidato in candidatos
+                    if not _producto_incompatible_con_gas(candidato)
+                ]
             if _normalizar(tarea["nombre"]) == "cubierta":
                 accesorios_cubierta = {
                     "perfil", "union", "cierre", "tornillo", "golilla",
@@ -932,7 +1018,7 @@ def resolver_proyecto_generico(
             # seleccionado, no se duplica ni se informa falsamente como ausente.
             if any(
                 candidato.pk in productos_usados
-                and _coincidencia_suficiente(candidato, consulta)
+                and _normalizar(consulta) in _normalizar(candidato.nombre)
                 for candidato in candidatos
             ):
                 continue

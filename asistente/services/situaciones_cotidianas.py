@@ -37,6 +37,20 @@ SITUACIONES = (
         'especialidad': 'Electricidad',
     },
     {
+        'codigo': 'intervencion_tablero_electrico', 'tipo': 'riesgo',
+        'patrones': (
+            r'\b(?:cambiar|reemplazar|instalar|conectar|sacar|quitar|poner)\b.{0,40}'
+            r'\b(?:automatico|termomagnetico|disyuntor|diferencial)\b.{0,40}'
+            r'\b(?:tablero|electrico)\b',
+            r'\b(?:tablero|tablero electrico)\b.{0,40}'
+            r'\b(?:cambiar|reemplazar|instalar|conectar|automatico|termomagnetico|disyuntor|diferencial)\b',
+        ),
+        'mensaje': ('La intervención de protecciones dentro de un tablero eléctrico debe '
+                    'realizarla un electricista calificado. No manipules el tablero ni '
+                    'intentes reemplazar el automático por tu cuenta.'),
+        'especialidad': 'Electricidad',
+    },
+    {
         'codigo': 'riesgo_estructural', 'tipo': 'riesgo',
         'patrones': (r'\b(?:techo|muro|pared|viga|estructura)\b.{0,35}\b(?:cediendo|hundido|hundiendo|por caer|se mueve mucho)',),
         'mensaje': ('La descripción puede indicar un problema estructural. No '

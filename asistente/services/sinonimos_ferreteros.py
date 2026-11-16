@@ -100,6 +100,13 @@ SINONIMOS: dict[str, tuple[str, ...]] = {
     'cortar':           ('sierra',),
     'trozar':           ('sierra',),
     'disco':            ('sierra', 'circular'),
+    # Corte de tuberías plásticas. El catálogo puede describir la herramienta
+    # como "cortatubo plástico" aunque el cliente diga "corta tubos PVC".
+    'cortatubo':        ('cortatubo', 'plastico'),
+    'corta tubo':       ('cortatubo', 'plastico'),
+    'corta tubos':      ('cortatubo', 'plastico'),
+    'cortar tubo':      ('cortatubo', 'plastico'),
+    'cortar tubos':     ('cortatubo', 'plastico'),
 
     # â”€â”€ JardinerÃ­a / movimiento de tierra â”€â”€
     'excavar':          ('pala', 'picota', 'carretilla'),

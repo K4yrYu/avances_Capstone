@@ -1655,6 +1655,16 @@ def _buscar_productos(consulta, limite=6):
     if not palabras_originales:
         return []
 
+    # "Corta tubos PVC" es una intención específica: una sierra circular no
+    # es una alternativa equivalente para ese material. El catálogo puede
+    # llamar al artículo "cortatubo plástico", por lo que priorizamos esa
+    # familia antes de ampliar la búsqueda con la palabra genérica "cortar".
+    es_corte_tubo_pvc = (
+        any(palabra.startswith('cort') for palabra in palabras_originales)
+        and any(palabra.startswith('tubo') for palabra in palabras_originales)
+        and any(palabra in ('pvc', 'plastico') for palabra in palabras_originales)
+    )
+
     productos_activos = list(Producto.objects.filter(activo=True))
     vocabulario_catalogo = set()
     for producto in productos_activos:
@@ -1712,6 +1722,8 @@ def _buscar_productos(consulta, limite=6):
         )
         texto_identidad = f'{nombre} {identificacion}'
         texto_filtrado = f'{texto_identidad} {detalle}'
+        if es_corte_tubo_pvc and 'cortatubo' not in texto_filtrado:
+            continue
         if anclas_requeridas and not all(
             re.search(rf'\b{re.escape(ancla)}\w*', texto_identidad)
             for ancla in anclas_requeridas
@@ -2699,6 +2711,14 @@ def _resolver_herramientas_iniciales(mensaje):
     )):
         consultas = ['pala punta', 'picota jardinera', 'carretilla acero', 'guantes jardineria']
         contexto = 'retirar tierra del patio'
+    elif any(termino in texto for termino in (
+        'pasta muro', 'pasta de retape', 'retape', 'masilla',
+        'pasta para juntas', 'yeso carton', 'yeso-carton',
+    )):
+        # Preparar o reparar un muro no es lo mismo que pintarlo: se debe
+        # aplicar y nivelar la pasta antes de lijar, no usar rodillo o brocha.
+        consultas = ['espatula acero', 'lija muro']
+        contexto = 'aplicar y alisar pasta muro'
     elif any(termino in texto for termino in ('pintar', 'pintura', 'pared', 'muro')):
         consultas = ['rodillo pintura', 'brocha pintura']
         contexto = 'pintar la pared'
@@ -2720,14 +2740,20 @@ def _resolver_herramientas_iniciales(mensaje):
         producto = next((
             candidato for candidato in candidatos_directos
             if candidato.pk not in usadas
-            and 'herramienta' in _texto_normalizado(candidato.categoria)
+            and (
+                'herramienta' in _texto_normalizado(candidato.categoria)
+                or termino_principal in ('espatula', 'lija')
+            )
             and termino_principal in _texto_normalizado(candidato.nombre)
         ), None)
         if not producto:
             producto = next((
                 candidato for candidato in _buscar_productos(consulta, limite=10)
                 if candidato.pk not in usadas
-                and 'herramienta' in _texto_normalizado(candidato.categoria)
+                and (
+                    'herramienta' in _texto_normalizado(candidato.categoria)
+                    or termino_principal in ('espatula', 'lija')
+                )
             ), None)
         if not producto:
             continue
@@ -3285,12 +3311,25 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
         ))
         consultas = []
         if any(termino in contexto for termino in (
+            'pasta muro', 'pasta de retape', 'retape', 'masilla',
+            'pasta para juntas', 'yeso carton', 'yeso-carton',
+        )):
+            # Debe evaluarse antes de pintura: las pastas se aplican con
+            # espátula y luego se lijan; rodillo y brocha son para pintar.
+            consultas.extend(['espatula acero', 'lija muro'])
+        elif any(termino in contexto for termino in (
             'techo', 'techumbre', 'zinc', 'teja', 'policarbonato', 'cubierta',
         )):
             consultas.extend(['cinta metrica', 'taladro percutor'])
         if any(termino in contexto for termino in ('madera', 'pino', 'tablero', 'melamina')):
             consultas.extend(['cinta metrica', 'taladro percutor', 'sierra circular'])
-        if any(termino in contexto for termino in ('pintura', 'latex', 'esmalte', 'barniz')):
+        if (
+            not any(termino in contexto for termino in (
+                'pasta muro', 'pasta de retape', 'retape', 'masilla',
+                'pasta para juntas', 'yeso carton', 'yeso-carton',
+            ))
+            and any(termino in contexto for termino in ('pintura', 'latex', 'esmalte', 'barniz'))
+        ):
             consultas.extend(['rodillo', 'brocha'])
         if any(termino in contexto for termino in ('radier', 'hormigon', 'mortero', 'tierra')):
             consultas.extend(['cinta metrica', 'pala'])
@@ -3306,13 +3345,18 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             'sierra circular': 'Cortar madera o tableros a las medidas necesarias.',
             'rodillo': 'Aplicar barniz o pintura uniformemente en superficies amplias.',
             'brocha': 'Aplicar barniz o pintura en bordes, uniones y zonas de detalle.',
+            'espatula acero': 'Extender, presionar y nivelar la pasta en grietas e imperfecciones.',
+            'lija muro': 'Emparejar suavemente la superficie una vez que la pasta esté seca.',
             'pala': 'Mover y mezclar materiales para preparar la base del proyecto.',
         }
         for consulta in consultas:
             herramienta = next((
                 producto for producto in _buscar_productos(consulta, limite=10)
                 if producto.pk not in usadas
-                and 'herramienta' in _texto_normalizado(producto.categoria)
+                and (
+                    'herramienta' in _texto_normalizado(producto.categoria)
+                    or consulta in ('espatula acero', 'lija muro')
+                )
             ), None)
             if not herramienta:
                 continue
