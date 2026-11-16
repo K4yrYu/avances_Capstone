@@ -864,6 +864,23 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
                 incluir = False
             datos[campo] = incluir
 
+    # Para labores manuales de jardÃ­n, convertir una bÃºsqueda amplia en
+    # herramientas concretas del catÃ¡logo. No hay una lista genÃ©rica: esta
+    # regla sÃ³lo se activa cuando la acciÃ³n descrita es mover o excavar tierra.
+    # Para movimiento manual de tierra, una etiqueta amplia como
+    # "herramientas manuales" no encuentra productos. Conservamos lo que
+    # interpretó Gemini y añadimos términos de catálogo según la acción.
+    es_movimiento_tierra = bool(re.search(
+        r'\b(?:sacar|retirar|mover|excavar|cavar|remover)\b.{0,42}'
+        r'\b(?:tierra|suelo|piedras?|ripio)\b',
+        texto_mensaje,
+    ))
+    if datos.get('_consulta_solo_herramientas') and es_movimiento_tierra:
+        datos['herramientas_proyecto'] = list(dict.fromkeys([
+            *(datos.get('herramientas_proyecto') or []),
+            'pala punta', 'picota', 'carretilla', 'guantes de trabajo',
+        ]))
+        datos['incluir_herramientas'] = True
     return datos
 
 
@@ -884,6 +901,18 @@ def _plan_estandar_incompleto(datos):
         for busqueda in (tarea.get('busquedas') or [])
         if str(busqueda or '').strip()
     }
+    proyecto = _texto_normalizado(datos.get('proyecto'))
+    es_intervencion_acotada = bool(re.search(
+        r'\b(?:instalar|instalacion|reparar|reparacion|cambiar|cambio|reemplazar|reemplazo)\b',
+        proyecto,
+    )) and not any(expresion in proyecto for expresion in (
+        'construccion completa', 'obra completa', 'renovacion completa',
+        'remodelacion completa', 'hacer un quincho', 'construir un quincho',
+    ))
+    # Una instalación puntual no debe inflarse artificialmente hasta parecer
+    # una obra completa. Para una construcción sí se conserva el umbral amplio.
+    if es_intervencion_acotada:
+        return len(tareas) < 1 or len(busquedas) < 2
     return len(tareas) < 5 or len(busquedas) < 12
 
 
@@ -1487,7 +1516,7 @@ def _resolver_proyecto(datos):
     if datos.get('_proyecto_estandar') is True:
         return resolver_proyecto_generico(
             datos,
-            buscar_productos=lambda consulta: _buscar_productos(consulta, limite=20),
+            buscar_productos=lambda consulta: _buscar_productos(consulta, limite=60),
             producto_publico=_producto_publico,
             buscar_maestros=buscar_maestros,
             resolver_especialidad=_especialidad_desde_texto,
@@ -1497,7 +1526,7 @@ def _resolver_proyecto(datos):
     )):
         return resolver_proyecto_techumbre(
             datos,
-            buscar_productos=lambda consulta: _buscar_productos(consulta, limite=20),
+            buscar_productos=lambda consulta: _buscar_productos(consulta, limite=60),
             producto_publico=_producto_publico,
             buscar_maestros=buscar_maestros,
             resolver_especialidad=_especialidad_desde_texto,
@@ -1511,7 +1540,7 @@ def _resolver_proyecto(datos):
         return _resolver_bano(datos)
     return resolver_proyecto_generico(
         datos,
-        buscar_productos=lambda consulta: _buscar_productos(consulta, limite=20),
+        buscar_productos=lambda consulta: _buscar_productos(consulta, limite=60),
         producto_publico=_producto_publico,
         buscar_maestros=buscar_maestros,
         resolver_especialidad=_especialidad_desde_texto,
@@ -1726,12 +1755,22 @@ def _buscar_productos(consulta, limite=6):
         # puede resolverse con cualquier otro kit ni con cualquier producto de baño.
         coincidencias_minimas = min(len(palabras_originales), 3)
         if puntaje and coincidencias >= coincidencias_minimas:
-            resultados.append((coincidencias, puntaje, producto))
+            # Si el catÃ¡logo tiene una coincidencia directa por nombre o
+            # identidad, no debemos mezclar productos encontrados sÃ³lo por
+            # una palabra expandida. Ej.: "picota" expande a "jardinera",
+            # pero un macetero jardinera no es una picota.
+            coincidencia_directa = any(
+                contiene(texto_identidad, palabra)
+                for palabra in palabras_corregidas
+            )
+            resultados.append((coincidencias, puntaje, producto, coincidencia_directa))
+    if any(item[3] for item in resultados):
+        resultados = [item for item in resultados if item[3]]
     resultados.sort(key=lambda item: (
         -item[0], -item[1], item[2].precio, item[2].nombre.casefold(),
     ))
     try:
-        limite = max(1, min(int(limite), 20))
+        limite = max(1, min(int(limite), 60))
     except (TypeError, ValueError):
         limite = 6
     return [item[2] for item in resultados[:limite]]
@@ -2325,6 +2364,11 @@ def resolver_interpretacion(datos):
             color_solicitado, _, familia_solicitada, _ = _filtros_explicitos_busqueda(
                 consulta
             )
+            orientacion = str(datos.get('respuesta') or '').strip()
+            detalle_orientacion = (
+                f'\n\nORIENTACIÓN GENERAL\n{orientacion}'
+                if len(orientacion) >= 12 else ''
+            )
             if color_solicitado and any(
                 termino in _texto_normalizado(consulta)
                 for termino in ('pintura', 'latex', 'esmalte')
@@ -2343,7 +2387,7 @@ def resolver_interpretacion(datos):
                 )
             return {
                 'tipo': 'sin_resultados',
-                'mensaje': mensaje_sin_resultados,
+                'mensaje': mensaje_sin_resultados + detalle_orientacion,
                 'productos': [],
                 'sugerencias': ['Ver pinturas', 'Buscar herramientas', 'Buscar materiales'],
             }
@@ -2649,7 +2693,13 @@ def _resolver_herramientas_iniciales(mensaje):
     # completo y debe conservar todos sus datos en el planificador.
     if re.search(r'\b(?:material(?:es)?|producto(?:s)?|insumo(?:s)?)\b', texto):
         return None
-    if any(termino in texto for termino in ('pintar', 'pintura', 'pared', 'muro')):
+    if any(termino in texto for termino in (
+        'sacar tierra', 'retirar tierra', 'mover tierra', 'excavar', 'cavar',
+        'hacer hoyo', 'hacer una zanja', 'tierra compactada',
+    )):
+        consultas = ['pala punta', 'picota jardinera', 'carretilla acero', 'guantes jardineria']
+        contexto = 'retirar tierra del patio'
+    elif any(termino in texto for termino in ('pintar', 'pintura', 'pared', 'muro')):
         consultas = ['rodillo pintura', 'brocha pintura']
         contexto = 'pintar la pared'
     elif any(termino in texto for termino in ('techo', 'techumbre', 'cubierta')):
@@ -2840,6 +2890,37 @@ def _resolver_situacion_cotidiana(mensaje):
 def _resolver_herramienta_por_tarea(mensaje):
     """Traduce una tarea cotidiana a una herramienta real del catálogo."""
     texto = _texto_normalizado(mensaje)
+    # La herramienta depende de la acción y del material. Una picota de
+    # jardinería afloja suelo; no es la recomendación adecuada para piedra.
+    # Aunque SFI no la venda, orientamos al cliente con la herramienta correcta.
+    if re.search(r'\b(?:picar|romper|quebrar)\b.{0,24}\bpiedra(?:s)?\b', texto):
+        return {
+            'tipo': 'orientacion_herramienta_no_disponible',
+            'mensaje': (
+                'Para picar piedra te conviene usar un combo o mazo junto con un cincel '
+                'para mampostería: el combo entrega el golpe y el cincel concentra el impacto. '
+                'Una picota jardinera sirve para aflojar tierra, por eso no es una alternativa '
+                'equivalente. Por ahora no encontré combo ni cincel para piedra disponibles en SFI.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': ['Buscar herramientas para tierra', 'Consultar herramientas de mampostería'],
+        }
+    if re.search(r'\b(?:cortar|trozar|partir)\b.{0,24}\bporcelanato\b', texto):
+        return {
+            'tipo': 'orientacion_herramienta_no_disponible',
+            'mensaje': (
+                'Para cortar porcelanato se usa una cortadora manual para porcelanato '
+                'o un esmeril angular con disco diamantado continuo para porcelanato. '
+                'La cortadora permite cortes rectos; el esmeril se reserva para ajustes o cortes especiales. '
+                'También conviene usar lentes, guantes y protección respiratoria al cortar. '
+                'Por ahora no encontré esas herramientas disponibles en SFI, por lo que no te recomendaré '
+                'una cinta métrica ni un taladro como reemplazo.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': ['Buscar materiales para porcelanato', 'Consultar herramientas de corte'],
+        }
     tareas = (
         (
             r'\b(?:poner|meter|clavar|afirmar|fijar)\b.{0,24}\bclavos?\b|\bclavar\b',
@@ -3426,11 +3507,6 @@ def procesar_consulta(
     diagnostico_filtracion = _resolver_diagnostico_filtracion_inicial(mensaje)
     if diagnostico_filtracion:
         return diagnostico_filtracion
-    herramientas_iniciales = (
-        None if productos_contexto else _resolver_herramientas_iniciales(mensaje)
-    )
-    if herramientas_iniciales:
-        return herramientas_iniciales
     texto_actual = _texto_normalizado(mensaje)
     contexto_ids = list(dict.fromkeys(productos_contexto or []))
     agregado_estimacion = _resolver_agregado_estimacion(
@@ -3545,14 +3621,22 @@ def procesar_consulta(
     )
     if _plan_estandar_incompleto(interpretacion):
         proyecto = str(interpretacion.get('proyecto') or mensaje).strip()
+        tareas_iniciales = list(interpretacion.get('tareas_proyecto') or [])
+        componentes_iniciales = [
+            str(busqueda).strip()
+            for tarea in tareas_iniciales if isinstance(tarea, dict)
+            for busqueda in (tarea.get('busquedas') or [])
+            if str(busqueda).strip()
+        ]
         solicitud_completa = (
-            'COMPLETA LA PROPUESTA ESTÁNDAR SIN CAMBIAR EL PROYECTO NI LOS DATOS DEL '
-            f'CLIENTE. Proyecto: {proyecto}. La primera propuesta quedó abreviada. '
-            'Devuelve entre 5 y 8 etapas coherentes y entre 12 y 18 búsquedas de '
-            'materiales funcionalmente necesarios. Incluye preparación, elemento principal, '
-            'estructura o soporte, uniones, protección, terminaciones y seguridad solamente '
-            'cuando correspondan. Para cada búsqueda explica su uso específico en el proyecto. '
-            'No asumas que un producto está disponible: Django verificará el inventario.'
+            'REVISA LA COBERTURA DEL PROYECTO SIN RECONSTRUIRLO. '
+            f'Proyecto: {proyecto}. Ya están considerados estos componentes: '
+            f'{", ".join(componentes_iniciales) or "ninguno"}. '
+            'Devuelve solamente componentes relevantes que falten, agrupados por etapa. '
+            'Revisa de forma general: preparación, estructura o soporte, uniones y fijaciones, '
+            'conexiones, sellado o protección, terminaciones, drenaje cuando aplique, seguridad '
+            'y herramientas específicas. No repitas los componentes ya cubiertos, no inventes '
+            'productos ni asumas que están disponibles; Django verificará el catálogo.'
         )
         try:
             propuesta_completa = interpretar_con_gemini(
@@ -3571,6 +3655,28 @@ def procesar_consulta(
             ):
                 if not propuesta_completa.get(campo) and interpretacion.get(campo):
                     propuesta_completa[campo] = interpretacion[campo]
+            existentes = {
+                _texto_normalizado(busqueda)
+                for tarea in tareas_iniciales if isinstance(tarea, dict)
+                for busqueda in (tarea.get('busquedas') or [])
+            }
+            tareas_combinadas = list(tareas_iniciales)
+            for tarea in propuesta_completa.get('tareas_proyecto') or []:
+                if not isinstance(tarea, dict):
+                    continue
+                busquedas_nuevas = [
+                    busqueda for busqueda in (tarea.get('busquedas') or [])
+                    if _texto_normalizado(busqueda) not in existentes
+                ]
+                if not busquedas_nuevas:
+                    continue
+                existentes.update(_texto_normalizado(busqueda) for busqueda in busquedas_nuevas)
+                tareas_combinadas.append({**tarea, 'busquedas': busquedas_nuevas})
+            propuesta_completa['tareas_proyecto'] = tareas_combinadas[:8]
+            propuesta_completa['herramientas_proyecto'] = list(dict.fromkeys([
+                *(interpretacion.get('herramientas_proyecto') or []),
+                *(propuesta_completa.get('herramientas_proyecto') or []),
+            ]))[:3]
             propuesta_completa['modo_orientacion'] = 'propuesta_estandar'
             interpretacion = _normalizar_preferencias_extraidas(
                 propuesta_completa,

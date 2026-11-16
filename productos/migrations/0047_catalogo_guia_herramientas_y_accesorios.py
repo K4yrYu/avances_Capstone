@@ -1,0 +1,246 @@
+from django.db import migrations
+
+
+# Productos de orientación para consultas frecuentes. Las fichas describen
+# presentación, uso y compatibilidad; no se declara rendimiento técnico si no
+# existe un dato verificable para calcular superficies o dosificaciones.
+PRODUCTOS_GUIA = [
+    {
+        'sku': 'SFI-HER-LLA-AJU-10',
+        'nombre': 'Llave ajustable acero 10 pulgadas',
+        'categoria': 'Herramientas',
+        'precio': 10990, 'stock': 42, 'contenido': '1.000', 'unidad': 'unidad',
+        'uso': 'Ajustar tuercas y conexiones de distintas medidas en trabajos de gasfitería, montaje y reparaciones.',
+        'rol': 'Herramienta de ajuste',
+        'proyectos': 'gasfitería, lavaplatos, baño, reparaciones y montaje',
+        'terminos': 'llave inglesa, tuerca, apretar, conexión, gasfitería',
+        'ficha': 'Llave ajustable de acero de 10 pulgadas; apertura regulable para tuercas y pernos compatibles.',
+    },
+    {
+        'sku': 'SFI-HER-ALI-UNI-8',
+        'nombre': 'Alicate universal aislado 8 pulgadas',
+        'categoria': 'Herramientas',
+        'precio': 7990, 'stock': 50, 'contenido': '1.000', 'unidad': 'unidad',
+        'uso': 'Sujetar, doblar y cortar alambres o conductores en trabajos compatibles.',
+        'rol': 'Herramienta manual de sujeción y corte',
+        'proyectos': 'electricidad, reparaciones, montaje y ferretería',
+        'terminos': 'alicate, cortar cable, sujetar, doblar alambre, electricidad',
+        'ficha': 'Alicate universal aislado de 8 pulgadas para uso manual; verificar condición del aislamiento antes de intervenir circuitos.',
+    },
+    {
+        'sku': 'SFI-HER-DES-JUE-6',
+        'nombre': 'Juego destornilladores punta plana y cruz 6 piezas',
+        'categoria': 'Herramientas',
+        'precio': 9990, 'stock': 46, 'contenido': '6.000', 'unidad': 'unidad',
+        'uso': 'Atornillar y desatornillar fijaciones de punta plana o cruz en montajes domésticos.',
+        'rol': 'Herramienta de atornillado',
+        'proyectos': 'electricidad, muebles, puertas, montaje y reparaciones',
+        'terminos': 'destornillador, atornillar, tornillo, punta cruz, punta plana',
+        'ficha': 'Juego de seis destornilladores con puntas planas y cruz para fijaciones manuales compatibles.',
+    },
+    {
+        'sku': 'SFI-HER-NIV-ALU-60',
+        'nombre': 'Nivel de burbuja aluminio 60 cm',
+        'categoria': 'Herramientas',
+        'precio': 8990, 'stock': 35, 'contenido': '1.000', 'unidad': 'unidad',
+        'uso': 'Comprobar nivel y plomo al instalar estructuras, revestimientos, muebles o artefactos.',
+        'rol': 'Herramienta de medición y nivelación',
+        'proyectos': 'cerámica, carpintería, tabiques, muebles y montaje',
+        'terminos': 'nivel, burbuja, plomo, alinear, nivelar',
+        'ficha': 'Nivel de burbuja de aluminio de 60 cm para comprobaciones manuales de horizontalidad y verticalidad.',
+    },
+    {
+        'sku': 'SFI-HER-PIS-CAL-9',
+        'nombre': 'Pistola calafatera para cartucho 300 ml',
+        'categoria': 'Herramientas',
+        'precio': 6990, 'stock': 40, 'contenido': '1.000', 'unidad': 'unidad',
+        'uso': 'Aplicar selladores y siliconas en cartuchos compatibles de 300 ml.',
+        'rol': 'Herramienta de aplicación de sellador',
+        'proyectos': 'baño, cocina, ventanas, techumbre y reparaciones',
+        'terminos': 'pistola silicona, calafatear, sellar, cartucho, juntas',
+        'ficha': 'Pistola manual para cartuchos estándar de 300 ml; compatible con selladores en ese formato.',
+    },
+    {
+        'sku': 'SFI-HER-BRO-CON-8',
+        'nombre': 'Broca para concreto 8 mm x 110 mm',
+        'categoria': 'Herramientas',
+        'precio': 2490, 'stock': 80, 'contenido': '1.000', 'unidad': 'unidad',
+        'uso': 'Perforar hormigón, ladrillo o mampostería con taladro percutor compatible.',
+        'rol': 'Accesorio de perforación',
+        'proyectos': 'instalaciones, fijaciones, repisas, canalización y montaje',
+        'terminos': 'broca cemento, perforar muro, tarugo, hormigón, mampostería',
+        'ficha': 'Broca para concreto de 8 mm de diámetro y 110 mm de largo; utilizar con equipo y fijación compatibles.',
+    },
+    {
+        'sku': 'SFI-HER-LLA-STR-14',
+        'nombre': 'Llave Stillson para cañería 14 pulgadas',
+        'categoria': 'Herramientas',
+        'precio': 15990, 'stock': 28, 'contenido': '1.000', 'unidad': 'unidad',
+        'uso': 'Sujetar y girar tuberías o fittings metálicos en instalaciones compatibles.',
+        'rol': 'Herramienta para cañerías',
+        'proyectos': 'gasfitería, agua, bombas y reparación de cañerías',
+        'terminos': 'llave grifa, stillson, cañería, tubo, fitting, gasfitería',
+        'ficha': 'Llave para cañería tipo Stillson de 14 pulgadas con mordaza ajustable.',
+    },
+    {
+        'sku': 'SFI-HER-SAR-6',
+        'nombre': 'Prensa sargento acero 6 pulgadas',
+        'categoria': 'Herramientas',
+        'precio': 8990, 'stock': 34, 'contenido': '1.000', 'unidad': 'unidad',
+        'uso': 'Mantener piezas de madera o tableros firmemente unidas mientras se fija o encola.',
+        'rol': 'Herramienta de sujeción',
+        'proyectos': 'carpintería, muebles, puertas y reparación de madera',
+        'terminos': 'sargento, prensa, sujetar madera, encolar, carpintería',
+        'ficha': 'Prensa tipo sargento de acero de 6 pulgadas para sujeción temporal de piezas compatibles.',
+    },
+    {
+        'sku': 'SFI-TEC-SEL-PU-300',
+        'nombre': 'Sellador poliuretano para exterior cartucho 300 ml',
+        'categoria': 'Adhesivos',
+        'precio': 8490, 'stock': 52, 'contenido': '300.000', 'unidad': 'ml',
+        'uso': 'Sellar juntas y encuentros exteriores compatibles expuestos a humedad e intemperie.',
+        'rol': 'Sellado y terminación exterior',
+        'proyectos': 'techumbre, canaletas, ventanas, terrazas y reparaciones',
+        'terminos': 'sellador techo, poliuretano, gotera, junta exterior, calafatear',
+        'ficha': 'Sellador de poliuretano en cartucho de 300 ml para juntas exteriores; confirmar adherencia con los materiales específicos.',
+    },
+    {
+        'sku': 'SFI-TEC-BUR-PUE-6',
+        'nombre': 'Burlete autoadhesivo espuma para puerta y ventana 6 m',
+        'categoria': 'Ferretería',
+        'precio': 4990, 'stock': 68, 'contenido': '6.000', 'unidad': 'm',
+        'uso': 'Reducir el paso de polvo, corrientes de aire y pequeñas filtraciones en puertas o ventanas compatibles.',
+        'rol': 'Terminación y sellado de abertura',
+        'proyectos': 'puertas, ventanas, aislación doméstica y reparaciones',
+        'terminos': 'burlete, puerta, ventana, sellar, frío, polvo, corriente aire',
+        'ficha': 'Burlete de espuma autoadhesiva de 6 m para holguras pequeñas; limpiar y secar la superficie antes de instalar.',
+    },
+    {
+        'sku': 'SFI-TEC-ESP-PU-500',
+        'nombre': 'Espuma poliuretano expansiva 500 ml',
+        'categoria': 'Adhesivos',
+        'precio': 7990, 'stock': 44, 'contenido': '500.000', 'unidad': 'ml',
+        'uso': 'Rellenar holguras en marcos, pasos de instalaciones y cavidades compatibles.',
+        'rol': 'Relleno y aislamiento de juntas',
+        'proyectos': 'puertas, ventanas, tabiques, techumbre y reparaciones',
+        'terminos': 'espuma expansiva, rellenar hueco, marco puerta, ventana, aislación',
+        'ficha': 'Espuma expansiva de poliuretano de 500 ml; usar protección personal y recortar una vez curada según indicaciones del envase.',
+    },
+    {
+        'sku': 'SFI-JAR-MAN-12-20',
+        'nombre': 'Manguera jardín 1/2 pulgada x 20 m',
+        'categoria': 'Jardinería',
+        'precio': 16990, 'stock': 38, 'contenido': '20.000', 'unidad': 'm',
+        'uso': 'Conducir agua para riego manual y limpieza exterior desde una conexión compatible.',
+        'rol': 'Conducción de agua para riego',
+        'proyectos': 'jardín, patio, riego y limpieza exterior',
+        'terminos': 'manguera, regar, agua patio, jardín, riego manual',
+        'ficha': 'Manguera de jardín de 1/2 pulgada y 20 m; verificar compatibilidad con conectores y presión de la red.',
+    },
+    {
+        'sku': 'SFI-JAR-TIJ-POD-8',
+        'nombre': 'Tijera de poda bypass 8 pulgadas',
+        'categoria': 'Jardinería',
+        'precio': 8990, 'stock': 46, 'contenido': '1.000', 'unidad': 'unidad',
+        'uso': 'Podar ramas delgadas, flores y tallos en labores de mantención de jardín.',
+        'rol': 'Herramienta de poda',
+        'proyectos': 'jardín, poda, huerto y mantención exterior',
+        'terminos': 'tijera poda, cortar ramas, plantas, jardín, huerto',
+        'ficha': 'Tijera de poda tipo bypass de 8 pulgadas para ramas de diámetro compatible con la herramienta.',
+    },
+    {
+        'sku': 'SFI-JAR-MAL-SOM-2X5',
+        'nombre': 'Malla sombra 80 por ciento 2 x 5 m',
+        'categoria': 'Jardinería',
+        'precio': 14990, 'stock': 30, 'contenido': '10.000', 'unidad': 'm2',
+        'uso': 'Dar sombra parcial y privacidad en patios, viveros o cierres livianos compatibles.',
+        'rol': 'Cubierta liviana de sombra',
+        'proyectos': 'jardín, patio, huerto, vivero y cierres exteriores',
+        'terminos': 'malla sombra, sombra patio, huerto, cierre, vivero',
+        'ficha': 'Malla sombra de 80 por ciento, 2 x 5 m; requiere estructura y fijaciones adecuadas al viento.',
+    },
+    {
+        'sku': 'SFI-ELE-TOM-10A-BL',
+        'nombre': 'Tomacorriente embutido 10 A 2P más tierra blanco',
+        'categoria': 'Electricidad',
+        'precio': 3990, 'stock': 72, 'contenido': '1.000', 'unidad': 'unidad',
+        'uso': 'Habilitar un punto de conexión eléctrica en un circuito compatible y protegido.',
+        'rol': 'Punto de conexión eléctrica',
+        'proyectos': 'enchufes, bodega, dormitorio, cocina e instalación eléctrica',
+        'terminos': 'enchufe, toma corriente, tomacorriente, electricidad, punto eléctrico',
+        'ficha': 'Tomacorriente embutido de 10 A con dos polos y tierra; instalación y dimensionamiento por electricista autorizado.',
+    },
+    {
+        'sku': 'SFI-ELE-CON-IP68-3',
+        'nombre': 'Conector estanco cable 3 polos IP68',
+        'categoria': 'Electricidad',
+        'precio': 5990, 'stock': 54, 'contenido': '1.000', 'unidad': 'unidad',
+        'uso': 'Proteger una unión de cables en instalaciones compatibles expuestas a humedad o polvo.',
+        'rol': 'Conexión eléctrica protegida',
+        'proyectos': 'iluminación exterior, jardín, bomba de agua y portón automático',
+        'terminos': 'conector estanco, unir cable, caja exterior, IP68, humedad',
+        'ficha': 'Conector estanco de tres polos con protección IP68 declarada; verificar sección de cable y condiciones de instalación.',
+    },
+    {
+        'sku': 'SFI-ELE-ESC-FIB-5',
+        'nombre': 'Escalera dieléctrica fibra 5 peldaños',
+        'categoria': 'Seguridad',
+        'precio': 69990, 'stock': 12, 'contenido': '1.000', 'unidad': 'unidad',
+        'uso': 'Acceder a trabajos en altura baja siguiendo prácticas seguras y revisión previa de estabilidad.',
+        'rol': 'Equipo de acceso y seguridad',
+        'proyectos': 'iluminación, pintura, instalación eléctrica y mantención',
+        'terminos': 'escalera, altura, lámpara, pintar techo, trabajo eléctrico',
+        'ficha': 'Escalera de fibra de cinco peldaños; inspeccionar estado, superficie de apoyo y condiciones de uso antes de subir.',
+    },
+]
+
+
+def cargar_catalogo_guia(apps, schema_editor):
+    Producto = apps.get_model('productos', 'Producto')
+    Proveedor = apps.get_model('productos', 'Proveedor')
+    proveedor = Proveedor.objects.filter(nombre='Proveedor General SFI', activo=True).first()
+
+    for item in PRODUCTOS_GUIA:
+        Producto.objects.update_or_create(
+            sku=item['sku'],
+            defaults={
+                'nombre': item['nombre'],
+                'descripcion': item['uso'],
+                'precio': item['precio'],
+                'stock': item['stock'],
+                'stock_minimo': max(3, item['stock'] // 6),
+                'categoria': item['categoria'],
+                'modelo': item['sku'],
+                'imagen': '',
+                'activo': True,
+                'marca': 'Genérico SFI',
+                'ambiente_uso': 'interior_exterior',
+                'unidad_venta': 'unidad',
+                'contenido': item['contenido'],
+                'unidad_contenido': item['unidad'],
+                'tipo_calculo': 'ninguno',
+                'rendimiento': None,
+                'unidad_rendimiento': '',
+                'porcentaje_desperdicio': '0.00',
+                'proveedor_id': proveedor.pk if proveedor else None,
+                'uso_recomendado': item['uso'],
+                'especificaciones': {
+                    'Ficha técnica': item['ficha'],
+                    'Rol en proyecto': item['rol'],
+                    'Proyectos sugeridos': item['proyectos'],
+                    'Términos relacionados': item['terminos'],
+                },
+                'informacion_tecnica_verificada': False,
+            },
+        )
+
+
+def retirar_catalogo_guia(apps, schema_editor):
+    Producto = apps.get_model('productos', 'Producto')
+    Producto.objects.filter(sku__in=[item['sku'] for item in PRODUCTOS_GUIA]).delete()
+
+
+class Migration(migrations.Migration):
+    dependencies = [('productos', '0046_enriquecer_guia_catalogo_proyectos')]
+
+    operations = [migrations.RunPython(cargar_catalogo_guia, retirar_catalogo_guia)]

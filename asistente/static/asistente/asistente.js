@@ -285,7 +285,7 @@
           .filter(value => value && value.toLocaleLowerCase("es-CL") !== "no aplica")
           .map(value => `<span>${escapeHtml(value)}</span>`)
           .join("");
-        return `<article class="assistant-product"><div class="assistant-product-image">${imageMarkup}</div><div class="assistant-product-body"><small>${escapeHtml(product.rol || product.marca || product.categoria || "SFI")}</small><h3>${escapeHtml(product.nombre || "Producto")}</h3><div class="assistant-product-meta">${metadata}<span>${escapeHtml(product.stock)} disponibles</span></div>${calculationText}${optionalText}<strong class="assistant-product-price">${formatClp(product.precio)} c/u</strong><div class="assistant-product-actions"><a href="${url}">Ver producto</a>${addButton}</div></div></article>`;
+        return `<article class="assistant-product"><div class="assistant-product-image">${imageMarkup}</div><div class="assistant-product-body"><small>${escapeHtml(product.rol || product.marca || product.categoria || "SFI")}</small><h3>${escapeHtml(product.nombre || "Producto")}</h3><div class="assistant-product-meta">${metadata}<span>${escapeHtml(product.stock)} disponibles</span></div>${calculationText}<strong class="assistant-product-price">${formatClp(product.precio)} c/u</strong><div class="assistant-product-actions"><a href="${url}">Ver producto</a>${addButton}</div></div></article>`;
       }).join("");
       messages.appendChild(container);
       container.querySelectorAll("img").forEach(image => image.addEventListener("error", function replaceImage() {

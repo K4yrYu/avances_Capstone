@@ -6,8 +6,8 @@ from maestros.models import Especialidad
 from productos.models import Producto
 
 
-MAX_TAREAS = 8
-MAX_BUSQUEDAS = 18
+MAX_TAREAS = 12
+MAX_BUSQUEDAS = 36
 MAX_ESPECIALIDADES = 3
 MAX_MAESTROS = 5
 
@@ -32,16 +32,24 @@ def _formatear_clp(valor):
 
 def _palabras_consulta(consulta):
     omitidas = {'para', 'con', 'del', 'las', 'los', 'una', 'uno', 'por'}
-    return [
+    palabras = [
         palabra for palabra in re.findall(r'[a-z0-9-]+', _normalizar(consulta))
         if len(palabra) >= 3 and palabra not in omitidas
     ]
+    equivalencias = {
+        'roja': 'rojo', 'blanca': 'blanco', 'negra': 'negro',
+        'amarilla': 'amarillo',
+    }
+    return [equivalencias.get(palabra, palabra) for palabra in palabras]
 
 
 def _textos_producto(producto):
     nombre = _normalizar(producto.nombre)
     identificacion = _normalizar(
-        ' '.join([producto.sku or '', producto.marca, producto.categoria])
+        ' '.join([
+            producto.sku or '', producto.marca, producto.categoria,
+            producto.color, producto.tipo_pintura, producto.terminacion,
+        ])
     )
     detalle = _normalizar(
         ' '.join([
@@ -330,7 +338,7 @@ def _extraer_tareas(datos):
         if not isinstance(tarea, dict):
             continue
         nombre = _texto_seguro(tarea.get("nombre"), 100)
-        busquedas = _lista_textos(tarea.get("busquedas"), 3, 80)
+        busquedas = _lista_textos(tarea.get("busquedas"), 5, 80)
         usos = {}
         for indice, item in enumerate(tarea.get("usos_materiales") or []):
             if isinstance(item, dict):
@@ -361,13 +369,18 @@ def _extraer_tareas(datos):
         if total_busquedas >= MAX_BUSQUEDAS:
             break
 
+    es_propuesta_estandar = (
+        datos.get("_proyecto_estandar") is True
+        or datos.get("modo_orientacion") == "propuesta_estandar"
+    )
     herramientas = (
-        _lista_textos(datos.get("herramientas_proyecto"), 6, 80)
-        if datos.get("incluir_herramientas") is True
+        _lista_textos(datos.get("herramientas_proyecto"), 8, 80)
+        if datos.get("incluir_herramientas") is True or es_propuesta_estandar
         else []
     )
     herramientas = herramientas[:max(0, MAX_BUSQUEDAS - total_busquedas)]
     if herramientas:
+        tareas = tareas[:max(0, MAX_TAREAS - 1)]
         tareas.append({"nombre": "Herramientas recomendadas", "busquedas": herramientas})
     return tareas[:MAX_TAREAS]
 
@@ -415,8 +428,20 @@ def resolver_proyecto_generico(
             "electrico", "automatico", "automatizacion", "motor",
         ))
     )
+    contexto_proyecto = _normalizar(proyecto)
+    es_intervencion_acotada = (
+        any(accion in contexto_proyecto for accion in (
+            'instalar', 'instalacion', 'reparar', 'reparacion',
+            'cambiar', 'cambio', 'reemplazar', 'reemplazo',
+        ))
+        and not any(accion in contexto_proyecto for accion in (
+            'construir', 'construccion', 'hacer un', 'levantar',
+            'obra completa', 'renovacion completa', 'remodelacion completa',
+        ))
+    )
     es_quincho_estandar = (
         'quincho' in contexto_inicial
+        and not es_intervencion_acotada
         and (
             datos.get('_proyecto_estandar') is True
             or datos.get('modo_orientacion') == 'propuesta_estandar'
@@ -425,6 +450,7 @@ def resolver_proyecto_generico(
     )
     es_bodega_estandar = (
         'bodega' in contexto_inicial
+        and not es_intervencion_acotada
         and (
             datos.get('_proyecto_estandar') is True
             or datos.get('modo_orientacion') == 'propuesta_estandar'
@@ -662,6 +688,19 @@ def resolver_proyecto_generico(
                 ],
             },
         ]
+    # Los catálogos estándar especializados reemplazan las etapas de Gemini
+    # para asegurar el sistema completo, pero deben conservar las herramientas
+    # que la IA identificó para ejecutar ese proyecto.
+    if (es_bodega_estandar or es_quincho_estandar or es_porton_automatico):
+        herramientas_estandar = _lista_textos(datos.get("herramientas_proyecto"), 8, 80)
+        busquedas_usadas = sum(len(tarea.get("busquedas") or []) for tarea in tareas)
+        herramientas_estandar = herramientas_estandar[:max(0, MAX_BUSQUEDAS - busquedas_usadas)]
+        if herramientas_estandar:
+            tareas = tareas[:max(0, MAX_TAREAS - 1)]
+            tareas.append({
+                "nombre": "Herramientas recomendadas",
+                "busquedas": herramientas_estandar,
+            })
     if not proyecto or not tareas:
         return {
             "tipo": "aclaracion",
@@ -851,6 +890,7 @@ def resolver_proyecto_generico(
     productos_usados = set()
     faltantes = [material_principal_faltante] if material_principal_faltante else []
     faltantes_detalle = []
+    sin_stock_detalle = []
     cantidades_calculadas = []
     texto_plan = [proyecto]
     try:
@@ -920,6 +960,20 @@ def resolver_proyecto_generico(
                 default=None,
             )
             if producto is None:
+                agotados = [
+                    candidato for candidato in candidatos
+                    if candidato.stock <= 0 and _coincidencia_suficiente(candidato, consulta)
+                ]
+                if agotados:
+                    sin_stock_detalle.append({
+                        "nombre": agotados[0].nombre,
+                        "etapa": tarea["nombre"],
+                        "uso": tarea.get("usos", {}).get(
+                            _normalizar(consulta),
+                            f"Se utiliza en la etapa «{tarea['nombre']}» del proyecto.",
+                        ),
+                    })
+                    continue
                 if consulta not in faltantes:
                     faltantes.append(consulta)
                 uso_faltante = tarea.get("usos", {}).get(
@@ -944,6 +998,7 @@ def resolver_proyecto_generico(
                 "uso_en_proyecto": uso_material,
                 "carrito_cantidad": 1,
                 "recomendacion_orientativa": True,
+                "es_opcional": "herramienta" in _normalizar(tarea["nombre"]),
             })
             base_calculo = tarea.get("bases", {}).get(
                 _normalizar(consulta), 'referencial',
@@ -1011,9 +1066,15 @@ def resolver_proyecto_generico(
     if datos.get("_consulta_solo_herramientas"):
         herramientas = [
             producto for producto in productos
-            if "herramienta" in _normalizar(producto.get("rol"))
+            if any(clase in _normalizar(producto.get("categoria")) for clase in (
+                "herramienta", "seguridad",
+            ))
         ]
+        herramientas_sugeridas = _lista_textos(
+            datos.get("herramientas_proyecto"), 3, 100,
+        )
         for herramienta in herramientas:
+            herramienta["rol"] = "Herramienta recomendada"
             herramienta["es_opcional"] = True
             herramienta["carrito_cantidad"] = 1
         total_herramientas = sum(
@@ -1032,7 +1093,16 @@ def resolver_proyecto_generico(
                         for herramienta in herramientas
                     )
                     if herramientas
-                    else "No encontré herramientas suficientemente relacionadas con stock."
+                    else (
+                        "ORIENTACIÓN RECOMENDADA\n"
+                        + "\n".join(
+                            f"• {herramienta}: se usa para realizar esta tarea."
+                            for herramienta in herramientas_sugeridas
+                        )
+                        + "\n\nNo encontré estas herramientas con stock en SFI."
+                        if herramientas_sugeridas
+                        else "No encontré herramientas suficientemente relacionadas con stock."
+                    )
                 )
                 + (
                     f"\n\nCOSTO OPCIONAL\n{_formatear_clp(total_herramientas)} CLP "
@@ -1211,6 +1281,14 @@ def resolver_proyecto_generico(
             "disponibles actualmente en SFI:\n"
             + "\n".join(lineas_faltantes)
         )
+    if sin_stock_detalle:
+        partes.append(
+            "ENCONTRADO SIN STOCK\n"
+            + "\n".join(
+                f"• {item['nombre']} — {item['uso']}"
+                for item in sin_stock_detalle
+            )
+        )
     if es_porton_automatico:
         partes.append(
             "IMPORTANTE\n"
@@ -1263,6 +1341,7 @@ def resolver_proyecto_generico(
         "especialidades": especialidades,
         "faltantes_catalogo": list(dict.fromkeys(faltantes)),
         "faltantes_catalogo_detalle": faltantes_detalle,
+        "sin_stock_catalogo": sin_stock_detalle,
         "total_calculado": int(total_calculado),
         "total_es_parcial": bool(cantidad_referenciales),
         "calculo_orientativo": True,
@@ -1488,14 +1567,20 @@ def resolver_proyecto_techumbre(
     if datos.get("_consulta_solo_herramientas"):
         herramientas = [
             producto for producto in resultado.get("productos", [])
-            if "herramienta" in _normalizar(producto.get("rol"))
+            if any(clase in _normalizar(producto.get("categoria")) for clase in (
+                "herramienta", "seguridad",
+            ))
         ]
         for herramienta in herramientas:
+            herramienta["rol"] = "Herramienta recomendada"
             herramienta["es_opcional"] = True
             herramienta["carrito_cantidad"] = 1
         total_herramientas = sum(
             (herramienta.get("precio") or 0 for herramienta in herramientas),
             0,
+        )
+        herramientas_sugeridas = _lista_textos(
+            datos.get("herramientas_proyecto"), 3, 100,
         )
         resultado.update({
             "productos": herramientas,
@@ -1508,7 +1593,16 @@ def resolver_proyecto_techumbre(
                         for herramienta in herramientas
                     )
                     if herramientas
-                    else "No encontré herramientas suficientemente relacionadas con stock."
+                    else (
+                        "ORIENTACIÓN RECOMENDADA\n"
+                        + "\n".join(
+                            f"• {herramienta}: se usa para realizar esta tarea."
+                            for herramienta in herramientas_sugeridas
+                        )
+                        + "\n\nNo encontré estas herramientas con stock en SFI."
+                        if herramientas_sugeridas
+                        else "No encontré herramientas suficientemente relacionadas con stock."
+                    )
                 )
                 + (
                     f"\n\nCOSTO OPCIONAL DE HERRAMIENTAS\n"

@@ -101,6 +101,14 @@ SINONIMOS: dict[str, tuple[str, ...]] = {
     'trozar':           ('sierra',),
     'disco':            ('sierra', 'circular'),
 
+    # â”€â”€ JardinerÃ­a / movimiento de tierra â”€â”€
+    'excavar':          ('pala', 'picota', 'carretilla'),
+    'cavar':            ('pala', 'picota', 'carretilla'),
+    'zanja':            ('pala', 'picota', 'carretilla'),
+    'pala':             ('pala', 'punta'),
+    'picota':           ('picota', 'jardinera'),
+    'carretilla':       ('carretilla', 'acero'),
+
     # ── Gasfitería / grifería ──
     'grifo':            ('combinacion', 'lavaplatos', 'monomando'),
     'griferia':         ('combinacion', 'lavaplatos', 'monomando'),
@@ -109,6 +117,12 @@ SINONIMOS: dict[str, tuple[str, ...]] = {
     'grifo lavamanos':  ('monomando', 'lavamanos'),
     'llave cocina':     ('combinacion', 'lavaplatos'),
     'llave lavamanos':  ('monomando', 'lavamanos'),
+
+    # Electricidad cotidiana.
+    'enchufe':          ('tomacorriente',),
+    'toma corriente':   ('tomacorriente',),
+    'tomacorriente':    ('enchufe',),
+    'caja estanca':     ('conector', 'estanco'),
 
     # ── Fijaciones ──
     'bulón':            ('perno', 'hexagonal'),

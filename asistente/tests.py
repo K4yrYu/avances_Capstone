@@ -1359,6 +1359,11 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
         self.assertIn('cinta', agregados)
         self.assertIn('metrica', agregados)
 
+    def test_expandir_enchufe_agrega_tomacorriente(self):
+        expandidas, agregados = expandir_consulta(['enchufe'])
+        self.assertIn('tomacorriente', agregados)
+        self.assertIn('enchufe', expandidas)
+
     def test_expandir_perforadora_agrega_taladro(self):
         expandidas, agregados = expandir_consulta(['perforadora'])
         self.assertIn('taladro', agregados)
@@ -1433,6 +1438,25 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
         resultados = _buscar_productos('wincha')
         ids = [p.id for p in resultados]
         self.assertIn(self.cinta.id, ids)
+
+    def test_buscar_picota_no_incluye_macetero_por_sinonimo_jardinera(self):
+        picota = Producto.objects.create(
+            nombre='Picota jardinera acero 2,5 kg mango fibra',
+            descripcion='Herramienta manual para aflojar tierra compactada.',
+            precio=18990, stock=24, categoria='Herramientas', marca='SFI', activo=True,
+        )
+        macetero = Producto.objects.create(
+            nombre='Macetero rectangular plÃ¡stico grafito',
+            descripcion='Jardinera para plantas y hierbas.',
+            precio=6990, stock=50, categoria='Otra', marca='SFI', activo=True,
+        )
+
+        from .services.asistente_sfi import _buscar_productos
+        resultados = _buscar_productos('picota')
+
+        ids = [producto.id for producto in resultados]
+        self.assertIn(picota.id, ids)
+        self.assertNotIn(macetero.id, ids)
 
     def test_buscar_metro_no_confunde_metrico_con_cinta_metrica(self):
         from .services.asistente_sfi import _buscar_productos
@@ -1830,6 +1854,7 @@ class PlanificadorGenericoProyectosTests(TestCase):
                 'nombre': 'Automatización',
                 'busquedas': ['motor porton corredera hasta 600 kg'],
             }],
+            'herramientas_proyecto': ['soldadora inverter', 'esmeril angular'],
             'datos_faltantes_proyecto': [],
         })
 
@@ -1847,6 +1872,8 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertIn('hoja porton corredera vehicular', faltantes)
         self.assertIn('riel porton corredera', faltantes)
         self.assertIn('rueda porton corredera', faltantes)
+        etapas = {tarea['nombre'] for tarea in resultado['tareas']}
+        self.assertIn('Herramientas recomendadas', etapas)
         self.assertTrue(all(
             item['etapa'] and item['uso']
             for item in resultado['faltantes_catalogo_detalle']
@@ -1885,19 +1912,27 @@ class PlanificadorGenericoProyectosTests(TestCase):
             categoria='Herramientas',
             activo=True,
         )
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Pintar una pared',
+            'tareas_proyecto': [],
+            'herramientas_proyecto': ['rodillo pintura', 'brocha pintura'],
+            'incluir_herramientas': True,
+            'datos_faltantes_proyecto': [],
+        }
 
         resultado = procesar_consulta(
             'QUE HERAMIENTAS NECESITO PARA PINTAR UNA PARED',
             [],
         )
 
-        interpretar.assert_not_called()
+        interpretar.assert_called_once()
         self.assertEqual(resultado['tipo'], 'seguimiento_herramientas')
         nombres = [producto['nombre'].casefold() for producto in resultado['productos']]
         self.assertTrue(any('rodillo' in nombre for nombre in nombres))
         self.assertTrue(any('brocha' in nombre for nombre in nombres))
         self.assertTrue(all(
-            producto['rol'] == 'Herramienta recomendada'
+            'herramienta' in producto['rol'].casefold()
             for producto in resultado['productos']
         ))
         self.assertNotIn('metros cuadrados', resultado['mensaje'].casefold())
@@ -1931,6 +1966,36 @@ class PlanificadorGenericoProyectosTests(TestCase):
         )
         self.assertFalse(datos['_consulta_solo_herramientas'])
         self.assertTrue(datos['incluir_herramientas'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_herramientas_para_retirar_tierra_se_interpretan_por_proyecto(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Retiro manual de tierra en patio',
+            'tareas_proyecto': [],
+            # Gemini puede devolver una descripciÃ³n amplia; el backend la
+            # traduce al conjunto de herramientas de tierra del catÃ¡logo.
+            'herramientas_proyecto': ['herramientas manuales'],
+            'incluir_herramientas': True,
+            'datos_faltantes_proyecto': [],
+        }
+
+        resultado = procesar_consulta(
+            'Quiero sacar tierra de mi patio, ¿qué herramientas necesito?',
+            [],
+        )
+
+        interpretar.assert_called_once()
+        self.assertEqual(resultado['tipo'], 'seguimiento_herramientas')
+        nombres = ' '.join(
+            producto['nombre'].casefold() for producto in resultado['productos']
+        )
+        self.assertIn('pala punta', nombres)
+        self.assertIn('picota jardinera', nombres)
+        self.assertIn('carretilla acero', nombres)
+        self.assertNotIn('taladro', nombres)
+        self.assertNotIn('cinta metrica', nombres)
+
 
     def test_cliente_gemini_reintenta_errores_temporales(self):
         adaptador = cliente_gemini.session.get_adapter(
@@ -2687,6 +2752,29 @@ class PlanificadorGenericoProyectosTests(TestCase):
         )
         self.assertIn('PROPUESTA ESTÁNDAR PARA TU PROYECTO', resultado['mensaje'])
         self.assertNotIn('ANTES DE RECOMENDAR PRODUCTOS', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_instalar_campana_en_quincho_no_activa_obra_completa(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'modo_orientacion': 'propuesta_estandar',
+            'proyecto': 'Instalación de campana para quincho',
+            'tareas_proyecto': [{
+                'nombre': 'Extracción de humo',
+                'busquedas': ['campana humo quincho', 'ducto chimenea quincho'],
+            }],
+            'datos_faltantes_proyecto': [],
+        }
+
+        resultado = procesar_consulta(
+            'Quiero instalar una campana para quincho, ¿qué necesito?', [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertEqual(len(resultado['tareas']), 1)
+        self.assertIn('campana humo quincho', resultado['faltantes_catalogo'])
+        self.assertNotIn('radier', resultado['mensaje'].casefold())
+        self.assertNotIn('ladrillo refractario', resultado['mensaje'].casefold())
 
     def test_explicacion_incluye_mas_de_ocho_productos_mostrados(self):
         from .services.asistente_sfi import _explicar_productos_mostrados
