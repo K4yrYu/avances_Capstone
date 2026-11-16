@@ -30,6 +30,8 @@
         const monedasPermitidas = new Set(["CLP", "USD", "EUR", "BRL"]);
         const apiUrl = catalogo.dataset.apiUrl;
         const imagenAlternativa = obtenerUrlSegura(catalogo.dataset.placeholderUrl);
+        const puedeCambiarImagen = catalogo.dataset.canChangeImage === "true";
+        const plantillaUrlImagen = catalogo.dataset.imageUpdateUrl || "";
         let productos = [];
         let tasaCambio = 1;
         let monedaActual = localStorage.getItem("moneda") || "CLP";
@@ -63,6 +65,11 @@
         function colorHexSeguro(valor) {
             const color = String(valor || "").trim();
             return /^#[0-9a-f]{6}$/i.test(color) ? color : "";
+        }
+
+        function obtenerCookie(nombre) {
+            const prefijo = `${nombre}=`;
+            return document.cookie.split(";").map(item => item.trim()).find(item => item.startsWith(prefijo))?.slice(prefijo.length) || "";
         }
 
         function formatoPrecio(precio) {
@@ -185,15 +192,21 @@
             const boton = stock > 0
                 ? `<a class="product-detail-button" href="${detalleUrl}">Ver producto <i class="fas fa-arrow-right" aria-hidden="true"></i></a>`
                 : `<span class="product-detail-button disabled" aria-disabled="true">Sin stock</span>`;
+            const cambioImagen = puedeCambiarImagen
+                ? `<button class="change-image-button" type="button" data-change-image="${id}" title="Cambiar foto de ${nombre}"><i class="fa-solid fa-camera" aria-hidden="true"></i><span>Cambiar foto</span></button>`
+                : "";
 
             return `
                 <article class="catalog-card">
-                    <a class="catalog-image-link" href="${detalleUrl}" aria-label="Ver ${nombre}">
-                        <span class="stock-badge ${stockInfo.clase}">
-                            <i class="fas fa-circle" aria-hidden="true"></i>${escapeHtml(stockInfo.texto)}
-                        </span>
-                        <img class="catalog-image" src="${imagen}" alt="${nombre}" loading="lazy">
-                    </a>
+                    <div class="catalog-image-area">
+                        <a class="catalog-image-link" href="${detalleUrl}" aria-label="Ver ${nombre}">
+                            <span class="stock-badge ${stockInfo.clase}">
+                                <i class="fas fa-circle" aria-hidden="true"></i>${escapeHtml(stockInfo.texto)}
+                            </span>
+                            <img class="catalog-image" src="${imagen}" alt="${nombre}" loading="lazy">
+                        </a>
+                        ${cambioImagen}
+                    </div>
                     <div class="catalog-card-body">
                         <p class="product-category">${categoria}</p>
                         <h2><a href="${detalleUrl}">${nombre}</a></h2>
@@ -220,6 +233,61 @@
                         imagen.classList.add("catalog-image-fallback");
                     }
                 });
+            });
+        }
+
+        async function cambiarImagen(id, archivo, boton) {
+            if (!archivo || !plantillaUrlImagen) return;
+            const producto = productos.find(item => Number(item.id) === Number(id));
+            if (!producto) return;
+
+            const datos = new FormData();
+            datos.append("imagen", archivo);
+            boton.disabled = true;
+            boton.classList.add("is-uploading");
+            boton.querySelector("span").textContent = "Subiendo…";
+
+            try {
+                const respuesta = await fetch(plantillaUrlImagen.replace("/0/", `/${id}/`), {
+                    method: "POST",
+                    body: datos,
+                    headers: {"X-CSRFToken": decodeURIComponent(obtenerCookie("csrftoken"))},
+                    credentials: "same-origin",
+                });
+                const resultado = await respuesta.json();
+                if (!respuesta.ok) {
+                    throw new Error(resultado.imagen?.[0] || "No fue posible actualizar la imagen.");
+                }
+                producto.imagen = resultado.imagen;
+                renderizar();
+            } catch (error) {
+                boton.disabled = false;
+                boton.classList.remove("is-uploading");
+                boton.querySelector("span").textContent = "Cambiar foto";
+                window.alert(error.message || "No fue posible actualizar la imagen.");
+            }
+        }
+
+        if (puedeCambiarImagen) {
+            const selectorImagen = document.createElement("input");
+            selectorImagen.type = "file";
+            selectorImagen.accept = "image/jpeg,image/png,image/webp";
+            selectorImagen.hidden = true;
+            document.body.appendChild(selectorImagen);
+            let botonActivo = null;
+            let productoActivo = null;
+
+            lista.addEventListener("click", function (evento) {
+                const boton = evento.target.closest("[data-change-image]");
+                if (!boton) return;
+                botonActivo = boton;
+                productoActivo = boton.dataset.changeImage;
+                selectorImagen.value = "";
+                selectorImagen.click();
+            });
+
+            selectorImagen.addEventListener("change", function () {
+                cambiarImagen(productoActivo, selectorImagen.files[0], botonActivo);
             });
         }
 

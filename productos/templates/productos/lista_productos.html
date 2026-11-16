@@ -79,6 +79,8 @@
     id="catalogo"
     data-api-url="{% url 'api_lista_productos' %}"
     data-placeholder-url="{% static 'img/sfi-logo.png' %}"
+    data-can-change-image="{% if user.is_staff %}true{% else %}false{% endif %}"
+    data-image-update-url="{% url 'api_actualizar_imagen_producto' 0 %}"
   >
     <section class="catalog-hero">
       <div class="catalog-grid" aria-hidden="true"></div>
@@ -184,6 +186,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script src="{% static 'js/security.js' %}"></script>
-  <script src="{% static 'js/lista_productos.js' %}"></script>
+  <script src="{% static 'js/lista_productos.js' %}?v=cambio-foto-1"></script>
 </body>
 </html>

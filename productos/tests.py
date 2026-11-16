@@ -116,6 +116,51 @@ class SeguridadProductosTests(TestCase):
         self.assertContains(response, 'id="orden-productos"')
         self.assertContains(response, reverse('api_lista_productos'))
 
+    def test_catalogo_habilita_cambio_de_imagen_para_admin(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse('lista_productos'))
+
+        self.assertContains(response, 'data-can-change-image="true"')
+        self.assertContains(
+            response,
+            reverse('api_actualizar_imagen_producto', args=[0]),
+        )
+
+    def test_admin_puede_cambiar_imagen_desde_catalogo(self):
+        self.client.force_login(self.admin)
+        imagen = SimpleUploadedFile(
+            'nueva-imagen.png',
+            base64.b64decode(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+            ),
+            content_type='image/png',
+        )
+        with tempfile.TemporaryDirectory() as media_temporal:
+            with self.settings(MEDIA_ROOT=media_temporal):
+                response = self.client.post(
+                    reverse('api_actualizar_imagen_producto', args=[self.producto.id]),
+                    {'imagen': imagen},
+                )
+
+        self.producto.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(self.producto.imagen.name.startswith('productos/'))
+        movimiento = MovimientoInventario.objects.filter(
+            producto_id_original=self.producto.pk,
+            tipo=MovimientoInventario.Tipo.REAJUSTE,
+        ).latest('id')
+        self.assertIn('imagen', movimiento.cambios)
+        self.assertEqual(movimiento.observacion, 'Cambio de imagen desde el catálogo.')
+
+    def test_cliente_no_puede_cambiar_imagen_desde_catalogo(self):
+        response = self.client.post(
+            reverse('api_actualizar_imagen_producto', args=[self.producto.id]),
+            {'imagen': SimpleUploadedFile('imagen.png', b'no-es-imagen', content_type='image/png')},
+        )
+
+        self.assertIn(response.status_code, {401, 403})
+
     def test_precio_invalido_no_genera_error_500_ni_historial(self):
         self.client.force_login(self.admin)
         payload = {

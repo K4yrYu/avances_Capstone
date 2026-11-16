@@ -303,6 +303,36 @@ def api_editar_producto(request, id):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(['POST'])
+@permission_classes([EsAdmin])
+def api_actualizar_imagen_producto(request, id):
+    """Actualiza solo la imagen desde el catálogo administrable."""
+    from movimientos.contexto import contexto_reajuste
+
+    producto = get_object_or_404(Producto, id=id)
+    if 'imagen' not in request.FILES:
+        return Response(
+            {'imagen': ['Selecciona una imagen JPG, PNG o WebP para continuar.']},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = ProductoSerializer(
+        producto,
+        data={'imagen': request.FILES['imagen']},
+        partial=True,
+    )
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    with contexto_reajuste(request.user, 'Cambio de imagen desde el catálogo.'):
+        producto = serializer.save()
+    return Response({
+        'id': producto.id,
+        'imagen': request.build_absolute_uri(producto.imagen.url),
+        'mensaje': 'Imagen actualizada correctamente.',
+    })
+
+
 
 
 # Vista protegida: solo accesible por administradores

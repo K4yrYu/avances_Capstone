@@ -11,6 +11,7 @@ urlpatterns = [
     path('productos/api/agregar/', views.api_agregar_producto, name='api_agregar_producto'),
     path('productos/formulario/', views.formulario_producto, name='formulario_producto'),
     path('productos/api/editar/<int:id>/', views.api_editar_producto, name='api_editar_producto'),
+    path('productos/api/<int:id>/imagen/', views.api_actualizar_imagen_producto, name='api_actualizar_imagen_producto'),
     path('productos/editar/<int:id>/', views.editar_producto, name='editar_producto'),
     path('productos/ofertas/', views.vista_ofertas, name='vista_ofertas'),
     path('productos/api/ofertas/', views.api_ofertas, name='api_ofertas'),
