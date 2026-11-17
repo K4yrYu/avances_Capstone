@@ -394,6 +394,8 @@ class AsistenteSfiTests(TestCase):
 
         self.assertEqual(resultado['tipo'], 'productos')
         self.assertEqual(resultado['productos'][0]['id'], self.taladro.id)
+        self.assertIn('¿Para qué sirve?', resultado['sugerencias'])
+        self.assertIn('¿Cómo se utiliza?', resultado['sugerencias'])
 
     def test_busqueda_prioriza_quincalleria_segun_uso(self):
         casos = {
@@ -548,10 +550,10 @@ class AsistenteSfiTests(TestCase):
         self.assertIn('faltan $419.060', resultado['mensaje'])
         self.assertTrue(all(item['imagen'] for item in resultado['productos']))
 
-    def test_bano_solo_piso_no_agrega_artefactos_que_cliente_no_pidio(self):
+    def test_bano_solo_piso_sin_material_pide_especificarlo(self):
         resultado = resolver_interpretacion({
             'intencion': 'planificar_proyecto',
-            'proyecto': 'baño',
+            'proyecto': 'cambiar piso de baño',
             'alcance_bano': 'piso',
             'superficie': 5,
             'superficie_muros': 0,
@@ -561,27 +563,36 @@ class AsistenteSfiTests(TestCase):
             'presupuesto': 0,
         })
 
-        skus = {item['sku'] for item in resultado['productos']}
-        self.assertIn('BAN-POR-144', skus)
-        self.assertNotIn('BAN-CER-150', skus)
-        self.assertNotIn('BAN-WC-DD', skus)
-        self.assertNotIn('BAN-MUE-60', skus)
-        self.assertNotIn('BAN-DUC-CRO', skus)
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn('tipo de piso', resultado['mensaje'].casefold())
+        self.assertFalse(resultado['productos'])
 
-    def test_bano_no_cierra_plan_si_un_producto_no_tiene_stock(self):
-        Producto.objects.filter(sku='BAN-POR-144').update(stock=0)
-
+    def test_bano_piso_ceramico_usa_estructura_estandar(self):
         resultado = resolver_interpretacion({
             'intencion': 'planificar_proyecto',
-            'proyecto': 'baño',
+            'proyecto': 'cambiar piso de cerámica del baño',
+            '_contexto_usuario': (
+                'quiero cambiar el piso de cerámica del baño; son 5 m²; '
+                'la base es de hormigón firme, seca y nivelada'
+            ),
             'alcance_bano': 'piso',
             'superficie': 5,
             'superficie_muros': 0,
             'presupuesto': 0,
+            'tareas_proyecto': [],
+            'datos_faltantes_proyecto': [],
         })
 
-        self.assertIn('Revestimiento de piso (stock insuficiente)', resultado['faltantes_catalogo'])
-        self.assertIn('falta disponibilidad', resultado['mensaje'])
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertTrue(resultado['mensaje'].startswith(
+            'PROPUESTA ESTÁNDAR PARA TU PROYECTO'
+        ))
+        self.assertIn('consulta con un profesional', resultado['mensaje'].casefold())
+        nombres = ' '.join(
+            producto['nombre'].casefold() for producto in resultado['productos']
+        )
+        self.assertIn('cerámica', nombres)
+        self.assertNotIn('porcelanato piso baño', nombres)
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_bano_normaliza_alcance_y_no_inventa_sanitarios(self, interpretar):
@@ -601,11 +612,9 @@ class AsistenteSfiTests(TestCase):
 
         resultado = procesar_consulta('Quiero cambiar solo el piso del baño, son 5 m²', [])
 
-        skus = {item['sku'] for item in resultado['productos']}
-        self.assertIn('BAN-POR-144', skus)
-        self.assertNotIn('BAN-WC-DD', skus)
-        self.assertNotIn('BAN-MUE-60', skus)
-        self.assertNotIn('BAN-DUC-CRO', skus)
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn('tipo de piso', resultado['mensaje'].casefold())
+        self.assertFalse(resultado['productos'])
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_cambiar_lavamanos_usa_flujo_sanitario_y_no_recomienda_candado(self, interpretar):
@@ -1883,6 +1892,210 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
 class PlanificadorGenericoProyectosTests(TestCase):
+    def test_piso_ceramico_no_avanza_sin_conocer_la_base(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Instalación de piso de cerámica para cocina',
+            'modo_orientacion': 'propuesta_estandar',
+            '_proyecto_estandar': True,
+            '_contexto_usuario': 'quiero cerámica en una cocina de 4 x 5 metros',
+            'ancho_cm': 400,
+            'fondo_cm': 500,
+            'tareas_proyecto': [{
+                'nombre': 'Piso',
+                'busquedas': ['porcelanato piso baño'],
+            }],
+            'datos_faltantes_proyecto': [],
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn('base', resultado['mensaje'].casefold())
+        self.assertFalse(resultado['productos'])
+
+    def test_piso_ceramico_conserva_material_solicitado(self):
+        Producto.objects.create(
+            sku='CERAMICA-COCINA-TEST',
+            nombre='Cerámica piso interior cocina caja 1,50 m²',
+            descripcion='Cerámica para piso interior.',
+            uso_recomendado='Revestimiento de piso interior.',
+            precio=12000, stock=30, categoria='Construcción', activo=True,
+        )
+        Producto.objects.create(
+            sku='PORCELANATO-BANO-TEST',
+            nombre='Porcelanato piso baño gris caja 1,44 m²',
+            descripcion='Porcelanato para piso de baño.',
+            precio=18000, stock=30, categoria='Construcción', activo=True,
+        )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Instalación de piso de cerámica para cocina',
+            '_contexto_usuario': (
+                'quiero cerámica en una cocina de 4 x 5 metros; '
+                'la base es de hormigón firme, seca y nivelada'
+            ),
+            'ancho_cm': 400,
+            'fondo_cm': 500,
+            'tareas_proyecto': [{
+                'nombre': 'Revestimiento',
+                'busquedas': ['porcelanato piso baño'],
+            }],
+            'datos_faltantes_proyecto': [],
+        })
+
+        nombres = ' '.join(
+            producto['nombre'].casefold() for producto in resultado['productos']
+        )
+        self.assertIn('cerámica piso interior cocina', nombres)
+        self.assertNotIn('porcelanato piso baño', nombres)
+        self.assertNotIn('guardapolvo', nombres)
+
+    def test_piso_ceramico_recuerda_base_hormigon_y_pregunta_solo_estado(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Instalación de piso de cerámica',
+            '_contexto_usuario': (
+                'quiero hacer un piso de cerámica; '
+                'base hormigón y la base es de 4 x 6 metros, es para cocina'
+            ),
+            'ancho_cm': 400,
+            'fondo_cm': 600,
+            'modo_orientacion': 'propuesta_estandar',
+            'tareas_proyecto': [],
+            'datos_faltantes_proyecto': ['Material y estado actual de la base o piso'],
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        mensaje = resultado['mensaje'].casefold()
+        self.assertIn('estado de la base', mensaje)
+        self.assertNotIn('base actual', mensaje)
+        self.assertNotIn('superficie en metros cuadrados', mensaje)
+
+    def test_piso_ceramico_acepta_base_es_un_hormigon_y_conserva_medidas_pendientes(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Instalación de piso de cerámica',
+            '_contexto_usuario': (
+                'quiero hacer un piso de cerámica; la base es un hormigón'
+            ),
+            'modo_orientacion': 'propuesta_estandar',
+            'tareas_proyecto': [],
+            'datos_faltantes_proyecto': [],
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        mensaje = resultado['mensaje'].casefold()
+        self.assertIn('dimensiones o metros cuadrados', mensaje)
+        self.assertIn('ubicacion del piso', mensaje)
+        self.assertIn('estado de la base', mensaje)
+        self.assertNotIn('base actual', mensaje)
+
+    def test_piso_ceramico_no_confunde_revestimiento_con_base_actual(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Instalación de piso de cerámica',
+            '_contexto_usuario': (
+                'quiero piso de cerámica de 4 x 6 metros para cocina; '
+                'está firme y nivelada'
+            ),
+            'ancho_cm': 400,
+            'fondo_cm': 600,
+            'modo_orientacion': 'propuesta_estandar',
+            'tareas_proyecto': [],
+            'datos_faltantes_proyecto': [],
+        })
+
+        mensaje = resultado['mensaje'].casefold()
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn('base actual', mensaje)
+        self.assertIn('humedad de la base', mensaje)
+
+    def test_piso_ceramico_conserva_respuestas_parciales_del_cuestionario(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Instalación de piso de cerámica',
+            '_contexto_usuario': (
+                'quiero hacer un piso de cerámica; es para la cocina; '
+                'la superficie actual es de hormigón; está firme, seca y '
+                'nivelada; el piso mide 4 x 6 metros'
+            ),
+            'ancho_cm': 400,
+            'fondo_cm': 600,
+            'modo_orientacion': 'propuesta_estandar',
+            'tareas_proyecto': [],
+            'datos_faltantes_proyecto': [],
+        })
+
+        self.assertNotEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertNotIn(
+            'ANTES DE RECOMENDAR PRODUCTOS',
+            resultado['mensaje'],
+        )
+
+    def test_piso_ceramico_pide_ubicacion_si_aun_no_se_indica(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Instalación de piso de cerámica',
+            '_contexto_usuario': (
+                'piso de cerámica de 4 x 6 metros sobre base de hormigón '
+                'firme, seca y nivelada'
+            ),
+            'ancho_cm': 400,
+            'fondo_cm': 600,
+            'modo_orientacion': 'propuesta_estandar',
+            'tareas_proyecto': [],
+            'datos_faltantes_proyecto': [],
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn('ubicacion del piso', resultado['mensaje'].casefold())
+        self.assertIn('Es para la cocina', resultado['sugerencias'])
+
+    def test_herramientas_ceramica_se_relacionan_con_cada_etapa(self):
+        herramientas = (
+            ('HERR-CER-LLANA', 'Llana dentada acero 10 mm'),
+            ('HERR-CER-CORTE', 'Cortadora manual porcelanato 600 mm'),
+            ('HERR-CER-NIVEL', 'Nivel de burbuja aluminio 60 cm'),
+            ('HERR-CER-MAZO', 'Mazo de goma para cerámica 16 oz'),
+            ('HERR-CER-BALDE', 'Balde flexible para mezcla pisos 28 litros'),
+            ('HERR-CER-GOMA', 'Llana de goma para fragüe 20 cm'),
+            ('HERR-CER-ESPONJA', 'Esponja para limpieza de fragüe'),
+            ('HERR-CER-DISCO', 'Disco diamantado continuo porcelanato 115 mm'),
+        )
+        for sku, nombre in herramientas:
+            Producto.objects.create(
+                sku=sku, nombre=nombre,
+                descripcion='Herramienta para instalación de cerámica.',
+                uso_recomendado='Uso específico en colocación de pisos.',
+                precio=5000, stock=10, categoria='Herramientas', activo=True,
+            )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Instalación de piso de cerámica para cocina',
+            '_contexto_usuario': (
+                'piso cerámico de cocina sobre base de hormigón firme; '
+                'qué herramientas necesito'
+            ),
+            '_consulta_solo_herramientas': True,
+            'incluir_herramientas': True,
+            'tareas_proyecto': [],
+            'datos_faltantes_proyecto': [],
+        })
+
+        self.assertEqual(resultado['tipo'], 'seguimiento_herramientas')
+        nombres = ' '.join(
+            producto['nombre'].casefold() for producto in resultado['productos']
+        )
+        for esperado in ('llana dentada', 'cortadora manual', 'nivel de burbuja',
+                         'mazo de goma', 'balde flexible', 'llana de goma', 'esponja',
+                         'disco diamantado'):
+            self.assertIn(esperado, nombres)
+        self.assertNotIn('taladro percutor', nombres)
+        mensaje = resultado['mensaje'].casefold()
+        self.assertIn('peinar el adhesivo', mensaje)
+        self.assertIn('realizar cortes rectos', mensaje)
+
     def test_preguntas_guiadas_no_solicitan_fotografias(self):
         from .services.planificador_proyectos import (
             _preguntas_guiadas,
@@ -3068,7 +3281,9 @@ class PlanificadorGenericoProyectosTests(TestCase):
             self.assertIn('PARA QUÉ SIRVE', resultado['mensaje'])
             self.assertIn(producto.nombre, resultado['mensaje'])
             self.assertIn('Rellenar grietas', resultado['mensaje'])
-            self.assertIn('FICHA DEL PRODUCTO', resultado['mensaje'])
+            self.assertIn('USO RECOMENDADO', resultado['mensaje'])
+            self.assertIn('FICHA TÉCNICA', resultado['mensaje'])
+            self.assertIn('Categoría: Adhesivos', resultado['mensaje'])
             self.assertIn('Aplicación: Espátula', resultado['mensaje'])
             self.assertIn('ORIENTACIÓN DEL ASISTENTE', resultado['mensaje'])
             self.assertEqual(resultado['productos'], [])
@@ -3249,6 +3464,84 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertTrue(all(
             item['uso'] for item in resultado['faltantes_catalogo_detalle']
         ))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_bodega_desde_cero_respeta_luz_aunque_gemini_entregue_plan_parcial(
+        self, interpretar,
+    ):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Construcción de bodega con luz interior',
+            'ancho_cm': 600,
+            'fondo_cm': 400,
+            'alto_cm': 500,
+            'material_estructura': 'madera',
+            'tareas_proyecto': [
+                {
+                    'nombre': 'Cimientos y radier',
+                    'busquedas': ['cemento uso general saco 25 kg'],
+                },
+                {
+                    'nombre': 'Estructura',
+                    'busquedas': ['pino dimensionado 2 x 4 pulgadas'],
+                },
+                {
+                    'nombre': 'Muros',
+                    'busquedas': ['tablero OSB estructural 9,5 mm'],
+                },
+                {
+                    'nombre': 'Cubierta',
+                    'busquedas': ['plancha zinc acanalado 0,35 mm x 3 m'],
+                },
+                {
+                    'nombre': 'Puerta',
+                    'busquedas': ['puerta exterior para bodega'],
+                },
+            ],
+            'datos_faltantes_proyecto': [],
+        }
+        historial = [{
+            'role': 'user',
+            'content': 'Quiero hacer una bodega con luz interior desde cero',
+        }]
+
+        resultado = procesar_consulta(
+            'Mide 6 x 4 x 5 metros y la estructura será de madera',
+            historial,
+        )
+
+        nombres_etapas = {tarea['nombre'] for tarea in resultado['tareas']}
+        componentes = ' '.join([
+            *(producto['nombre'] for producto in resultado['productos']),
+            *resultado['faltantes_catalogo'],
+        ]).casefold()
+        self.assertIn('Preparación y fundaciones', nombres_etapas)
+        self.assertIn('Iluminación interior', nombres_etapas)
+        self.assertIn('Evacuación de aguas lluvia', nombres_etapas)
+        self.assertIn('portalámpara', componentes)
+        self.assertIn('ampolleta', componentes)
+        self.assertIn('interruptor', componentes)
+
+    def test_descarta_nombre_de_herramienta_inventado_por_modelo(self):
+        from .services.planificador_proyectos import _extraer_tareas
+
+        tareas = _extraer_tareas({
+            '_proyecto_integral': True,
+            'incluir_herramientas': True,
+            'tareas_proyecto': [{
+                'nombre': 'Preparación del terreno',
+                'busquedas': ['base estabilizada'],
+            }],
+            'herramientas_proyecto': ['chocalla', 'pala punta', 'nivel de burbuja'],
+        })
+
+        herramientas = next(
+            tarea for tarea in tareas
+            if tarea['nombre'] == 'Herramientas recomendadas'
+        )['busquedas']
+        self.assertNotIn('chocalla', herramientas)
+        self.assertIn('pala punta', herramientas)
+        self.assertIn('nivel de burbuja', herramientas)
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_proyecto_estandar_abreviado_solicita_plan_completo_una_vez(self, interpretar):
@@ -4560,7 +4853,7 @@ class PlanificadorGenericoProyectosTests(TestCase):
             producto['rol'] != 'Herramientas recomendadas'
             for producto in resultado['productos']
         ))
-        self.assertNotIn(
+        self.assertIn(
             '¿Qué herramientas necesito para este proyecto?',
             resultado['sugerencias'],
         )

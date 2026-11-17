@@ -10,6 +10,7 @@
     const errorBox = document.getElementById("chat-error");
     const submit = document.getElementById("send-assistant-message");
     const clear = document.getElementById("clear-chat");
+    const newQueryTip = document.getElementById("new-query-tip");
     const readConversation = document.getElementById("read-conversation");
     const security = window.FerremasSecurity;
     if (!root || !form || !input || !messages || !security) return;
@@ -226,19 +227,36 @@
       const content = document.createElement("div");
       content.className = "message-content";
       const paragraph = document.createElement("p");
-      const importantMarker = "\n\nIMPORTANTE\n";
-      const importantIndex = role === "assistant"
-        ? String(text).lastIndexOf(importantMarker)
-        : -1;
-      if (importantIndex >= 0) {
-        paragraph.appendChild(document.createTextNode(String(text).slice(0, importantIndex)));
-        const important = document.createElement("span");
-        important.className = "assistant-important-notice";
-        important.textContent = String(text).slice(importantIndex + 2);
-        paragraph.appendChild(important);
-      } else {
-        paragraph.textContent = text;
+      const messageText = String(text);
+      const markers = role === "assistant" ? [
+        { token: "\n\nRESPONDE TODO EN UN MENSAJE\n", className: "assistant-response-notice" },
+        { token: "\n\nIMPORTANTE\n", className: "assistant-important-notice" },
+      ] : [];
+      let cursor = 0;
+      let renderedMarker = false;
+      while (cursor < messageText.length) {
+        const matches = markers
+          .map(marker => ({ ...marker, index: messageText.indexOf(marker.token, cursor) }))
+          .filter(marker => marker.index >= 0)
+          .sort((left, right) => left.index - right.index);
+        const marker = matches[0];
+        if (!marker) {
+          paragraph.appendChild(document.createTextNode(messageText.slice(cursor)));
+          break;
+        }
+        renderedMarker = true;
+        paragraph.appendChild(document.createTextNode(messageText.slice(cursor, marker.index)));
+        const nextIndexes = markers
+          .map(candidate => messageText.indexOf(candidate.token, marker.index + marker.token.length))
+          .filter(index => index >= 0);
+        const nextIndex = nextIndexes.length ? Math.min(...nextIndexes) : messageText.length;
+        const notice = document.createElement("span");
+        notice.className = marker.className;
+        notice.textContent = messageText.slice(marker.index + 2, nextIndex);
+        paragraph.appendChild(notice);
+        cursor = nextIndex;
       }
+      if (!renderedMarker && !messageText) paragraph.textContent = "";
       content.appendChild(paragraph);
       article.append(avatar, content);
       if (role === "assistant") attachMessageSpeechButton(article, paragraph);
@@ -247,11 +265,63 @@
       return article;
     }
 
-    function addTyping() {
+    function loadingMessages(message, queryMode) {
+      const normalized = String(message || "").toLocaleLowerCase("es");
+      const commonEnd = [
+        "Comprobando stock y compatibilidad…",
+        "Preparando la respuesta…",
+        "Esta consulta requiere algunas comprobaciones adicionales…",
+      ];
+
+      if (queryMode === "producto") {
+        return ["Entendiendo tu búsqueda…", "Revisando el catálogo…", ...commonEnd];
+      }
+      if (queryMode === "herramienta" || /\b(?:herramienta|taladro|sierra|martillo|atornillador)\b/.test(normalized)) {
+        return ["Entendiendo el trabajo que realizarás…", "Buscando herramientas adecuadas…", ...commonEnd];
+      }
+      if (queryMode === "problema_cotidiano") {
+        return ["Interpretando el problema…", "Revisando posibles soluciones…", ...commonEnd];
+      }
+      if (
+        queryMode === "proyecto_reparacion"
+        || /\b(?:proyecto|construir|construcción|reparar|arreglar|instalar|hacer|renovar)\b/.test(normalized)
+      ) {
+        return ["Entendiendo tu proyecto…", "Organizando sus etapas…", "Revisando materiales disponibles…", ...commonEnd];
+      }
+      return ["Entendiendo tu consulta…", "Revisando el catálogo SFI…", ...commonEnd];
+    }
+
+    function addTyping(message, queryMode) {
       const article = addMessage("assistant", "");
       article.dataset.typing = "true";
-      article.querySelector(".message-content").innerHTML = '<span class="typing-dots" aria-label="SFI está respondiendo"><i></i><i></i><i></i></span>';
-      return article;
+      const content = article.querySelector(".message-content");
+      const messages = loadingMessages(message, queryMode);
+      content.innerHTML = (
+        '<div class="typing-state" role="status" aria-live="polite">'
+        + '<span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>'
+        + `<span class="typing-status">${escapeHtml(messages[0])}</span>`
+        + '<span class="typing-progress" aria-hidden="true"><i></i></span>'
+        + '</div>'
+      );
+      const status = content.querySelector(".typing-status");
+      let currentMessage = 0;
+      const timer = window.setInterval(() => {
+        if (currentMessage >= messages.length - 1) {
+          window.clearInterval(timer);
+          return;
+        }
+        currentMessage += 1;
+        status.classList.remove("is-updating");
+        status.textContent = messages[currentMessage];
+        window.requestAnimationFrame(() => status.classList.add("is-updating"));
+      }, 3600);
+
+      return {
+        remove() {
+          window.clearInterval(timer);
+          article.remove();
+        },
+      };
     }
 
     function renderProducts(products) {
@@ -273,9 +343,12 @@
         const optionalText = product.es_opcional
           ? '<p class="assistant-product-optional"><i class="fa-solid fa-circle-info"></i> Opcional · no incluido en el total seleccionado</p>'
           : "";
+        const pendingText = product.cantidad_pendiente
+          ? '<p class="assistant-product-pending"><i class="fa-solid fa-ruler-combined"></i> Cantidad pendiente de definir</p>'
+          : "";
         const addButton = calculation && product.stock_suficiente
           ? `<button type="button" data-chat-add="${id}"><i class="fa-solid fa-cart-plus"></i> Agregar cálculo</button>`
-          : product.carrito_cantidad
+          : product.carrito_cantidad && !product.cantidad_pendiente
             ? `<button type="button" data-chat-product="${id}"><i class="fa-solid fa-cart-plus"></i> Agregar ${escapeHtml(product.carrito_cantidad)}</button>`
             : "";
         const imageMarkup = image
@@ -286,7 +359,7 @@
           .filter(value => value && value.toLocaleLowerCase("es-CL") !== "no aplica")
           .map(value => `<span>${escapeHtml(value)}</span>`)
           .join("");
-        return `<article class="assistant-product"><div class="assistant-product-image">${imageMarkup}</div><div class="assistant-product-body"><small>${escapeHtml(product.rol || product.marca || product.categoria || "SFI")}</small><h3>${escapeHtml(product.nombre || "Producto")}</h3><div class="assistant-product-meta">${metadata}<span>${escapeHtml(product.stock)} disponibles</span></div>${calculationText}<strong class="assistant-product-price">${formatClp(product.precio)} c/u</strong><div class="assistant-product-actions"><a href="${url}">Ver producto</a>${addButton}</div></div></article>`;
+        return `<article class="assistant-product"><div class="assistant-product-image">${imageMarkup}</div><div class="assistant-product-body"><small>${escapeHtml(product.rol || product.marca || product.categoria || "SFI")}</small><h3>${escapeHtml(product.nombre || "Producto")}</h3><div class="assistant-product-meta">${metadata}<span>${escapeHtml(product.stock)} disponibles</span></div>${calculationText}${pendingText}${optionalText}<strong class="assistant-product-price">${formatClp(product.precio)} c/u</strong><div class="assistant-product-actions"><a href="${url}">Ver producto</a>${addButton}</div></div></article>`;
       }).join("");
       messages.appendChild(container);
       container.querySelectorAll("img").forEach(image => image.addEventListener("error", function replaceImage() {
@@ -323,22 +396,32 @@
         input.placeholder = defaultInputPlaceholder;
         return;
       }
-      const examples = items.slice(0, 3);
+      const examples = items.slice(0, 4);
       suggestions.innerHTML = '<span style="flex-basis:100%;color:#657d8f;font-size:.6rem;font-weight:750">Puedes responder:</span>'
         + examples.map(item => `<button type="button" data-suggestion="${escapeHtml(item)}"><i class="fa-regular fa-message"></i> ${escapeHtml(item)}</button>`).join("");
       input.placeholder = `Ej.: ${String(examples[0]).slice(0, 140)}`;
     }
 
+    function setSuggestionsDisabled(disabled) {
+      suggestions.querySelectorAll("button").forEach(button => {
+        button.disabled = disabled;
+        button.setAttribute("aria-disabled", String(disabled));
+      });
+      suggestions.classList.toggle("is-disabled", disabled);
+    }
+
     async function askAssistant(message) {
       if (consultaEnCurso) return;
       consultaEnCurso = true;
+      setSuggestionsDisabled(true);
       errorBox.hidden = true;
+      if (newQueryTip) newQueryTip.hidden = true;
       addMessage("user", message);
-      const historyForRequest = history.slice(-10);
+      const historyForRequest = history.slice(-20);
       const queryModeForRequest = selectedQueryMode;
       selectedQueryMode = "auto";
       history.push({role: "user", content: message});
-      const typing = addTyping();
+      const typing = addTyping(message, queryModeForRequest);
       submit.disabled = true;
       submit.querySelector("span").textContent = "Pensando...";
       try {
@@ -362,10 +445,11 @@
         rememberMessage("user", message);
         rememberMessage("assistant", answer, data.productos, data.maestros);
         history.push({role: "assistant", content: answer});
-        history = history.slice(-10);
+        history = history.slice(-20);
         renderProducts(data.productos);
         renderMasters(data.maestros);
         renderSuggestions(data.sugerencias);
+        if (newQueryTip) newQueryTip.hidden = false;
       } catch (error) {
         typing.remove();
         if (
@@ -382,6 +466,7 @@
       } finally {
         consultaEnCurso = false;
         submit.disabled = false;
+        setSuggestionsDisabled(false);
         submit.querySelector("span").textContent = "Enviar";
         input.focus();
       }
@@ -403,7 +488,7 @@
         return;
       }
       const button = event.target.closest("[data-suggestion]");
-      if (!button || submit.disabled) return;
+      if (!button || consultaEnCurso || submit.disabled || button.disabled) return;
       selectedQueryMode = button.dataset.queryMode || "auto";
       input.value = button.dataset.suggestion || "";
       form.requestSubmit();
@@ -496,6 +581,7 @@
       suggestions.innerHTML = "";
       input.placeholder = defaultInputPlaceholder;
       errorBox.hidden = true;
+      if (newQueryTip) newQueryTip.hidden = true;
       input.focus();
     });
 
@@ -532,6 +618,9 @@
         role: entry.role,
         content: entry.text.slice(0, 4000),
       }));
+      if (newQueryTip && conversationEntries.some(entry => entry.role === "assistant")) {
+        newQueryTip.hidden = false;
+      }
       scrollToLatest();
     }
 

@@ -362,13 +362,32 @@ def _es_herramienta_equivalente_ya_elegida(candidato, productos_elegidos):
         'picota', 'barreta', 'rastrillo', 'llana', 'espatula', 'cortatubo',
         'alicate', 'destornillador', 'nivel', 'cinta metrica',
     )
+    def contiene_familia(texto, familia):
+        # "nivel" es una herramienta; "nivelador" y "cuñas niveladoras" son
+        # componentes distintos del sistema de colocación.
+        if familia == 'nivel':
+            return bool(re.search(r'\bnivel\b', texto))
+        return familia in texto
+
+    def familia_herramienta(texto):
+        familia = next((
+            familia for familia in familias
+            if contiene_familia(texto, familia)
+        ), None)
+        if familia == 'llana':
+            if 'goma' in texto or 'frague' in texto:
+                return 'llana_goma'
+            if 'dentada' in texto:
+                return 'llana_dentada'
+        return familia
+
     nombre_candidato = _normalizar(candidato.nombre)
-    familia = next((familia for familia in familias if familia in nombre_candidato), None)
+    familia = familia_herramienta(nombre_candidato)
     if not familia:
         return False
 
     return any(
-        familia in _normalizar(producto.get('nombre'))
+        familia_herramienta(_normalizar(producto.get('nombre'))) == familia
         for producto in productos_elegidos
     )
 
@@ -589,6 +608,20 @@ def _tiene_tipo_mueble(proyecto):
     return any(termino in contexto for termino in (*tipos, *usos))
 
 
+def _herramienta_reconocible(nombre):
+    """Evita publicar como faltante un nombre de herramienta inventado por la IA."""
+    texto = _normalizar(nombre)
+    familias_reconocibles = (
+        'alicate', 'atornillador', 'azadon', 'brocha', 'buscador de cables',
+        'carretilla', 'cincel', 'combo', 'cortador', 'destornillador',
+        'escalera', 'escuadra', 'esmeril', 'formon', 'guante', 'huincha',
+        'lija', 'lijadora', 'llave', 'martillo', 'mascara', 'mascarilla',
+        'mazo', 'nivel', 'pala', 'picota', 'pinza', 'protector', 'rastrillo',
+        'rodillo', 'serrucho', 'sierra', 'taladro', 'tester', 'tijera',
+    )
+    return any(familia in texto for familia in familias_reconocibles)
+
+
 def _extraer_tareas(datos):
     tareas_crudas = datos.get("tareas_proyecto")
     if not isinstance(tareas_crudas, list):
@@ -635,6 +668,7 @@ def _extraer_tareas(datos):
 
     es_propuesta_estandar = (
         datos.get("_proyecto_estandar") is True
+        or datos.get("_proyecto_integral") is True
         or datos.get("modo_orientacion") == "propuesta_estandar"
     )
     herramientas = (
@@ -643,11 +677,294 @@ def _extraer_tareas(datos):
         else []
     )
     herramientas = _separar_componentes_compuestos(herramientas)
+    herramientas = [
+        herramienta for herramienta in herramientas
+        if _herramienta_reconocible(herramienta)
+    ]
     herramientas = herramientas[:max(0, MAX_BUSQUEDAS - total_busquedas)]
     if herramientas:
         tareas = tareas[:max(0, MAX_TAREAS - 1)]
         tareas.append({"nombre": "Herramientas recomendadas", "busquedas": herramientas})
     return tareas[:MAX_TAREAS]
+
+
+def _ajustar_radier_a_condiciones_informadas(datos, tareas, modo_estandar):
+    """Capa aislada y reversible para propuestas de radier.
+
+    Una plantilla estandar sigue siendo valida, pero no puede contradecir la
+    base que el cliente describio. Esta funcion concentra las reglas de radier
+    para poder retirarlas sin afectar los demas tipos de proyecto.
+    """
+    contexto = _normalizar(" ".join([
+        datos.get("proyecto") or "",
+        datos.get("_contexto_usuario") or "",
+    ]))
+    if "radier" not in contexto:
+        return tareas
+
+    base_hormigon_existente = any(frase in contexto for frase in (
+        "base es de hormigon", "base de hormigon", "sobre hormigon",
+        "hormigon existente", "hormigon firme", "losa de hormigon",
+    )) and not datos.get("_parte_desde_cero")
+
+    espesor = ""
+    for patron in (
+        r"espesor(?: de)?\s*(?:es|de|:)?\s*(\d+(?:[.,]\d+)?)\s*(cm|mm)\b",
+        r"(\d+(?:[.,]\d+)?)\s*(cm|mm)\s*(?:de\s*)?espesor\b",
+    ):
+        coincidencia = re.search(patron, contexto)
+        if coincidencia:
+            espesor = f"{coincidencia.group(1).replace(',', '.')} {coincidencia.group(2)}"
+            break
+
+    datos["_radier_condiciones"] = {
+        "base_hormigon_existente": base_hormigon_existente,
+        "espesor": espesor,
+        "espesor_estandar": "10 cm" if modo_estandar and not espesor else "",
+    }
+    if not base_hormigon_existente:
+        return tareas
+
+    # Sobre una losa existente no se prepara nuevamente un suelo natural.
+    exclusiones_suelo = (
+        "base estabilizada", "polietileno construccion", "arena seca multiuso",
+    )
+    herramientas = (
+        "prensa", "sargento", "cincel", "carretilla", "pala", "combo",
+    )
+    tareas_ajustadas = []
+    herramientas_movidas = []
+    for tarea in tareas:
+        busquedas = []
+        usos = {}
+        bases = {}
+        for busqueda in tarea.get("busquedas", []):
+            clave = _normalizar(busqueda)
+            if any(exclusion in clave for exclusion in exclusiones_suelo):
+                continue
+            if any(herramienta in clave for herramienta in herramientas):
+                herramientas_movidas.append(busqueda)
+                continue
+            busquedas.append(busqueda)
+            if clave in tarea.get("usos", {}):
+                usos[clave] = tarea["usos"][clave]
+            if clave in tarea.get("bases", {}):
+                bases[clave] = tarea["bases"][clave]
+        if not busquedas:
+            continue
+        texto_busquedas = _normalizar(" ".join(busquedas))
+        nombre = tarea["nombre"]
+        if "moldaje" in texto_busquedas:
+            nombre = "Contencion y moldaje"
+        elif "malla" in texto_busquedas or "refuerzo" in texto_busquedas:
+            nombre = "Refuerzo referencial"
+        elif "hormigon" in texto_busquedas:
+            nombre = "Nueva capa de hormigon"
+        tareas_ajustadas.append({
+            **tarea,
+            "nombre": nombre,
+            "busquedas": busquedas,
+            "usos": usos,
+            "bases": bases,
+        })
+
+    herramientas_movidas = _lista_textos(herramientas_movidas, 8, 80)
+    if herramientas_movidas:
+        tareas_ajustadas.append({
+            "nombre": "Herramientas opcionales",
+            "busquedas": herramientas_movidas,
+            "usos": {},
+            "bases": {},
+        })
+    return tareas_ajustadas[:MAX_TAREAS]
+
+
+def _ajustar_proyecto_ceramica(datos, tareas):
+    """Relaciona revestimiento, materiales y herramientas de colocacion.
+
+    La capa es deliberadamente independiente de las plantillas generales: solo
+    actua sobre pisos ceramicos o porcelanatos y conserva el material pedido.
+    """
+    contexto = _normalizar(" ".join([
+        datos.get("proyecto") or "",
+        datos.get("_contexto_usuario") or "",
+    ]))
+    es_piso_revestido = (
+        "piso" in contexto
+        and any(material in contexto for material in ("ceramica", "porcelanato"))
+    )
+    if not es_piso_revestido:
+        return tareas
+
+    material_base_informado = bool(re.search(
+        r'\b(?:base|soporte|contrapiso|superficie(?:\s+actual)?)\s+'
+        r'(?:es\s+)?(?:de\s+)?'
+        r'(?:un\s+|una\s+)?(?:hormigon|concreto|madera|osb|ceramica)\b',
+        contexto,
+    )) or any(termino in contexto for termino in (
+        "base de hormigon", "base es de hormigon", "base hormigon",
+        "piso de hormigon", "piso hormigon", "sobre hormigon", "losa",
+        "radier", "contrapiso", "ceramica existente", "piso existente",
+        "base de madera", "base madera", "base osb", "soporte osb",
+    ))
+    base_firme = "firme" in contexto
+    base_seca = any(termino in contexto for termino in (
+        "seca", "seco", "sin humedad", "libre de humedad",
+    ))
+    base_nivelada = any(termino in contexto for termino in (
+        "nivelada", "nivelado", "sin desnivel", "sin desniveles",
+    ))
+    estado_descrito = any(termino in contexto for termino in (
+        "buen estado", "regular", "mal estado", "grieta", "humedad",
+        "desnivel", "suelta", "suelto", "deteriorada", "deteriorado",
+    ))
+    estado_base_informado = estado_descrito or all((
+        base_firme, base_seca, base_nivelada,
+    ))
+    faltantes = _lista_textos(datos.get("datos_faltantes_proyecto"), 4, 100)
+    try:
+        superficie_informada = Decimal(str(datos.get("superficie") or 0)) > 0
+        dimensiones_informadas = (
+            Decimal(str(datos.get("ancho_cm") or 0)) > 0
+            and Decimal(str(datos.get("fondo_cm") or 0)) > 0
+        )
+    except (ArithmeticError, TypeError, ValueError):
+        superficie_informada = dimensiones_informadas = False
+    dimensiones_informadas = dimensiones_informadas or bool(re.search(
+        r'\b\d+(?:[.,]\d+)?\s*(?:x|por)\s*\d+(?:[.,]\d+)?'
+        r'\s*(?:m|metro|metros)?\b',
+        contexto,
+    ))
+    ubicacion_informada = any(termino in contexto for termino in (
+        "bano", "cocina", "dormitorio", "habitacion", "living", "comedor",
+        "pasillo", "lavadero", "logia", "terraza", "balcon", "patio",
+        "garaje", "estacionamiento", "interior", "exterior",
+    ))
+    # Material y estado son respuestas diferentes. Mantenerlas separadas evita
+    # volver a preguntar qué base existe cuando el cliente ya dijo, por
+    # ejemplo, "base hormigón", pero todavía no confirmó su estado.
+    faltantes = [
+        faltante for faltante in faltantes
+        if not (
+            any(termino in _normalizar(faltante) for termino in (
+                "base", "piso actual", "contrapiso",
+            ))
+            or "estado" in _normalizar(faltante)
+            or any(termino in _normalizar(faltante) for termino in (
+                "medida", "dimension", "superficie", "metros cuadrados",
+                "ancho", "largo",
+            ))
+            or any(termino in _normalizar(faltante) for termino in (
+                "ubicacion", "habitacion", "ambiente", "donde se instalara",
+            ))
+        )
+    ]
+    if not (superficie_informada or dimensiones_informadas):
+        faltantes.append("Dimensiones o metros cuadrados del piso")
+    if not ubicacion_informada:
+        faltantes.append("Ubicacion o habitacion donde se instalara el piso")
+    if not material_base_informado:
+        faltantes.append("Material actual de la base o piso")
+    if not estado_base_informado:
+        faltantes.append(
+            "Confirmar si la base esta seca y libre de humedad"
+            if base_firme and base_nivelada and not base_seca
+            else "Estado actual de la base"
+        )
+    datos["datos_faltantes_proyecto"] = faltantes[:4]
+    datos["_ceramica_material_base"] = material_base_informado
+    datos["_ceramica_estado_base"] = estado_base_informado
+    datos["_ceramica_base_pendiente"] = not all((
+        superficie_informada or dimensiones_informadas,
+        ubicacion_informada,
+        material_base_informado,
+        estado_base_informado,
+    ))
+    datos["_proyecto_ceramica"] = True
+
+    pidio_porcelanato = "porcelanato" in contexto
+    pidio_ceramica = "ceramica" in contexto and not pidio_porcelanato
+    revestimiento = (
+        "ceramica para piso interior cocina"
+        if pidio_ceramica
+        else "porcelanato para piso interior"
+    )
+    tareas_ceramica = [
+        {
+            "nombre": "Revestimiento principal",
+            "busquedas": [revestimiento],
+            "usos": {
+                _normalizar(revestimiento): (
+                    "Formar el revestimiento de piso solicitado sin cambiar "
+                    "silenciosamente entre ceramica y porcelanato."
+                ),
+            },
+            "bases": {_normalizar(revestimiento): "superficie_piso"},
+        },
+        {
+            "nombre": "Adhesion del revestimiento",
+            "busquedas": ["adhesivo ceramico para piso interior"],
+            "usos": {
+                _normalizar("adhesivo ceramico para piso interior"): (
+                    "Adherir las piezas a una base compatible, firme, limpia y nivelada."
+                ),
+            },
+            "bases": {
+                _normalizar("adhesivo ceramico para piso interior"): "superficie_piso",
+            },
+        },
+        {
+            "nombre": "Separacion y nivelacion",
+            "busquedas": [
+                "separadores para ceramica 3 mm",
+                "sistema nivelador ceramica clip 2 mm",
+                "cuñas reutilizables nivelador ceramica",
+            ],
+            "usos": {
+                _normalizar("separadores para ceramica 3 mm"): "Mantener juntas regulares entre las piezas.",
+                _normalizar("sistema nivelador ceramica clip 2 mm"): "Reducir diferencias de altura entre piezas durante la colocacion.",
+                _normalizar("cuñas reutilizables nivelador ceramica"): "Completar el sistema de clips de nivelacion compatible.",
+            },
+            "bases": {
+                _normalizar("separadores para ceramica 3 mm"): "superficie_general",
+                _normalizar("sistema nivelador ceramica clip 2 mm"): "referencial",
+                _normalizar("cuñas reutilizables nivelador ceramica"): "referencial",
+            },
+        },
+        {
+            "nombre": "Juntas y terminacion",
+            "busquedas": ["frague flexible gris bolsa 2 kg"],
+            "usos": {
+                _normalizar("frague flexible gris bolsa 2 kg"): (
+                    "Rellenar las juntas con un producto compatible con su ancho y el revestimiento."
+                ),
+            },
+            "bases": {_normalizar("frague flexible gris bolsa 2 kg"): "superficie_piso"},
+        },
+    ]
+
+    if datos.get("_consulta_solo_herramientas") or datos.get("incluir_herramientas"):
+        herramientas = [
+            ("cinta metrica", "Medir el recinto y trazar la distribucion inicial."),
+            ("nivel de burbuja aluminio 60 cm", "Comprobar nivel y planeidad durante la colocacion."),
+            ("llana dentada acero 10 mm", "Peinar el adhesivo con un dentado acorde al formato de la pieza."),
+            ("cortadora manual porcelanato 600 mm", "Realizar cortes rectos y ajustes perimetrales."),
+            ("disco diamantado continuo porcelanato 115 mm", "Realizar cortes especiales con una herramienta compatible y proteccion adecuada."),
+            ("mazo de goma para ceramica", "Asentar suavemente las piezas sin golpearlas con metal."),
+            ("balde flexible para mezcla pisos 28 litros", "Preparar adhesivo o frague siguiendo su ficha."),
+            ("paleta mezcladora para adhesivo y mortero", "Mezclar el producto con una herramienta motriz compatible."),
+            ("llana de goma para frague", "Distribuir el frague diagonalmente sobre las juntas."),
+            ("esponja para limpieza de frague", "Retirar el excedente sin vaciar las juntas."),
+            ("rodillera espuma instalacion pisos", "Proteger las rodillas durante el trabajo a nivel de piso."),
+            ("guantes de trabajo nitrilo reforzado", "Proteger las manos durante mezcla, corte y limpieza."),
+        ]
+        tareas_ceramica.append({
+            "nombre": "Herramientas opcionales",
+            "busquedas": [nombre for nombre, _ in herramientas],
+            "usos": {_normalizar(nombre): uso for nombre, uso in herramientas},
+            "bases": {_normalizar(nombre): "referencial" for nombre, _ in herramientas},
+        })
+    return tareas_ceramica
 
 
 def _especialidades_validas(datos, texto_plan, resolver_especialidad):
@@ -714,6 +1031,7 @@ def resolver_proyecto_generico(
         and not es_intervencion_acotada
         and (
             datos.get('_proyecto_estandar') is True
+            or datos.get('_proyecto_integral') is True
             or datos.get('modo_orientacion') == 'propuesta_estandar'
             or 'estandar' in _normalizar(proyecto)
         )
@@ -723,6 +1041,7 @@ def resolver_proyecto_generico(
         and not es_intervencion_acotada
         and (
             datos.get('_proyecto_estandar') is True
+            or datos.get('_proyecto_integral') is True
             or datos.get('modo_orientacion') == 'propuesta_estandar'
             or 'estandar' in _normalizar(proyecto)
         )
@@ -732,6 +1051,7 @@ def resolver_proyecto_generico(
         and not es_intervencion_acotada
         and (
             datos.get('_proyecto_estandar') is True
+            or datos.get('_proyecto_integral') is True
             or datos.get('modo_orientacion') == 'propuesta_estandar'
             or 'estandar' in _normalizar(proyecto)
         )
@@ -765,12 +1085,16 @@ def resolver_proyecto_generico(
             'sensor', 'movimiento', 'presencia',
         ))
     )
+    requisitos_explicitos = datos.get('_requisitos_explicitos') or {}
     solicita_luz_interior_bodega = (
         es_bodega_estandar
-        and any(termino in contexto_usuario for termino in (
-            'luz interior', 'iluminacion interior', 'lampara interior',
-            'ampolleta interior',
-        ))
+        and (
+            requisitos_explicitos.get('iluminacion_interior') is True
+            or any(termino in contexto_usuario for termino in (
+                'luz interior', 'iluminacion interior', 'lampara interior',
+                'ampolleta interior',
+            ))
+        )
     )
     if es_bodega_estandar:
         # La bodega debe contemplar cerramiento, acceso, techumbre y aguas
@@ -1223,6 +1547,15 @@ def resolver_proyecto_generico(
                 "nombre": "Herramientas recomendadas",
                 "busquedas": herramientas_estandar,
             })
+    modo_estandar = (
+        datos.get("_proyecto_estandar") is True
+        or datos.get("_proyecto_integral") is True
+        or datos.get("modo_orientacion") == "propuesta_estandar"
+    )
+    tareas = _ajustar_radier_a_condiciones_informadas(
+        datos, tareas, modo_estandar,
+    )
+    tareas = _ajustar_proyecto_ceramica(datos, tareas)
     if not proyecto or not tareas:
         return {
             "tipo": "aclaracion",
@@ -1240,10 +1573,6 @@ def resolver_proyecto_generico(
 
     datos_faltantes_iniciales = _lista_textos(
         datos.get("datos_faltantes_proyecto"), 4, 100
-    )
-    modo_estandar = (
-        datos.get("_proyecto_estandar") is True
-        or datos.get("modo_orientacion") == "propuesta_estandar"
     )
     if _es_proyecto_mueble(proyecto):
         faltantes_mueble = []
@@ -1282,11 +1611,16 @@ def resolver_proyecto_generico(
                     proyecto, faltantes_mueble,
                 )[:3],
             }
-    if datos_faltantes_iniciales and not modo_estandar:
+    if datos_faltantes_iniciales and (
+        not modo_estandar or datos.get("_ceramica_base_pendiente")
+    ):
         proyecto_normalizado = _normalizar(proyecto)
         es_piso = any(
             termino in proyecto_normalizado
-            for termino in ("piso flotante", "piso laminado")
+            for termino in (
+                "piso flotante", "piso laminado", "piso de ceramica",
+                "piso ceramico", "piso de porcelanato", "piso porcelanato",
+            )
         )
         faltantes_legibles = [
             faltante.strip().lstrip("¿").rstrip("?.")
@@ -1306,25 +1640,52 @@ def resolver_proyecto_generico(
                 if "tipo de piso" in clave:
                     lineas.extend([
                         "",
-                        "1. TIPO DE PISO",
+                        "TIPO DE PISO",
                         "• Laminado: aspecto cálido para espacios interiores secos.",
                         "• Vinílico SPC: más resistente a humedad y fácil de limpiar.",
                         "• Porcelanato: rígido, durable y apto para zonas húmedas.",
                         "• No lo sé: indica en qué habitación se instalará y yo elegiré.",
                     ])
-                elif "base" in clave or "superficie actual" in clave or "contrapiso" in clave:
+                elif any(termino in clave for termino in (
+                    "ubicacion", "habitacion", "ambiente", "donde se instalara",
+                )):
                     lineas.extend([
                         "",
-                        "2. BASE ACTUAL",
+                        "UBICACION DEL PISO",
+                        "• Zona húmeda: baño, lavadero o logia.",
+                        "• Interior seco: dormitorio, living, comedor o pasillo.",
+                        "• Cocina: considera humedad, limpieza y tránsito frecuente.",
+                        "• Exterior: terraza, balcón o patio expuesto al clima.",
+                    ])
+                elif (
+                    "estado" not in clave
+                    and "seca" not in clave
+                    and "humedad" not in clave
+                    and (
+                    "base" in clave
+                    or "superficie actual" in clave
+                    or "contrapiso" in clave
+                    )
+                ):
+                    lineas.extend([
+                        "",
+                        "BASE ACTUAL",
                         "• Hormigón: superficie gris, dura y continua.",
                         "• Madera/OSB: tablas o paneles de madera prensada.",
                         "• Cerámica: palmetas existentes con juntas visibles.",
                         "• No lo sé: describe el color, la textura y las juntas que ves.",
                     ])
+                elif "seca" in clave or "humedad" in clave:
+                    lineas.extend([
+                        "",
+                        "HUMEDAD DE LA BASE",
+                        "• Confirma si está seca y libre de humedad visible o ascendente.",
+                        "• Si hay humedad, no instales todavía: primero debe identificarse y corregirse su origen.",
+                    ])
                 elif "estado" in clave:
                     lineas.extend([
                         "",
-                        "3. ESTADO DE LA BASE",
+                        "ESTADO DE LA BASE",
                         "• Bueno: está firme, seca y nivelada.",
                         "• Regular: tiene desniveles pequeños o algunas juntas dañadas.",
                         "• Malo: presenta humedad, grietas, piezas sueltas o desniveles fuertes.",
@@ -1338,11 +1699,31 @@ def resolver_proyecto_generico(
                 "Ejemplo: “Es un dormitorio seco, quiero que tú elijas el piso, "
                 "la base es de hormigón y está firme, seca y nivelada”.",
             ])
-            sugerencias = [
-                "No sé qué piso elegir; es un dormitorio seco",
-                "La base es de hormigón y está en buen estado",
-                "No sé identificar la base",
-            ]
+            sugerencias = []
+            claves_faltantes = [_normalizar(item) for item in faltantes_legibles]
+            if any(any(termino in clave for termino in (
+                "medida", "dimension", "superficie", "metros cuadrados",
+                "ancho", "largo",
+            )) for clave in claves_faltantes):
+                sugerencias.append("El piso mide 4 x 6 metros")
+            if any(any(termino in clave for termino in (
+                "ubicacion", "habitacion", "ambiente", "donde se instalara",
+            )) for clave in claves_faltantes):
+                sugerencias.append("Es para la cocina")
+            if any(
+                "estado" not in clave
+                and any(termino in clave for termino in (
+                    "base", "superficie actual", "contrapiso",
+                ))
+                for clave in claves_faltantes
+            ):
+                sugerencias.extend([
+                    "La base es de hormigón",
+                    "No sé identificar la base",
+                ])
+            if any("estado" in clave for clave in claves_faltantes):
+                sugerencias.append("La base está firme, seca y nivelada")
+            sugerencias = sugerencias[:3]
         else:
             lineas.extend(_preguntas_guiadas(faltantes_legibles, proyecto))
             lineas.extend([
@@ -1363,6 +1744,11 @@ def resolver_proyecto_generico(
     material_principal = _texto_seguro(
         datos.get("material_principal_proyecto"), 100
     )
+    # La plantilla cerámica ya contiene el revestimiento solicitado. Evita que
+    # la interpretación de Gemini lo inserte nuevamente como "Material
+    # principal" y desplace los separadores a una etapa incorrecta.
+    if datos.get("_proyecto_ceramica"):
+        material_principal = ""
     if material_principal:
         principal_normalizado = _normalizar(material_principal)
         familias_cubierta = {'teja', 'zinc', 'policarbonato'}
@@ -1467,6 +1853,14 @@ def resolver_proyecto_generico(
                     candidato for candidato in candidatos
                     if not _producto_incompatible_con_gas(candidato)
                 ]
+            if (
+                datos.get("_proyecto_ceramica")
+                and "herramienta" not in _normalizar(tarea["nombre"])
+            ):
+                candidatos = [
+                    candidato for candidato in candidatos
+                    if "herramienta" not in _normalizar(candidato.categoria)
+                ]
             if _normalizar(tarea["nombre"]) == "cubierta":
                 accesorios_cubierta = {
                     "perfil", "union", "cierre", "tornillo", "golilla",
@@ -1568,13 +1962,24 @@ def resolver_proyecto_generico(
                 _texto_seguro(producto.uso_recomendado, 180)
                 or f"Se incluye como apoyo para la etapa «{tarea['nombre']}».",
             )
+            es_herramienta_opcional = (
+                "herramienta" in _normalizar(tarea["nombre"])
+                or "herramienta" in _normalizar(producto.categoria)
+            )
+            es_nivelacion_opcional = (
+                datos.get("_proyecto_ceramica")
+                and any(termino in _normalizar(producto.nombre) for termino in (
+                    "sistema nivelador", "cunas reutilizables nivelador",
+                ))
+            )
             item.update({
                 "rol": tarea["nombre"],
                 "detalle_material": uso_material,
                 "uso_en_proyecto": uso_material,
-                "carrito_cantidad": 1,
+                "carrito_cantidad": 1 if es_herramienta_opcional else 0,
                 "recomendacion_orientativa": True,
-                "es_opcional": "herramienta" in _normalizar(tarea["nombre"]),
+                "cantidad_pendiente": not es_herramienta_opcional,
+                "es_opcional": es_herramienta_opcional or es_nivelacion_opcional,
             })
             base_calculo = tarea.get("bases", {}).get(
                 _normalizar(consulta), 'referencial',
@@ -1619,6 +2024,7 @@ def resolver_proyecto_generico(
                         "carrito_cantidad": min(cantidad, producto.stock),
                         "subtotal": cantidad * producto.precio,
                         "recomendacion_orientativa": False,
+                        "cantidad_pendiente": False,
                         "detalle_material": (
                             f"{cantidad} unidad(es) para {superficie_base:g} m² de "
                             f"{base_calculo.replace('_', ' ')} con "
@@ -1642,9 +2048,12 @@ def resolver_proyecto_generico(
     if datos.get("_consulta_solo_herramientas"):
         herramientas = [
             producto for producto in productos
-            if any(clase in _normalizar(producto.get("categoria")) for clase in (
-                "herramienta", "seguridad",
-            ))
+            if (
+                "herramienta" in _normalizar(producto.get("rol"))
+                or any(clase in _normalizar(producto.get("categoria")) for clase in (
+                    "herramienta", "seguridad",
+                ))
+            )
         ]
         herramientas_sugeridas = _lista_textos(
             datos.get("herramientas_proyecto"), 3, 100,
@@ -1764,8 +2173,36 @@ def resolver_proyecto_generico(
         partes = [(
             "PROPUESTA ESTÁNDAR PARA TU PROYECTO\n"
             f"Preparé una alternativa de “{proyecto}” organizada en {len(tareas)} etapas. "
-            "Todos los productos mostrados están disponibles actualmente en SFI."
+            "Todos los productos mostrados están disponibles actualmente en SFI. "
+            "Es una configuración base: si cambias una medida, material o condición, "
+            "indícalo y actualizaré la propuesta."
         )]
+        condiciones_radier = datos.get("_radier_condiciones") or {}
+        if condiciones_radier:
+            espesor = (
+                condiciones_radier.get("espesor")
+                or condiciones_radier.get("espesor_estandar")
+            )
+            lineas_condiciones = []
+            if condiciones_radier.get("espesor_estandar"):
+                lineas_condiciones.append(
+                    f"• Como no indicaste el espesor, usé {espesor} como referencia "
+                    "estándar. Si lo cambias, deben recalcularse materiales y costos."
+                )
+            elif espesor:
+                lineas_condiciones.append(f"• Espesor informado: {espesor}.")
+            if condiciones_radier.get("base_hormigon_existente"):
+                lineas_condiciones.extend([
+                    "• Respeté la base de hormigón existente y excluí materiales "
+                    "destinados a preparar terreno natural.",
+                    "• Antes de ejecutar una nueva capa deben revisarse adherencia, "
+                    "grietas, juntas, desniveles, humedad y diferencias de altura.",
+                ])
+            if lineas_condiciones:
+                partes.append(
+                    "CONDICIONES Y SUPUESTOS DE LA PROPUESTA\n"
+                    + "\n".join(lineas_condiciones)
+                )
         if productos:
             etapas = []
             for tarea in tareas:
@@ -1903,12 +2340,9 @@ def resolver_proyecto_generico(
         sugerencias.extend([
             "¿Por qué elegiste estos materiales?",
             "Muéstrame alternativas más económicas",
+            "Ajustar medidas o materiales del proyecto",
+            "¿Qué herramientas necesito para este proyecto?",
         ])
-        sugerencias.append(
-            "¿Qué herramientas necesito para este proyecto?"
-            if datos.get("incluir_herramientas") is True
-            else "Ajustar medidas o materiales del proyecto"
-        )
     else:
         sugerencias.append("Ajustar el proyecto")
 
@@ -1928,7 +2362,7 @@ def resolver_proyecto_generico(
         "total_calculado": int(total_calculado),
         "total_es_parcial": bool(cantidad_referenciales),
         "calculo_orientativo": True,
-        "sugerencias": sugerencias[:3],
+        "sugerencias": sugerencias[:4],
     }
 
 

@@ -484,7 +484,10 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
     # El planificador determinístico utiliza este resumen solo para conservar
     # requisitos explícitos del cliente que Gemini pudo omitir al estructurar
     # su respuesta (por ejemplo, una luz interior en una bodega).
-    datos['_contexto_usuario'] = texto_usuario[:800]
+    # Los cuestionarios de proyectos suelen responderse en varios mensajes.
+    # Una ventana amplia conserva ubicación, base y medidas hasta completar
+    # el último dato solicitado.
+    datos['_contexto_usuario'] = texto_usuario[:3000]
 
     terminacion = datos.get('terminacion') or 'cualquiera'
     alias_terminacion = {
@@ -577,16 +580,59 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
             datos['estado_superficie'] = 'deteriorada'
         elif re.search(r'\b(?:humedad|humedo|humeda|manchas?)\b', texto_mensaje):
             datos['estado_superficie'] = 'humedad'
-    datos['_proyecto_estandar'] = bool(re.search(
+    proyecto_estandar_explicito = bool(re.search(
         r'\b(?:estandar|basico|basica)\b|\b(?:de|como) referencia\b',
         texto_mensaje,
     ))
+    # Una construcción completa no debe depender de que el cliente conozca la
+    # expresión "propuesta estándar". Detectamos solamente obras reconocibles y
+    # dejamos fuera instalaciones, cambios y reparaciones puntuales para no
+    # convertir una solicitud acotada en una obra completa.
+    tipos_proyecto_integral = (
+        'bodega', 'quincho', 'pergola', 'invernadero', 'cobertizo',
+        'terraza', 'caseta', 'galpon',
+    )
+    menciona_proyecto_integral = any(
+        tipo in texto_usuario for tipo in tipos_proyecto_integral
+    )
+    accion_construccion = bool(re.search(
+        r'\b(?:construir|construccion|levantar|armar|fabricar)\b|'
+        r'\bhacer\b.{0,35}\b(?:bodega|quincho|pergola|invernadero|'
+        r'cobertizo|terraza|caseta|galpon)\b',
+        texto_usuario,
+    ))
+    alcance_completo = bool(re.search(
+        r'\b(?:desde cero|complet[oa]|entero|entera|no hay nada construido|'
+        r'part(?:o|ir) de cero)\b',
+        texto_usuario,
+    ))
+    intervencion_acotada = bool(re.search(
+        r'\b(?:instalar|reparar|cambiar|reemplazar|arreglar)\b',
+        texto_usuario,
+    )) and not accion_construccion and not alcance_completo
+    datos['_proyecto_integral'] = bool(
+        menciona_proyecto_integral
+        and (accion_construccion or alcance_completo)
+        and not intervencion_acotada
+    )
+    datos['_proyecto_estandar'] = proyecto_estandar_explicito
     # "No tengo nada" cambia el alcance: se parte desde el terreno o la base,
     # no desde una estructura o radier existente.
     datos['_parte_desde_cero'] = bool(re.search(
         r'\b(?:no tengo nada|part(?:o|ir) de cero|desde cero|no hay nada construido)\b',
         texto_usuario,
     ))
+    # Requisitos estructurados que el planificador determinístico debe
+    # respetar aunque Gemini omita una etapa en su JSON.
+    datos['_requisitos_explicitos'] = {
+        'parte_desde_cero': datos['_parte_desde_cero'],
+        'iluminacion_interior': bool(re.search(
+            r'\b(?:luz|iluminacion|lampara|ampolleta)s?\s+interior(?:es)?\b|'
+            r'\binterior\b.{0,20}\b(?:luz|iluminacion|lampara|ampolleta)s?\b',
+            texto_usuario,
+        )),
+        'proyecto_integral': datos['_proyecto_integral'],
+    }
     indicadores_excluir_herramientas = (
         'excluir herramientas', 'sin herramientas', 'quitar herramientas',
         'solo materiales', 'sin taladro',
@@ -902,6 +948,7 @@ def _plan_estandar_incompleto(datos):
     """Detecta propuestas estándar abreviadas antes de buscar inventario."""
     if not (
         datos.get('_proyecto_estandar') is True
+        or datos.get('_proyecto_integral') is True
         or datos.get('modo_orientacion') == 'propuesta_estandar'
     ):
         return False
@@ -1527,7 +1574,65 @@ def _resolver_bano(datos):
 
 def _resolver_proyecto(datos):
     proyecto = _texto_normalizado(datos.get('proyecto'))
-    if datos.get('_proyecto_estandar') is True:
+    contexto_proyecto = _texto_normalizado(' '.join(filter(None, (
+        datos.get('proyecto'),
+        datos.get('_contexto_usuario'),
+    ))))
+    # Un revestimiento de piso conserva el flujo estándar de proyectos aunque
+    # esté ubicado en un baño. El planificador sanitario queda reservado para
+    # remodelaciones integrales y artefactos; así no cambia silenciosamente una
+    # cerámica por porcelanato ni omite la revisión de la base.
+    solicitud_solo_piso = (
+        datos.get('alcance_bano') == 'piso'
+        or (
+            'piso' in proyecto
+            and datos.get('alcance_bano') not in {'piso_muros', 'completo'}
+        )
+    )
+    es_piso_revestimiento = (
+        solicitud_solo_piso
+        and not any(termino in contexto_proyecto for termino in (
+            'piso de hormigon', 'piso hormigon', 'radier',
+        ))
+    )
+    material_piso_informado = any(
+        termino in contexto_proyecto
+        for termino in (
+            'ceramica', 'porcelanato', 'piso vinilico', 'vinilico spc',
+            'piso flotante', 'piso laminado',
+        )
+    )
+    if es_piso_revestimiento and not material_piso_informado:
+        return {
+            'tipo': 'aclaracion_proyecto',
+            'mensaje': (
+                'PROYECTO\nRevestimiento de piso\n\n'
+                'ANTES DE RECOMENDAR PRODUCTOS\n'
+                'Indica qué tipo de piso quieres instalar. Si no lo sabes, '
+                'cuéntame en qué habitación se usará y si estará expuesto '
+                'a humedad para orientarte sin asumir un material.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': [
+                'Quiero piso de cerámica',
+                'Quiero piso de porcelanato',
+                'No lo sé; es para una zona húmeda',
+            ],
+        }
+    if es_piso_revestimiento and material_piso_informado:
+        datos['modo_orientacion'] = 'propuesta_estandar'
+        return resolver_proyecto_generico(
+            datos,
+            buscar_productos=lambda consulta: _buscar_productos(consulta, limite=60),
+            producto_publico=_producto_publico,
+            buscar_maestros=buscar_maestros,
+            resolver_especialidad=_especialidad_desde_texto,
+        )
+    if (
+        datos.get('_proyecto_estandar') is True
+        or datos.get('_proyecto_integral') is True
+    ):
         return resolver_proyecto_generico(
             datos,
             buscar_productos=lambda consulta: _buscar_productos(consulta, limite=60),
@@ -2480,11 +2585,16 @@ def resolver_interpretacion(datos):
             producto_publico = _producto_publico(producto)
             producto_publico['carrito_cantidad'] = 1
             productos_publicos.append(producto_publico)
+        sugerencias_productos = (
+            ['¿Para qué sirve?', '¿Cómo se utiliza?', '¿Cuál es el más económico?']
+            if len(productos_publicos) == 1
+            else ['¿Cuál es el más económico?', 'Comparar las opciones mostradas']
+        )
         return {
             'tipo': 'productos',
             'mensaje': mensaje,
             'productos': productos_publicos,
-            'sugerencias': ['¿Cuál es el más económico?', 'Quiero calcular pintura'],
+            'sugerencias': sugerencias_productos,
         }
     return {
         'tipo': 'orientacion',
@@ -2527,7 +2637,7 @@ def _pregunta_uso_producto(texto):
     return bool(re.search(
         r'\b(?:para que sirve(?:n)?|cual es su funcion|cuales son sus funciones|'
         r'que funcion cumple(?:n)?|para que se usa(?:n)?|para que se utiliza(?:n)?|'
-        r'como se usa(?:n)?|cual es el uso|que uso tiene(?:n)?|para que se ocupa(?:n)?|'
+        r'como se usa(?:n)?|como se utiliza(?:n)?|cual es el uso|que uso tiene(?:n)?|para que se ocupa(?:n)?|'
         r'que es|que hace(?:n)?)\b',
         texto,
     ))
@@ -2539,7 +2649,7 @@ def _consulta_sin_pregunta_de_uso(mensaje):
     texto = re.sub(
         r'\b(?:para que sirve(?:n)?|cual es su funcion|cuales son sus funciones|'
         r'que funcion cumple(?:n)?|para que se usa(?:n)?|para que se utiliza(?:n)?|'
-        r'como se usa(?:n)?|cual es el uso|que uso tiene(?:n)?|para que se ocupa(?:n)?|'
+        r'como se usa(?:n)?|como se utiliza(?:n)?|cual es el uso|que uso tiene(?:n)?|para que se ocupa(?:n)?|'
         r'que es|que hace(?:n)?)\b',
         ' ', texto,
     )
@@ -2657,7 +2767,16 @@ def _respuesta_uso_producto(productos):
             f'Es un producto de {producto.categoria}. Revisa su ficha técnica y '
             'compatibilidad antes de usarlo.'
         )
-    detalle_ficha = []
+    detalle_ficha = [f'• Categoría: {producto.categoria}.']
+    if producto.marca:
+        detalle_ficha.append(f'• Marca: {producto.marca}.')
+    if producto.modelo and _texto_normalizado(producto.modelo) != _texto_normalizado(producto.sku):
+        detalle_ficha.append(f'• Modelo: {producto.modelo}.')
+    if producto.sku:
+        detalle_ficha.append(f'• SKU: {producto.sku}.')
+    if producto.presentacion:
+        detalle_ficha.append(f'• Presentación: {producto.presentacion}.')
+
     descripcion = ' '.join(str(producto.descripcion or '').split())[:300]
     if descripcion and descripcion.casefold() != uso.casefold():
         detalle_ficha.append(f'• Descripción: {descripcion}')
@@ -2672,28 +2791,54 @@ def _respuesta_uso_producto(productos):
             f'• Superficies compatibles: {", ".join(superficies)}.'
         )
 
-    preparaciones = [str(item).strip() for item in (producto.preparaciones_recomendadas or [])]
-    preparaciones = [item for item in preparaciones if item]
+    preparaciones = producto.preparaciones_recomendadas_display
     if preparaciones:
         detalle_ficha.append(
             f'• Preparación indicada: {"; ".join(preparaciones[:3])}.'
         )
 
+    if producto.rendimiento_legible:
+        detalle_ficha.append(f'• Rendimiento: {producto.rendimiento_legible}.')
+    if producto.capas_recomendadas:
+        detalle_ficha.append(f'• Capas recomendadas: {producto.capas_recomendadas}.')
+    if producto.propiedades_pintura_display:
+        detalle_ficha.append(
+            f'• Propiedades: {", ".join(producto.propiedades_pintura_display)}.'
+        )
+
     especificaciones = producto.especificaciones or {}
     datos_tecnicos = []
+    claves_internas = {
+        'datos tecnicos', 'ficha tecnica', 'uso recomendado',
+        'rol en el proyecto', 'rol en proyecto', 'origen del registro',
+        'proyectos sugeridos',
+    }
     if isinstance(especificaciones, dict):
         for clave, valor in especificaciones.items():
             if valor in (None, '', [], {}):
                 continue
+            clave_normalizada = _texto_normalizado(clave)
+            if clave_normalizada in claves_internas:
+                continue
+            valor_normalizado = _texto_normalizado(valor)
+            if any(marca in valor_normalizado for marca in (
+                'origen del registro', 'rol en el proyecto',
+                'proyectos sugeridos',
+            )):
+                continue
             if isinstance(valor, (list, tuple)):
                 valor = ', '.join(str(item) for item in valor)
-            datos_tecnicos.append(f'{clave}: {valor}')
-            if len(datos_tecnicos) == 4:
+            valor_limpio = str(valor).strip().rstrip('.')
+            datos_tecnicos.append(f'• {clave}: {valor_limpio}.')
+            if len(datos_tecnicos) == 6:
                 break
     if datos_tecnicos:
-        detalle_ficha.append(
-            f'• Datos técnicos: {" · ".join(datos_tecnicos)}.'
-        )
+        detalle_ficha.extend(datos_tecnicos)
+    detalle_ficha.append(
+        '• Estado de la ficha: '
+        + ('información técnica verificada.' if producto.informacion_tecnica_verificada
+           else 'información referencial del catálogo; confirma con el fabricante.')
+    )
     orientacion_gemini = _orientacion_de_uso_gemini(producto)
     return {
         'tipo': 'uso_producto',
@@ -2701,8 +2846,12 @@ def _respuesta_uso_producto(productos):
             'PARA QUÉ SIRVE',
             '',
             producto.nombre,
+            '',
+            'USO RECOMENDADO',
             uso,
-            *(['', 'FICHA DEL PRODUCTO', *detalle_ficha] if detalle_ficha else []),
+            '',
+            'FICHA TÉCNICA',
+            *detalle_ficha,
             *(['', 'ORIENTACIÓN DEL ASISTENTE', orientacion_gemini]
               if orientacion_gemini else []),
         ]),
@@ -3815,6 +3964,28 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             # espátula y luego se lijan; rodillo y brocha son para pintar.
             consultas.extend(['espatula acero', 'lija muro'])
         elif any(termino in contexto for termino in (
+            'ceramica', 'porcelanato', 'frague', 'separadores',
+            'nivelador ceramica', 'adhesivo ceramico',
+        )):
+            consultas.extend([
+                'cinta metrica',
+                'nivel de burbuja aluminio 60 cm',
+                'llana dentada acero 10 mm',
+                'cortadora manual porcelanato 600 mm',
+                'disco diamantado continuo porcelanato 115 mm',
+                'esmeril angular 4 1/2 pulgadas 850 W',
+                'mazo de goma para ceramica',
+                'balde flexible para mezcla pisos 28 litros',
+                'paleta mezcladora para adhesivo y mortero',
+                'llana de goma para frague',
+                'esponja para limpieza de frague',
+                'rodillera espuma instalacion pisos',
+                'guantes de trabajo nitrilo reforzado',
+                'lentes seguridad policarbonato transparentes',
+                'respirador reutilizable P95 con filtro',
+                'protector auditivo tipo copa 27 dB',
+            ])
+        elif any(termino in contexto for termino in (
             'techo', 'techumbre', 'zinc', 'teja', 'policarbonato', 'cubierta',
         )):
             consultas.extend(['cinta metrica', 'taladro percutor'])
@@ -3845,23 +4016,102 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             'espatula acero': 'Extender, presionar y nivelar la pasta en grietas e imperfecciones.',
             'lija muro': 'Emparejar suavemente la superficie una vez que la pasta esté seca.',
             'pala': 'Mover y mezclar materiales para preparar la base del proyecto.',
+            'nivel de burbuja aluminio 60 cm': (
+                'Comprobar nivel y planeidad durante la colocación.'
+            ),
+            'llana dentada acero 10 mm': (
+                'Distribuir y peinar el adhesivo con un dentado compatible con la pieza.'
+            ),
+            'cortadora manual porcelanato 600 mm': (
+                'Realizar cortes rectos y ajustes perimetrales en las piezas.'
+            ),
+            'disco diamantado continuo porcelanato 115 mm': (
+                'Realizar cortes especiales con una herramienta eléctrica compatible; '
+                'es condicional y exige protección adecuada.'
+            ),
+            'esmeril angular 4 1/2 pulgadas 850 W': (
+                'Accionar el disco diamantado en cortes especiales, solo cuando sea '
+                'compatible con el disco y se utilice protección completa.'
+            ),
+            'mazo de goma para ceramica': (
+                'Asentar suavemente las piezas sin golpearlas con metal.'
+            ),
+            'balde flexible para mezcla pisos 28 litros': (
+                'Contener y preparar adhesivo o fragüe respetando su ficha.'
+            ),
+            'paleta mezcladora para adhesivo y mortero': (
+                'Homogeneizar la mezcla conectada a una herramienta motriz y mandril '
+                'compatibles; la paleta no incluye el motor.'
+            ),
+            'llana de goma para frague': (
+                'Aplicar el fragüe diagonalmente sobre las juntas y retirar el exceso.'
+            ),
+            'esponja para limpieza de frague': (
+                'Limpiar el excedente superficial sin vaciar las juntas.'
+            ),
+            'rodillera espuma instalacion pisos': (
+                'Proteger las rodillas durante el trabajo prolongado a nivel de piso.'
+            ),
+            'guantes de trabajo nitrilo reforzado': (
+                'Proteger las manos durante la mezcla, colocación y limpieza.'
+            ),
+            'lentes seguridad policarbonato transparentes': (
+                'Proteger los ojos frente a partículas durante cortes y preparación.'
+            ),
+            'respirador reutilizable P95 con filtro': (
+                'Reducir la exposición a polvo durante cortes o preparación en seco.'
+            ),
+            'protector auditivo tipo copa 27 dB': (
+                'Proteger la audición al utilizar herramientas eléctricas de corte.'
+            ),
+        }
+        herramientas_por_sku = {
+            # Este producto fue incorporado al catálogo con una ficha exacta,
+            # pero las búsquedas libres pueden no resolver la tilde de
+            # "cerámica" de forma uniforme entre MySQL y Python.
+            'mazo de goma para ceramica': 'SFI-HER-CER-MAZ-16',
         }
         for consulta in consultas:
-            herramienta = next((
+            herramienta = Producto.objects.filter(
+                sku=herramientas_por_sku.get(consulta, ''),
+                activo=True,
+                stock__gt=0,
+            ).first() or next((
                 producto for producto in _buscar_productos(consulta, limite=10)
                 if producto.pk not in usadas
                 and (
-                    'herramienta' in _texto_normalizado(producto.categoria)
+                    any(clase in _texto_normalizado(producto.categoria) for clase in (
+                        'herramienta', 'seguridad',
+                    ))
+                    or consulta == 'disco diamantado continuo porcelanato 115 mm'
                     or consulta in ('espatula acero', 'lija muro')
                 )
             ), None)
             if not herramienta:
                 continue
+            herramientas_condicionales = {
+                'disco diamantado continuo porcelanato 115 mm',
+                'esmeril angular 4 1/2 pulgadas 850 W',
+            }
+            elementos_proteccion = {
+                'rodillera espuma instalacion pisos',
+                'guantes de trabajo nitrilo reforzado',
+                'lentes seguridad policarbonato transparentes',
+                'respirador reutilizable P95 con filtro',
+                'protector auditivo tipo copa 27 dB',
+            }
+            if consulta in herramientas_condicionales:
+                rol_herramienta = 'Herramienta condicional'
+            elif consulta in elementos_proteccion:
+                rol_herramienta = 'Protección recomendada'
+            else:
+                rol_herramienta = 'Herramienta principal no incluida'
             item = _producto_publico(herramienta)
             item.update({
-                'rol': 'Herramienta opcional',
+                'rol': rol_herramienta,
                 'carrito_cantidad': 1,
-                'es_opcional': True,
+                'es_opcional': consulta in herramientas_condicionales,
+                'incluido_en_total': False,
                 'detalle_material': usos_herramientas.get(
                     consulta,
                     'Apoyar la ejecución segura y precisa de esta etapa del proyecto.',
@@ -3892,11 +4142,20 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
                     if herramientas else ''
                 )
                 + (
-                    f'\n\nCOSTO OPCIONAL\n{_formatear_clp(total_opcional)} CLP '
+                    f'\n\nCOSTO DE HERRAMIENTAS NO INCLUIDO\n{_formatear_clp(total_opcional)} CLP '
                     'considerando una unidad de cada herramienta.'
                     if herramientas else ''
                 )
-                + '\n\nLas herramientas son opcionales y no modifican el total de materiales.'
+                + (
+                    '\n\nDEPENDENCIA A CONFIRMAR\nLa paleta mezcladora necesita una '
+                    'herramienta motriz y un mandril compatibles, que no están incluidos '
+                    'automáticamente en esta selección.'
+                    if any('paleta mezcladora' in _texto_normalizado(
+                        herramienta.get('nombre')
+                    ) for herramienta in herramientas)
+                    else ''
+                )
+                + '\n\nEstas herramientas no modifican el total calculado de materiales.'
             ),
             'productos': herramientas,
             'maestros': [],
@@ -4222,7 +4481,10 @@ def procesar_consulta(
                     continue
                 existentes.update(_texto_normalizado(busqueda) for busqueda in busquedas_nuevas)
                 tareas_combinadas.append({**tarea, 'busquedas': busquedas_nuevas})
-            propuesta_completa['tareas_proyecto'] = tareas_combinadas[:8]
+            # El planificador admite hasta doce etapas. Limitar esta fusión a
+            # ocho podía descartar silenciosamente iluminación, drenaje o
+            # seguridad en proyectos grandes.
+            propuesta_completa['tareas_proyecto'] = tareas_combinadas[:12]
             propuesta_completa['herramientas_proyecto'] = list(dict.fromkeys([
                 *(interpretacion.get('herramientas_proyecto') or []),
                 *(propuesta_completa.get('herramientas_proyecto') or []),

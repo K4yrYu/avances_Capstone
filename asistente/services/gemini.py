@@ -343,6 +343,14 @@ Reglas obligatorias:
   que requiera combinar materiales, herramientas o profesionales.
 - Para proyectos distintos de pintura, divide el trabajo en tareas_proyecto. Cada tarea debe
   tener un nombre y búsquedas breves de tipos de producto, no IDs ni productos inventados.
+- En pisos de cerámica o porcelanato conserva exactamente la familia solicitada: no reemplaces
+  cerámica por porcelanato ni porcelanato por cerámica sin presentarlo como alternativa y pedir
+  confirmación. El material y estado de la base son críticos; si el cliente no los entrega,
+  mantenlos en datos_faltantes_proyecto. Relaciona las herramientas con cada acción real:
+  medir y nivelar, mezclar, aplicar adhesivo, cortar, asentar, fraguar y limpiar. Un taladro solo
+  corresponde cuando se usa con una paleta mezcladora compatible; no lo describas como una
+  herramienta de fijación para un piso cerámico. Los clips de nivelación requieren cuñas
+  compatibles y el guardapolvo debe quedar como terminación opcional, no material obligatorio.
 - Para cambiar o instalar una puerta reúne en una sola respuesta: ubicación interior/exterior,
   ancho y alto del vano, si se cambia solo la hoja o también el marco, estado del marco y sentido
   de apertura cuando sea relevante. No uses ejemplos de superficie como 3 x 4 metros para vanos.

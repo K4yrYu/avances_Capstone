@@ -39,8 +39,8 @@ class ConsultaAsistenteSerializer(serializers.Serializer):
     )
 
     def validate_historial(self, value):
-        if len(value) > 10:
-            raise serializers.ValidationError('Solo se permiten los últimos 10 mensajes.')
+        if len(value) > 20:
+            raise serializers.ValidationError('Solo se permiten los últimos 20 mensajes.')
         return value
 
     def validate_productos_contexto(self, value):
