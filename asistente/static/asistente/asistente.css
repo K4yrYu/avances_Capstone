@@ -52,6 +52,25 @@
   white-space: pre-line;
 }
 
+.assistant-section-heading {
+  display: block;
+  margin: .75rem 0 .2rem;
+  color: var(--navy-dark);
+  font-weight: 900;
+  letter-spacing: .015em;
+}
+
+.assistant-alternative-line {
+  display: block;
+  margin: .35rem 0;
+  padding: .45rem .6rem;
+  color: #332600;
+  background: #fff2bd;
+  border-left: 4px solid var(--yellow);
+  border-radius: 0 8px 8px 0;
+  font-weight: 750;
+}
+
 .assistant-products {
   width: min(100%, 900px);
   grid-template-columns: minmax(0, 1fr);

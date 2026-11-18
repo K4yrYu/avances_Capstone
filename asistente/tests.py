@@ -12,6 +12,7 @@ from productos.models import Producto
 from usuarios.models import Usuario
 from .services import procesar_configuracion_foto, procesar_consulta, resolver_interpretacion
 from .services.asistente_sfi import (
+    _evaluar_alcance_proyecto,
     _resolver_accion_seguimiento,
     _resolver_herramientas_iniciales,
     _resolver_proyecto,
@@ -23,6 +24,10 @@ from .services.gemini import (
     _solicitar_gemini_con_reintentos,
 )
 from .services.sinonimos_ferreteros import expandir_consulta
+from .services.planificador_proyectos import (
+    _ajustar_proyecto_ceramica,
+    _producto_compatible_con_revestimiento_ceramico,
+)
 
 
 class CatalogoGeminiReducidoTests(TestCase):
@@ -49,6 +54,152 @@ class CatalogoGeminiReducidoTests(TestCase):
         self.assertLessEqual(len(catalogo), 60)
         nombres = ' '.join(item['nombre'].casefold() for item in catalogo)
         self.assertIn('membrana impermeable', nombres)
+
+
+class PisoFlotanteTests(TestCase):
+    def test_solicita_habitacion_medidas_base_y_estado(self):
+        resultado = _resolver_proyecto({
+            'proyecto': 'Instalación de piso flotante',
+            '_contexto_usuario': 'quiero instalar piso flotante',
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn('UBICACIÓN DEL PISO', resultado['mensaje'])
+        self.assertIn('SUPERFICIE', resultado['mensaje'])
+        self.assertIn('BASE ACTUAL', resultado['mensaje'])
+        self.assertIn('ESTADO DE LA BASE', resultado['mensaje'])
+
+    def test_ofrece_alternativas_por_precio_y_color_en_living(self):
+        resultado = _resolver_proyecto({
+            'proyecto': 'Instalación de piso flotante',
+            '_contexto_usuario': (
+                'es para el living de 4 x 5 metros sobre radier firme seco y nivelado'
+            ),
+            'ancho_cm': 400,
+            'fondo_cm': 500,
+        })
+
+        self.assertEqual(resultado['tipo'], 'propuesta_piso_flotante')
+        alternativas = [
+            item for item in resultado['productos'] if item.get('es_alternativa')
+        ]
+        self.assertGreaterEqual(len(alternativas), 3)
+        self.assertTrue(all(item['cantidad_requerida'] > 0 for item in alternativas))
+        self.assertTrue(all(item.get('detalle_material') for item in alternativas))
+        self.assertEqual(
+            [item['rol'] for item in alternativas],
+            [f'Alternativa {numero} de piso flotante' for numero in range(1, len(alternativas) + 1)],
+        )
+        self.assertIn('no deben sumarse entre sí', resultado['mensaje'])
+        self.assertIn('no es un presupuesto definitivo', resultado['mensaje'].casefold())
+        self.assertIn('profesional calificado', resultado['mensaje'].casefold())
+        self.assertIn('de living, sobre', resultado['mensaje'])
+        self.assertNotIn('de living y comedor, sobre', resultado['mensaje'])
+
+    def test_separa_complementos_de_las_alternativas(self):
+        resultado = _resolver_proyecto({
+            'proyecto': 'Instalación de piso flotante',
+            '_contexto_usuario': (
+                'es para el living de 3 x 6 metros sobre radier firme seco y nivelado'
+            ),
+        })
+
+        alternativas = [item for item in resultado['productos'] if item.get('es_alternativa')]
+        complementos = [item for item in resultado['productos'] if item.get('es_opcional')]
+
+        self.assertTrue(alternativas)
+        self.assertTrue(complementos)
+        self.assertTrue(all(not item.get('incluido_en_total', True) for item in complementos))
+        self.assertIn('estimación separada', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_comparacion_economica_usa_subtotales_y_excluye_complementos(self, interpretar):
+        propuesta = _resolver_proyecto({
+            'proyecto': 'Instalación de piso flotante',
+            '_contexto_usuario': (
+                'es para el living de 3 x 6 metros sobre radier firme seco y nivelado'
+            ),
+        })
+        estimacion = [{
+            clave: item[clave]
+            for clave in (
+                'id', 'carrito_cantidad', 'cantidad_requerida', 'rol',
+                'detalle_material', 'es_opcional', 'es_alternativa',
+                'incluido_en_total',
+            )
+            if clave in item
+        } for item in propuesta['productos']]
+
+        resultado = procesar_consulta(
+            '¿Hay alternativas más económicas?',
+            [],
+            [item['id'] for item in propuesta['productos']],
+            'auto',
+            estimacion,
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'comparacion_economica')
+        self.assertEqual(len(resultado['productos']), 3)
+        self.assertEqual(
+            [item['sku'] for item in resultado['productos']],
+            ['SFI-PFL-ESSEN-296', 'SFI-PFL-BONN-300', 'SFI-PFL-MISTY-238'],
+        )
+        self.assertEqual(resultado['productos'][0]['carrito_cantidad'], 7)
+        self.assertTrue(all(item['carrito_cantidad'] > 1 for item in resultado['productos']))
+        self.assertEqual(
+            [item['subtotal'] for item in resultado['productos']],
+            sorted(item['subtotal'] for item in resultado['productos']),
+        )
+        self.assertNotIn('Manta niveladora', resultado['mensaje'])
+        self.assertNotIn('Barrera de vapor', resultado['mensaje'])
+        self.assertIn('subtotal necesario', resultado['mensaje'])
+
+    def test_reconoce_dimensiones_con_m2_y_pide_solo_nivelacion_pendiente(self):
+        resultado = _resolver_proyecto({
+            'proyecto': 'Instalación de piso flotante',
+            '_contexto_usuario': (
+                'es para el living, de 3 x 6 m2, con base de radier firme y seca'
+            ),
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn('superficie: 18 m²', resultado['mensaje'])
+        self.assertIn('Solo falta confirmar si está nivelada.', resultado['mensaje'])
+        self.assertNotIn('Indica largo × ancho', resultado['mensaje'])
+
+    def test_cocina_solo_muestra_piso_con_resistencia_al_agua_documentada(self):
+        resultado = _resolver_proyecto({
+            'proyecto': 'Instalación de piso flotante',
+            '_contexto_usuario': (
+                'es para la cocina de 3 x 4 metros sobre hormigon firme seco y nivelado'
+            ),
+            'ancho_cm': 300,
+            'fondo_cm': 400,
+        })
+
+        self.assertEqual(resultado['tipo'], 'propuesta_piso_flotante')
+        alternativas = [
+            item for item in resultado['productos'] if item.get('es_alternativa')
+        ]
+        self.assertTrue(alternativas)
+        for item in alternativas:
+            producto = Producto.objects.get(pk=item['id'])
+            self.assertTrue(producto.especificaciones.get('resistencia_agua_horas'))
+
+    def test_no_recomienda_laminado_convencional_en_bano(self):
+        resultado = _resolver_proyecto({
+            'proyecto': 'Instalación de piso flotante',
+            '_contexto_usuario': (
+                'es para el baño de 2 x 3 metros sobre radier firme seco y nivelado'
+            ),
+            'ancho_cm': 200,
+            'fondo_cm': 300,
+        })
+
+        self.assertEqual(resultado['tipo'], 'proyecto_no_recomendado')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('no recomiendo un laminado convencional', resultado['mensaje'].casefold())
 
 
 class AsistenteSfiTests(TestCase):
@@ -1892,6 +2043,82 @@ class SinonimosYBusquedaSemanticaTests(TestCase):
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
 class PlanificadorGenericoProyectosTests(TestCase):
+    def test_alcance_rechaza_obras_mayores_sin_buscar_productos(self):
+        for proyecto in (
+            'Quiero construir una casa completa',
+            'Construcción de segundo piso',
+            'Demoler un muro soportante',
+            'Instalación eléctrica completa de una vivienda',
+        ):
+            with self.subTest(proyecto=proyecto):
+                resultado = _evaluar_alcance_proyecto({
+                    'proyecto': proyecto,
+                    '_contexto_usuario': proyecto,
+                })
+                self.assertEqual(resultado['tipo'], 'proyecto_fuera_de_alcance')
+                self.assertFalse(resultado['productos'])
+
+    def test_alcance_pide_confirmar_dimensiones_en_kilometros(self):
+        resultado = _evaluar_alcance_proyecto({
+            'proyecto': 'Radier',
+            '_contexto_usuario': 'Quiero un radier de 25 x 25 km',
+        })
+
+        self.assertEqual(resultado['tipo'], 'confirmar_unidad_proyecto')
+        self.assertIn('metros', resultado['mensaje'].casefold())
+        self.assertFalse(resultado['productos'])
+
+    def test_alcance_acepta_una_correccion_posterior_en_metros(self):
+        resultado = _evaluar_alcance_proyecto({
+            'proyecto': 'Radier',
+            '_contexto_usuario': (
+                'radier de 25 x 25 km; corrección: las medidas son 5 x 4 metros'
+            ),
+            'ancho_cm': 500,
+            'fondo_cm': 400,
+        })
+
+        self.assertIsNone(resultado)
+
+    def test_alcance_aplica_limites_segun_familia_de_proyecto(self):
+        casos = (
+            ('Radier', {'ancho_cm': 1000, 'fondo_cm': 610}, '60 m²'),
+            ('Quincho', {'ancho_cm': 1000, 'fondo_cm': 510}, '50 m²'),
+            ('Cambio de techumbre', {'ancho_cm': 1000, 'fondo_cm': 810}, '80 m²'),
+            ('Revestimiento de muros', {'superficie_muros': 151}, '150 m²'),
+            ('Cerco perimetral', {'ancho_cm': 6100}, '60 m'),
+        )
+        for proyecto, medidas, limite in casos:
+            with self.subTest(proyecto=proyecto):
+                resultado = _evaluar_alcance_proyecto({
+                    'proyecto': proyecto,
+                    '_contexto_usuario': proyecto,
+                    **medidas,
+                })
+                self.assertEqual(resultado['tipo'], 'proyecto_fuera_de_alcance')
+                self.assertIn(limite, resultado['mensaje'])
+
+    def test_alcance_no_bloquea_reparacion_menor_en_una_casa(self):
+        resultado = _evaluar_alcance_proyecto({
+            'proyecto': 'Reparar techo de mi casa',
+            '_contexto_usuario': 'Reparar 20 m² del techo de mi casa',
+            'ancho_cm': 500,
+            'fondo_cm': 400,
+        })
+
+        self.assertIsNone(resultado)
+
+    def test_alcance_no_confunde_casa_para_mascota_con_vivienda(self):
+        resultado = _evaluar_alcance_proyecto({
+            'proyecto': 'Quiero hacer una casa para perro',
+            '_contexto_usuario': 'Será una casa para perro de 1 x 1 metros',
+            'ancho_cm': 100,
+            'fondo_cm': 100,
+            'alto_cm': 100,
+        })
+
+        self.assertIsNone(resultado)
+
     def test_piso_ceramico_no_avanza_sin_conocer_la_base(self):
         resultado = resolver_interpretacion({
             'intencion': 'planificar_proyecto',
@@ -2050,6 +2277,132 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
         self.assertIn('ubicacion del piso', resultado['mensaje'].casefold())
         self.assertIn('Es para la cocina', resultado['sugerencias'])
+
+    def test_ceramica_ambigua_pide_aplicacion_y_habitacion(self):
+        datos = {
+            'proyecto': 'Quiero instalar cerÃ¡mica',
+            '_contexto_usuario': 'quiero instalar cerÃ¡mica',
+            'datos_faltantes_proyecto': [],
+        }
+
+        _ajustar_proyecto_ceramica(datos, [])
+
+        faltantes = ' '.join(datos['datos_faltantes_proyecto']).casefold()
+        self.assertIn('piso o pared', faltantes)
+        self.assertIn('habitacion', faltantes)
+
+    def test_piso_ceramico_reconoce_hormigon_descrito_sin_nombre_tecnico(self):
+        datos = {
+            'proyecto': 'Piso de cerÃ¡mica',
+            '_contexto_usuario': (
+                'es para la cocina; el piso es de 2 x 3 metros; '
+                'la superficie es gris dura y firme, esta seca y nivelada'
+            ),
+            'ancho_cm': 200,
+            'fondo_cm': 300,
+            'datos_faltantes_proyecto': [],
+        }
+
+        _ajustar_proyecto_ceramica(datos, [])
+
+        faltantes = ' '.join(datos['datos_faltantes_proyecto']).casefold()
+        self.assertTrue(datos['_ceramica_material_base'])
+        self.assertEqual(
+            datos['_ceramica_tipo_base'],
+            'base_cementicia_probable',
+        )
+        self.assertTrue(datos['_ceramica_base_inferida'])
+        self.assertNotIn('material actual', faltantes)
+        self.assertFalse(datos['_ceramica_base_pendiente'])
+
+    def test_piso_ceramico_distingue_tipos_de_base(self):
+        casos = (
+            ('sobre un radier firme seco y nivelado', 'hormigon_radier'),
+            ('sobre una sobrelosa firme seca y nivelada', 'mortero_sobrelosa'),
+            ('sobre ceramica existente firme seca y nivelada', 'ceramica_existente'),
+            ('sobre base de madera OSB firme seca y nivelada', 'madera_osb'),
+            ('sobre fibrocemento firme seco y nivelado', 'fibrocemento'),
+        )
+        for descripcion, esperado in casos:
+            with self.subTest(descripcion=descripcion):
+                datos = {
+                    'proyecto': 'Piso de cerÃ¡mica para cocina',
+                    '_contexto_usuario': (
+                        f'piso de cerÃ¡mica para cocina de 2 x 3 metros {descripcion}'
+                    ),
+                    'ancho_cm': 200,
+                    'fondo_cm': 300,
+                    'datos_faltantes_proyecto': [],
+                }
+
+                _ajustar_proyecto_ceramica(datos, [])
+
+                self.assertEqual(datos['_ceramica_tipo_base'], esperado)
+                self.assertFalse(datos['_ceramica_base_pendiente'])
+
+    def test_busqueda_ceramica_cambia_segun_aplicacion_y_ambiente(self):
+        casos = (
+            (
+                'piso de cerÃ¡mica para baÃ±o sobre hormigÃ³n firme seco y nivelado',
+                'ceramica piso bano zona humeda antideslizante',
+            ),
+            (
+                'cerÃ¡mica para pared de cocina sobre hormigÃ³n firme seco y nivelado',
+                'ceramica muro cocina',
+            ),
+        )
+        for contexto, busqueda_esperada in casos:
+            with self.subTest(contexto=contexto):
+                datos = {
+                    'proyecto': contexto,
+                    '_contexto_usuario': f'{contexto}; mide 4 x 5 metros',
+                    'ancho_cm': 400,
+                    'fondo_cm': 500,
+                    'datos_faltantes_proyecto': [],
+                }
+                tareas = _ajustar_proyecto_ceramica(datos, [])
+                self.assertEqual(
+                    tareas[0]['busquedas'][0],
+                    busqueda_esperada,
+                )
+
+    def test_filtro_ceramica_no_mezcla_piso_bano_con_muro(self):
+        piso = Producto.objects.create(
+            sku='CER-PISO-BANO-FILTRO',
+            nombre='CerÃ¡mica piso baÃ±o antideslizante prueba',
+            descripcion='Piso para zona hÃºmeda.',
+            uso_recomendado='Piso antideslizante para baÃ±o.',
+            especificaciones={
+                'AplicaciÃ³n': 'Piso',
+                'Ambientes recomendados': ['BaÃ±o'],
+                'Antideslizante': True,
+            },
+            precio=10000, stock=10, categoria='Otra', activo=True,
+        )
+        muro = Producto.objects.create(
+            sku='CER-MURO-BANO-FILTRO',
+            nombre='CerÃ¡mica muro baÃ±o prueba',
+            descripcion='Revestimiento mural.',
+            uso_recomendado='Muro interior de baÃ±o.',
+            especificaciones={
+                'AplicaciÃ³n': 'Muro',
+                'Ambientes recomendados': ['BaÃ±o'],
+                'Antideslizante': False,
+            },
+            precio=10000, stock=10, categoria='Otra', activo=True,
+        )
+        datos = {
+            '_ceramica_aplicacion': 'piso',
+            '_ceramica_ambiente': 'bano',
+            '_ceramica_requiere_antideslizante': True,
+        }
+
+        self.assertTrue(_producto_compatible_con_revestimiento_ceramico(
+            piso, datos, 'ceramica piso bano antideslizante',
+        ))
+        self.assertFalse(_producto_compatible_con_revestimiento_ceramico(
+            muro, datos, 'ceramica piso bano antideslizante',
+        ))
 
     def test_herramientas_ceramica_se_relacionan_con_cada_etapa(self):
         herramientas = (

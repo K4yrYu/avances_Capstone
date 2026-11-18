@@ -136,7 +136,10 @@ def _dimensiones_rectangulares_cm(texto):
     """Extrae ancho y largo explícitos como 3 x 5 m, sin estimarlos."""
     normalizado = _texto_normalizado(texto)
     numero = r'(\d+(?:[.,]\d+)?)'
-    unidad = r'(mm|cm|m|mts?|metros?)'
+    # En lenguaje cotidiano es frecuente escribir "3 x 6 m2" aunque cada
+    # cifra sea una longitud. Dentro de una expresión rectangular se interpreta
+    # como metros; fuera de ella, m² conserva su significado de superficie.
+    unidad = r'(mm|cm|m2|m²|m|mts?|metros?)'
     coincidencia = re.search(
         rf'(?<!\w){numero}\s*(?:x|por)\s*{numero}\s*{unidad}\b',
         normalizado,
@@ -986,6 +989,7 @@ def _producto_publico(producto):
         'categoria': producto.categoria,
         'precio': producto.precio,
         'stock': producto.stock,
+        'unidad_venta': producto.unidad_venta,
         'presentacion': producto.presentacion,
         'color': producto.color,
         'color_hex': producto.color_hex,
@@ -998,6 +1002,30 @@ def _producto_publico(producto):
 
 def _formatear_clp(valor):
     return f'${int(valor):,}'.replace(',', '.')
+
+
+def _formatear_decimal(valor):
+    """Muestra decimales sin notación científica ni ceros innecesarios."""
+    numero = Decimal(str(valor))
+    texto = format(numero, 'f')
+    return texto.rstrip('0').rstrip('.') if '.' in texto else texto
+
+
+def _etiqueta_unidad_venta(producto, cantidad):
+    etiquetas = {
+        'unidad': ('unidad', 'unidades'),
+        'envase': ('envase', 'envases'),
+        'paquete': ('paquete', 'paquetes'),
+        'caja': ('caja', 'cajas'),
+        'saco': ('saco', 'sacos'),
+        'rollo': ('rollo', 'rollos'),
+        'juego': ('juego', 'juegos'),
+    }
+    singular, plural = etiquetas.get(
+        producto.unidad_venta,
+        (producto.unidad_venta, producto.unidad_venta),
+    )
+    return singular if cantidad == 1 else plural
 
 
 def _producto_catalogo(nombre):
@@ -1322,6 +1350,352 @@ def _cantidad_por_cobertura(producto, superficie_m2, aplicar_desperdicio=True):
     )
 
 
+def _resolver_piso_flotante(datos):
+    """Guía y recomienda laminados usando requisitos reales del ambiente."""
+    contexto = _texto_normalizado(' '.join(filter(None, (
+        datos.get('proyecto'),
+        datos.get('_contexto_usuario'),
+    ))))
+    habitaciones = (
+        ('cocina', ('cocina',)),
+        ('bano', ('bano', 'baño')),
+        ('lavadero', ('lavadero', 'logia', 'logía')),
+        ('exterior', ('exterior', 'terraza', 'balcon', 'balcón', 'patio')),
+        ('pasillo', ('pasillo', 'hall', 'entrada')),
+        ('oficina', ('oficina', 'escritorio', 'home office')),
+        ('living_comedor', ('living', 'comedor', 'sala de estar')),
+        ('dormitorio', ('dormitorio', 'habitacion', 'habitación', 'pieza')),
+    )
+    habitacion = next((
+        clave for clave, terminos in habitaciones
+        if any(_texto_normalizado(termino) in contexto for termino in terminos)
+    ), '')
+
+    superficie = Decimal(str(datos.get('superficie') or 0))
+    if superficie <= 0:
+        ancho = Decimal(str(datos.get('ancho_cm') or 0))
+        fondo = Decimal(str(datos.get('fondo_cm') or 0))
+        if ancho <= 0 or fondo <= 0:
+            ancho_detectado, fondo_detectado = _dimensiones_rectangulares_cm(contexto)
+            ancho = Decimal(ancho_detectado)
+            fondo = Decimal(fondo_detectado)
+        if ancho > 0 and fondo > 0:
+            superficie = (ancho * fondo / Decimal('10000')).quantize(Decimal('0.01'))
+        else:
+            area_explicita = re.search(
+                r'(?<![\dx])\b(\d+(?:[.,]\d+)?)\s*(?:m2|m²|metros cuadrados)\b',
+                contexto,
+            )
+            if area_explicita:
+                superficie = Decimal(area_explicita.group(1).replace(',', '.'))
+    superficie_texto = format(superficie.normalize(), 'f') if superficie > 0 else '0'
+
+    if any(termino in contexto for termino in ('madera', 'osb')):
+        base = 'madera u OSB'
+    elif 'ceramica' in contexto:
+        base = 'cerámica existente'
+    elif any(termino in contexto for termino in (
+        'hormigon', 'radier', 'losa', 'mortero', 'sobrelosa',
+        'gris dura', 'gris y dura',
+    )):
+        base = 'base cementicia (hormigón, radier o mortero)'
+    else:
+        base = ''
+
+    base_firme = any(termino in contexto for termino in ('firme', 'buen estado', 'solida'))
+    base_seca = any(termino in contexto for termino in (
+        'seca', 'seco', 'sin humedad', 'libre de humedad',
+    ))
+    base_nivelada = any(termino in contexto for termino in ('nivelada', 'nivelado', 'sin desnivel'))
+
+    faltantes = []
+    if not habitacion:
+        faltantes.append('Habitación donde se instalará')
+    if superficie <= 0:
+        faltantes.append('Dimensiones o metros cuadrados del piso')
+    if not base:
+        faltantes.append('Base o superficie actual')
+    estados_faltantes = []
+    if not base_firme:
+        estados_faltantes.append('firme')
+    if not base_seca:
+        estados_faltantes.append('seca')
+    if not base_nivelada:
+        estados_faltantes.append('nivelada')
+    if estados_faltantes:
+        faltantes.append('Estado de la base: ' + ', '.join(estados_faltantes))
+
+    if faltantes:
+        lineas = [
+            'PROYECTO',
+            'Instalación de piso flotante laminado',
+            '',
+            'ANTES DE RECOMENDAR PRODUCTOS',
+            'Necesito estos datos para elegir una resistencia y una base compatibles:',
+        ]
+        reconocidos = []
+        if habitacion:
+            reconocidos.append(f'habitación: {habitacion.replace("_", " y ")}')
+        if superficie > 0:
+            reconocidos.append(f'superficie: {superficie_texto} m²')
+        if base:
+            reconocidos.append(f'base: {base}')
+        if reconocidos:
+            lineas.extend(['', 'DATOS RECONOCIDOS', '• ' + '\n• '.join(reconocidos)])
+        if 'Habitación donde se instalará' in faltantes:
+            lineas.extend([
+                '', 'UBICACIÓN DEL PISO',
+                '• Dormitorio: tránsito residencial moderado.',
+                '• Living o comedor: uso residencial frecuente.',
+                '• Pasillo u oficina: requiere mayor resistencia al desgaste.',
+                '• Cocina: solamente laminados con resistencia al agua documentada.',
+                '• Baño, logia, lavadero o exterior: un laminado convencional no es adecuado.',
+            ])
+        if 'Dimensiones o metros cuadrados del piso' in faltantes:
+            lineas.extend(['', 'SUPERFICIE', '• Indica largo × ancho en metros o los m² totales.'])
+        if 'Base o superficie actual' in faltantes:
+            lineas.extend([
+                '', 'BASE ACTUAL',
+                '• Hormigón, radier, losa o mortero.',
+                '• Cerámica existente.',
+                '• Madera u OSB.',
+                '• Si no la reconoces, describe su color, textura y juntas.',
+            ])
+        if estados_faltantes:
+            lineas.extend([
+                '', 'ESTADO DE LA BASE',
+                f'• Solo falta confirmar si está {", ".join(estados_faltantes)}.',
+                '• Si presenta humedad o desniveles, deben corregirse antes de instalar.',
+            ])
+        lineas.extend([
+            '', 'RESPONDE TODO EN UN MENSAJE',
+            'Ejemplo: “Es para un living de 4 × 5 m, sobre radier firme, seco y nivelado. '
+            'Prefiero un tono roble natural”.',
+        ])
+        sugerencias = []
+        if not habitacion:
+            sugerencias.extend(['Es para un dormitorio', 'Es para el living', 'Es para la cocina'])
+        if superficie <= 0:
+            sugerencias.append('El piso mide 4 x 5 metros')
+        if not base:
+            sugerencias.append('La base es un radier de hormigón')
+        if estados_faltantes:
+            sugerencias.append('La base está ' + ', '.join(estados_faltantes))
+        return {
+            'tipo': 'aclaracion_proyecto',
+            'mensaje': '\n'.join(lineas),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': sugerencias[:4],
+        }
+
+    if habitacion in {'bano', 'lavadero', 'exterior'}:
+        nombres = {
+            'bano': 'baño', 'lavadero': 'logia o lavadero', 'exterior': 'exterior',
+        }
+        return {
+            'tipo': 'proyecto_no_recomendado',
+            'mensaje': (
+                'PROYECTO\nInstalación de piso flotante laminado\n\n'
+                f'No recomiendo un laminado convencional para {nombres[habitacion]}, porque '
+                'la exposición frecuente al agua puede dañar su núcleo y sus uniones. '
+                'Puedo ayudarte a buscar una alternativa impermeable compatible, como piso SPC '
+                'o porcelanato, sin sustituir el material sin tu confirmación.\n\n'
+                'Antes de comprar o instalar, consulta con un profesional para revisar humedad, '
+                'nivelación y compatibilidad de la base.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': ['Buscar piso SPC', 'Buscar porcelanato', 'Cambiar la habitación'],
+        }
+
+    candidatos = list(Producto.objects.filter(
+        activo=True,
+        stock__gt=0,
+        sku__startswith='SFI-PFL-',
+    ).order_by('precio', 'nombre'))
+    compatibles = []
+    for producto in candidatos:
+        ficha = producto.especificaciones if isinstance(producto.especificaciones, dict) else {}
+        if _texto_normalizado(ficha.get('tipo_piso')) != 'laminado':
+            continue
+        ambientes = [_texto_normalizado(valor) for valor in ficha.get('ambientes_recomendados', [])]
+        if habitacion == 'cocina' and not ficha.get('resistencia_agua_horas'):
+            continue
+        if ambientes and _texto_normalizado(habitacion) not in ambientes:
+            continue
+        compatibles.append(producto)
+
+    # Presenta una selección variada: económica, tono natural/resistente al agua
+    # y una alternativa superior, evitando que cuatro productos casi idénticos
+    # aparenten ser una lista que deba comprarse completa.
+    candidatos_ordenados = []
+    if compatibles:
+        candidatos_ordenados.append(compatibles[0])
+        candidato_natural = next((
+            producto for producto in compatibles
+            if isinstance(producto.especificaciones, dict)
+            and producto.especificaciones.get('resistencia_agua_horas')
+        ), None) or next((
+            producto for producto in compatibles
+            if 'natural' in _texto_normalizado(producto.color)
+        ), None)
+        if candidato_natural:
+            candidatos_ordenados.append(candidato_natural)
+        candidatos_ordenados.extend(reversed(compatibles))
+        candidatos_ordenados.extend(compatibles)
+
+    alternativas = []
+    colores_usados = set()
+    ids_usados = set()
+    for producto in candidatos_ordenados:
+        if producto.id in ids_usados:
+            continue
+        color = _texto_normalizado(producto.color)
+        if color in colores_usados and len(alternativas) < 3:
+            continue
+        cantidad = _cantidad_por_cobertura(producto, superficie)
+        if not cantidad or producto.stock < cantidad:
+            continue
+        item = _producto_publico(producto)
+        numero_alternativa = len(alternativas) + 1
+        cobertura_comprada = Decimal(str(producto.rendimiento)) * cantidad
+        unidad_cantidad = _etiqueta_unidad_venta(producto, cantidad)
+        item.update({
+            'rol': f'Alternativa {numero_alternativa} de piso flotante',
+            'cantidad_requerida': cantidad,
+            'carrito_cantidad': cantidad,
+            'subtotal': cantidad * producto.precio,
+            'detalle_material': (
+                f'{cantidad} {unidad_cantidad} para {superficie_texto} m², considerando '
+                f'{producto.porcentaje_desperdicio:g}% de margen. Cobertura adquirida: '
+                f'{_formatear_decimal(cobertura_comprada)} m².'
+            ),
+            'es_alternativa': True,
+            'etiqueta_cantidad': unidad_cantidad,
+        })
+        alternativas.append(item)
+        colores_usados.add(color)
+        ids_usados.add(producto.id)
+        if len(alternativas) >= 4:
+            break
+
+    if not alternativas:
+        return {
+            'tipo': 'sin_resultados',
+            'mensaje': (
+                f'No encontré piso flotante compatible con {habitacion.replace("_", " ")} '
+                'y stock suficiente para la superficie indicada. No sustituiré el material '
+                'por otro sin tu confirmación.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': ['Ver otras terminaciones', 'Buscar maestro instalador'],
+        }
+
+    if habitacion == 'living_comedor':
+        menciona_living = 'living' in contexto or 'sala de estar' in contexto
+        menciona_comedor = 'comedor' in contexto
+        habitacion_texto = (
+            'living y comedor' if menciona_living and menciona_comedor
+            else 'comedor' if menciona_comedor
+            else 'living'
+        )
+    else:
+        habitacion_texto = habitacion.replace('_', ' ')
+
+    complementos = []
+    subtotal_complementos = 0
+    productos_complementarios = (
+        ('TEST-PIS-MAN-15', 'Manta de apoyo estimada', True),
+        ('SFI-PFL-VAP-AQUA-40', 'Barrera de vapor estimada para base cementicia', True),
+    )
+    for sku, rol, calcular in productos_complementarios:
+        producto = Producto.objects.filter(sku=sku, activo=True, stock__gt=0).first()
+        cantidad = _cantidad_por_cobertura(producto, superficie) if calcular else 0
+        if not producto or not cantidad or producto.stock < cantidad:
+            continue
+        item = _producto_publico(producto)
+        cobertura_comprada = Decimal(str(producto.rendimiento)) * cantidad
+        unidad_cantidad = _etiqueta_unidad_venta(producto, cantidad)
+        item.update({
+            'rol': rol,
+            'cantidad_requerida': cantidad,
+            'carrito_cantidad': cantidad,
+            'subtotal': cantidad * producto.precio,
+            'detalle_material': (
+                f'{cantidad} {unidad_cantidad} para {superficie_texto} m². Cobertura adquirida: '
+                f'{_formatear_decimal(cobertura_comprada)} m². '
+                'Confirmar compatibilidad con el piso elegido.'
+            ),
+            'es_opcional': True,
+            'incluido_en_total': False,
+        })
+        complementos.append(item)
+        subtotal_complementos += item['subtotal']
+
+    for sku, rol in (
+        ('SFI-PFL-PER-T-200', 'Perfil de transición opcional'),
+        ('TEST-EXT-PIS-GUA-240', 'Guardapolvo opcional'),
+        ('SFI-PFL-KIT-INST', 'Herramientas de instalación opcionales'),
+    ):
+        producto = Producto.objects.filter(sku=sku, activo=True, stock__gt=0).first()
+        if not producto:
+            continue
+        item = _producto_publico(producto)
+        item.update({
+            'rol': rol,
+            'cantidad_pendiente': True,
+            'detalle_material': (
+                'La cantidad depende del perímetro, puertas, encuentros y condiciones reales del lugar.'
+            ),
+            'es_opcional': True,
+            'incluido_en_total': False,
+        })
+        complementos.append(item)
+    lineas_opciones = [
+        f'• {item["nombre"]}: {_formatear_clp(item["subtotal"])} '
+        f'por {item["cantidad_requerida"]} {item["etiqueta_cantidad"]}.'
+        for item in alternativas
+    ]
+    mensaje = (
+        'PROPUESTA DE PISO FLOTANTE PARA TU ESPACIO\n'
+        f'Para {superficie_texto} m² de {habitacion_texto}, sobre {base} firme, seca y nivelada, '
+        'encontré estas alternativas reales. Cada alternativa reemplaza a las demás; '
+        'no deben sumarse entre sí.\n\n'
+        'ALTERNATIVAS DISPONIBLES\n' + '\n'.join(lineas_opciones) + '\n\n'
+        'COMPLEMENTOS DE INSTALACIÓN\n'
+        + (
+            f'La manta y la barrera de vapor suman {_formatear_clp(subtotal_complementos)} '
+            'como estimación separada. No se agregan al valor de cada piso hasta confirmar '
+            'su compatibilidad. Perfiles, guardapolvos y herramientas requieren medidas adicionales.\n\n'
+            if complementos else
+            'Deben confirmarse manta, barrera de vapor, perfiles, guardapolvos y herramientas '
+            'según la alternativa escogida y las condiciones del lugar.\n\n'
+        )
+        + 'ANTES DE INSTALAR\n'
+        '• La manta y la barrera de vapor deben elegirse según la base y la ficha del piso.\n'
+        '• Deben respetarse las juntas perimetrales y condiciones de humedad del fabricante.\n'
+        '• Los perfiles de transición y guardapolvos dependen del perímetro y de los encuentros.\n\n'
+        'IMPORTANTE\n'
+        'Esta propuesta no es un presupuesto definitivo ni reemplaza instrucciones de instalación. '
+        'Es una estimación orientativa basada en el catálogo actual. Antes de comprar o instalar, '
+        'comprueba medidas, humedad, nivelación, compatibilidad y condiciones reales con un '
+        'profesional calificado.'
+    )
+    return {
+        'tipo': 'propuesta_piso_flotante',
+        'mensaje': mensaje,
+        'productos': alternativas + complementos,
+        'maestros': [],
+        'sugerencias': [
+            '¿Cuál es el más económico?',
+            'Comparar resistencia y colores',
+            '¿Qué herramientas necesito?',
+        ],
+    }
+
+
 def _resolver_bano(datos):
     alcance = str(datos.get('alcance_bano') or '').strip()
     alcances_validos = {'piso', 'muros', 'piso_muros', 'artefactos', 'completo'}
@@ -1572,12 +1946,225 @@ def _resolver_bano(datos):
     }
 
 
+def _respuesta_proyecto_fuera_de_alcance(
+    motivo, limite='', profesionales='arquitecto, constructor o especialista competente',
+):
+    detalle_limite = f' {limite}' if limite else ''
+    return {
+        'tipo': 'proyecto_fuera_de_alcance',
+        'mensaje': (
+            'PROYECTO FUERA DEL ALCANCE ORIENTATIVO DE SFI\n\n'
+            f'{motivo}{detalle_limite}\n\n'
+            'Por su magnitud o riesgo, este trabajo requiere evaluación, diseño y '
+            'supervisión profesional. '
+            f'Consulta con: {profesionales}. SFI no calculará cantidades ni '
+            'generará una compra para la obra completa. Puedes reformular la consulta '
+            'para revisar una parte menor y concreta o buscar productos específicos.'
+        ),
+        'productos': [],
+        'maestros': [],
+        'sugerencias': [
+            'Buscar un profesional para evaluar el proyecto',
+            'Calcular solo una parte menor del proyecto',
+            'Buscar productos específicos',
+        ],
+    }
+
+
+def _evaluar_alcance_proyecto(datos):
+    """Detiene obras mayores o dimensiones impropias antes de cotizar.
+
+    Los valores son límites internos del asistente y no sustituyen normas,
+    permisos ni evaluación profesional.
+    """
+    texto_original = ' '.join(filter(None, (
+        str(datos.get('proyecto') or ''),
+        str(datos.get('_contexto_usuario') or ''),
+    )))
+    contexto = _texto_normalizado(texto_original)
+
+    medidas_con_unidad = list(re.finditer(
+        r'\b(\d+(?:[.,]\d+)?)\s*(?:x|por|×)\s*'
+        r'(\d+(?:[.,]\d+)?)\s*'
+        r'(kilometros?|kms?|km|metros?|mts?|m)\b',
+        contexto,
+    ))
+    ultima_medida = medidas_con_unidad[-1] if medidas_con_unidad else None
+    unidad_ultima = ultima_medida.group(3) if ultima_medida else ''
+    unidad_improbable = unidad_ultima in {'km', 'kms', 'kilometro', 'kilometros'}
+    if not ultima_medida:
+        unidad_improbable = bool(re.search(
+            r'\b\d+(?:[.,]\d+)?\s*(?:kilometros?|kms?|km)\b', contexto,
+        ))
+    if unidad_improbable:
+        correccion_sugerida = (
+            f'Quise decir {ultima_medida.group(1)} x '
+            f'{ultima_medida.group(2)} metros'
+            if ultima_medida else 'Indicar nuevamente las medidas en metros'
+        )
+        return {
+            'tipo': 'confirmar_unidad_proyecto',
+            'mensaje': (
+                'UNIDAD A CONFIRMAR\n\n'
+                'La medida fue indicada en kilómetros y supera el alcance de una obra '
+                'menor. ¿Te referías a metros? Confirma las medidas y su unidad antes de '
+                'que SFI calcule materiales.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': [
+                correccion_sugerida,
+                'Corregir las medidas del proyecto',
+            ],
+        }
+
+    es_casa_pequena_no_habitable = bool(re.search(
+        r'\b(?:casa|casita)\s+(?:para|de)\s+'
+        r'(?:perro|gato|mascota|pajaro|aves?|munecas?)\b',
+        contexto,
+    ))
+    obra_mayor = not es_casa_pequena_no_habitable and any((
+        re.search(
+            r'\b(?:quiero|necesito|proyecto\s+de)\s+'
+            r'(?:(?:hacer|construir)\s+)?(?:una\s+)?(?:casa|vivienda)\b',
+            contexto,
+        ),
+        re.search(
+            r'\b(?:construir|construccion|hacer|levantar|fabricar)\b.{0,45}'
+            r'\b(?:casa|vivienda|edificio)\b',
+            contexto,
+        ),
+        re.search(r'\b(?:casa|vivienda|edificio)\s+complet[oa]\b', contexto),
+        re.search(r'\b(?:segundo|tercer)\s+piso\b', contexto),
+        re.search(
+            r'\bampliaci(?:on|ones)\b.{0,45}'
+            r'\b(?:casa|vivienda|habitacion|dormitorio|cocina|bano)\b',
+            contexto,
+        ),
+        re.search(r'\bampliaci(?:on|ones)\s+habitable', contexto),
+        re.search(
+            r'\b(?:fundacion|fundaciones|cimientos?)\b.{0,45}'
+            r'\b(?:casa|vivienda|edificio)\b',
+            contexto,
+        ),
+        re.search(
+            r'\b(?:demoler|demolicion|modificar|eliminar|abrir)\b.{0,45}'
+            r'\b(?:muro|pared)\s+(?:soportante|estructural)\b',
+            contexto,
+        ),
+        re.search(
+            r'\b(?:red|instalacion)\s+completa\b.{0,35}'
+            r'\b(?:electrica|electricidad|gas)\b',
+            contexto,
+        ),
+        re.search(
+            r'\b(?:instalacion|red)\s+(?:electrica|de\s+gas)\s+completa\b',
+            contexto,
+        ),
+        re.search(
+            r'\b(?:obra|proyecto|construccion)\s+(?:industrial|comercial)\b',
+            contexto,
+        ),
+    ))
+    if obra_mayor:
+        if re.search(r'\b(?:electrica|electricidad)\b', contexto):
+            profesionales = 'un electricista autorizado y el profesional responsable del proyecto'
+        elif re.search(r'\bgas\b', contexto):
+            profesionales = 'un instalador de gas autorizado y el profesional responsable del proyecto'
+        else:
+            profesionales = 'un arquitecto, un ingeniero estructural y un constructor competente'
+        return _respuesta_proyecto_fuera_de_alcance(
+            'La solicitud corresponde a una obra mayor o estructural.',
+            profesionales=profesionales,
+        )
+
+    try:
+        ancho_cm = max(0, int(datos.get('ancho_cm') or 0))
+        fondo_cm = max(0, int(datos.get('fondo_cm') or 0))
+        alto_cm = max(0, int(datos.get('alto_cm') or 0))
+        superficie = max(0, float(datos.get('superficie') or 0))
+        superficie_muros = max(0, float(datos.get('superficie_muros') or 0))
+    except (TypeError, ValueError):
+        return None
+
+    superficie_planta = (
+        (ancho_cm * fondo_cm) / 10000 if ancho_cm and fondo_cm else 0
+    )
+    superficie_principal = max(superficie, superficie_planta)
+    es_lineal = any(termino in contexto for termino in (
+        'cerco', 'cierre perimetral', 'reja', 'muro perimetral',
+    ))
+    lado_mayor = max(ancho_cm, fondo_cm) / 100
+
+    if alto_cm > 400:
+        return _respuesta_proyecto_fuera_de_alcance(
+            'La altura indicada supera el límite absoluto de seguridad de SFI.',
+            'Las estructuras de más de 4 m requieren evaluación profesional.',
+        )
+    if alto_cm > 350:
+        return _respuesta_proyecto_fuera_de_alcance(
+            'La estructura supera el alcance orientativo por altura.',
+            'SFI limita estas propuestas a 3,5 m.',
+        )
+    if es_lineal:
+        if lado_mayor > 60:
+            return _respuesta_proyecto_fuera_de_alcance(
+                'El trabajo lineal supera el alcance orientativo.',
+                'El límite para cercos y trabajos lineales es 60 m.',
+            )
+    elif lado_mayor > 30:
+        return _respuesta_proyecto_fuera_de_alcance(
+            'Uno de los lados supera el límite absoluto de una obra menor.',
+            'SFI admite lados de hasta 30 m.',
+        )
+
+    if max(superficie_principal, superficie_muros) > 200:
+        return _respuesta_proyecto_fuera_de_alcance(
+            'La superficie supera el límite absoluto de una obra menor.',
+            'SFI no calcula proyectos sobre 200 m².',
+        )
+
+    limites = (
+        (('radier', 'piso', 'terraza'), 60, superficie_principal,
+         'radieres, pisos y terrazas', 'un constructor y el especialista del revestimiento o radier'),
+        (('cobertizo', 'quincho', 'pergola', 'bodega'), 50,
+         superficie_principal, 'cobertizos, quinchos, pérgolas y bodegas',
+         'un arquitecto o constructor y un especialista estructural'),
+        (('techo', 'techumbre', 'cubierta'), 80, superficie_principal,
+         'techumbres y cubiertas', 'un especialista en techumbre y un profesional estructural'),
+        (('revestimiento de muro', 'revestir muro', 'muros'), 150,
+         superficie_muros or superficie_principal, 'revestimientos de muros',
+         'un constructor y un especialista en revestimientos'),
+    )
+    for terminos, maximo, medida, etiqueta, profesionales in limites:
+        if medida > maximo and any(termino in contexto for termino in terminos):
+            return _respuesta_proyecto_fuera_de_alcance(
+                f'La superficie indicada supera el alcance orientativo para {etiqueta}.',
+                f'El límite interno de SFI es {maximo} m².',
+                profesionales,
+            )
+
+    if superficie_principal > 80:
+        return _respuesta_proyecto_fuera_de_alcance(
+            'La superficie indicada supera el alcance de un proyecto general menor.',
+            'Para proyectos no clasificados, SFI admite hasta 80 m².',
+        )
+    return None
+
+
 def _resolver_proyecto(datos):
+    alcance = _evaluar_alcance_proyecto(datos)
+    if alcance:
+        return alcance
     proyecto = _texto_normalizado(datos.get('proyecto'))
     contexto_proyecto = _texto_normalizado(' '.join(filter(None, (
         datos.get('proyecto'),
         datos.get('_contexto_usuario'),
     ))))
+    if any(termino in contexto_proyecto for termino in (
+        'piso flotante', 'piso laminado', 'fotolaminado',
+    )):
+        return _resolver_piso_flotante(datos)
     # Un revestimiento de piso conserva el flujo estándar de proyectos aunque
     # esté ubicado en un baño. El planificador sanitario queda reservado para
     # remodelaciones integrales y artefactos; así no cambia silenciosamente una
@@ -3020,7 +3607,9 @@ def _explicar_faltantes_del_proyecto(mensaje, historial, productos_contexto):
     }
 
 
-def _comparar_alternativas_economicas(mensaje, productos_contexto):
+def _comparar_alternativas_economicas(
+    mensaje, productos_contexto, estimacion_contexto=None,
+):
     """Compara las tarjetas actuales sin mezclar familias ni reiniciar el proyecto."""
     texto = _texto_normalizado(mensaje)
     pide_alternativa_economica = any(frase in texto for frase in (
@@ -3044,6 +3633,114 @@ def _comparar_alternativas_economicas(mensaje, productos_contexto):
     productos = [encontrados[pk] for pk in ids if pk in encontrados]
     if not productos:
         return None
+
+    detalles = {
+        int(item['id']): item
+        for item in (estimacion_contexto or [])
+        if isinstance(item, dict) and item.get('id')
+    }
+    ids_alternativas = [
+        producto.pk for producto in productos
+        if detalles.get(producto.pk, {}).get('es_alternativa')
+    ]
+    if ids_alternativas:
+        alternativas_proyecto = [
+            producto for producto in productos if producto.pk in ids_alternativas
+        ]
+        superficie = Decimal('0')
+        for producto in alternativas_proyecto:
+            detalle_texto = str(detalles.get(producto.pk, {}).get('detalle_material') or '')
+            coincidencia_superficie = re.search(
+                r'para\s+(\d+(?:[.,]\d+)?)\s*m(?:2|²)',
+                _texto_normalizado(detalle_texto),
+            )
+            if coincidencia_superficie:
+                superficie = Decimal(coincidencia_superficie.group(1).replace(',', '.'))
+                break
+
+        requiere_agua = bool(alternativas_proyecto) and all(
+            isinstance(producto.especificaciones, dict)
+            and producto.especificaciones.get('resistencia_agua_horas')
+            for producto in alternativas_proyecto
+        )
+        candidatos_economicos = []
+        for producto in Producto.objects.filter(
+            activo=True,
+            stock__gt=0,
+            sku__startswith='SFI-PFL-',
+        ).order_by('precio', 'nombre'):
+            ficha = producto.especificaciones if isinstance(producto.especificaciones, dict) else {}
+            if _texto_normalizado(ficha.get('tipo_piso')) != 'laminado':
+                continue
+            if requiere_agua and not ficha.get('resistencia_agua_horas'):
+                continue
+            cantidad = (
+                _cantidad_por_cobertura(producto, superficie)
+                if superficie > 0 else
+                int(detalles.get(producto.pk, {}).get('cantidad_requerida') or 1)
+            )
+            if not cantidad or producto.stock < cantidad:
+                continue
+            candidatos_economicos.append({
+                'producto': producto,
+                'cantidad': cantidad,
+                'subtotal': producto.precio * cantidad,
+            })
+
+        candidatos_economicos.sort(
+            key=lambda opcion: (
+                opcion['subtotal'], opcion['producto'].precio, opcion['producto'].nombre,
+            )
+        )
+        opciones_economicas = candidatos_economicos[:3]
+        if not opciones_economicas:
+            return None
+
+        lineas = []
+        items = []
+        for numero, opcion in enumerate(opciones_economicas, start=1):
+            producto = opcion['producto']
+            cantidad = opcion['cantidad']
+            unidad = _etiqueta_unidad_venta(producto, cantidad)
+            lineas.append(
+                f'• {producto.nombre}: {_formatear_clp(opcion["subtotal"])} por '
+                f'{cantidad} {unidad} para la superficie calculada.'
+            )
+            item = _producto_publico(producto)
+            cobertura_comprada = Decimal(str(producto.rendimiento)) * cantidad
+            item.update({
+                'rol': f'Opción económica {numero}',
+                'cantidad_requerida': cantidad,
+                'carrito_cantidad': cantidad,
+                'subtotal': opcion['subtotal'],
+                'detalle_material': (
+                    f'{cantidad} {unidad} para {_formatear_decimal(superficie)} m². '
+                    f'Cobertura adquirida: {_formatear_decimal(cobertura_comprada)} m².'
+                ),
+                'es_alternativa': True,
+            })
+            items.append(item)
+        return {
+            'tipo': 'comparacion_economica',
+            'mensaje': '\n'.join([
+                'ALTERNATIVAS ECONÓMICAS PARA TU PROYECTO',
+                *lineas,
+                '',
+                'Las opciones están ordenadas por el subtotal necesario para la superficie '
+                'indicada, no solamente por el precio de una caja. Elige solo un revestimiento; '
+                'los complementos de instalación quedaron fuera de esta comparación.',
+                '',
+                'IMPORTANTE',
+                'Los valores son una estimación. Antes de comprar, confirma cantidades, '
+                'compatibilidad y condiciones de instalación con un profesional calificado.',
+            ]),
+            'productos': items,
+            'maestros': [],
+            'sugerencias': [
+                'Comparar resistencia y colores',
+                'Volver al resumen del proyecto',
+            ],
+        }
 
     lineas = []
     alternativas = []
@@ -3822,7 +4519,7 @@ def _resolver_agregado_estimacion(mensaje, productos_contexto, estimacion_contex
         detalle = detalles.get(producto_id, {})
         for campo in (
             'carrito_cantidad', 'cantidad_requerida', 'rol', 'detalle_material',
-            'es_opcional', 'incluido_en_total',
+            'es_opcional', 'es_alternativa', 'cantidad_pendiente', 'incluido_en_total',
         ):
             if campo in detalle:
                 item[campo] = detalle[campo]
@@ -4353,6 +5050,7 @@ def procesar_consulta(
     comparacion_economica = _comparar_alternativas_economicas(
         mensaje_economico,
         productos_contexto or [],
+        estimacion_contexto or [],
     )
     if comparacion_economica:
         return comparacion_economica

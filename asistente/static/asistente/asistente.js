@@ -17,6 +17,7 @@
 
     const {escapeHtml, safeUrl} = security;
     const defaultInputPlaceholder = input.placeholder;
+    const initialSuggestionsHtml = suggestions.innerHTML;
     const fallbackImage = safeUrl(root.dataset.placeholderUrl);
     const fallbackMasterImage = safeUrl(root.dataset.masterPlaceholderUrl) || fallbackImage;
     const authenticated = root.dataset.authenticated === "true";
@@ -86,6 +87,8 @@
         rol: String(product.rol || "").slice(0, 100),
         detalle_material: String(product.detalle_material || "").slice(0, 500),
         es_opcional: Boolean(product.es_opcional),
+        es_alternativa: Boolean(product.es_alternativa),
+        cantidad_pendiente: Boolean(product.cantidad_pendiente),
         incluido_en_total: product.incluido_en_total !== false,
       })).filter(product => Number.isInteger(product.id) && product.id > 0);
     }
@@ -104,6 +107,21 @@
 
     function formatClp(value) {
       return new Intl.NumberFormat("es-CL", {style: "currency", currency: "CLP", maximumFractionDigits: 0}).format(Number(value) || 0);
+    }
+
+    function quantityUnit(product, quantity) {
+      const unit = String(product.unidad_venta || "unidad").toLowerCase();
+      const labels = {
+        unidad: ["unidad", "unidades"],
+        envase: ["envase", "envases"],
+        paquete: ["paquete", "paquetes"],
+        caja: ["caja", "cajas"],
+        saco: ["saco", "sacos"],
+        rollo: ["rollo", "rollos"],
+        juego: ["juego", "juegos"],
+      };
+      const pair = labels[unit] || [unit, unit];
+      return Number(quantity) === 1 ? pair[0] : pair[1];
     }
 
     function scrollToLatest() {
@@ -216,6 +234,45 @@
       article.querySelector(".message-content")?.appendChild(button);
     }
 
+    function decorateAssistantMessage(paragraph) {
+      let alternativesSection = false;
+      [...paragraph.childNodes].forEach(node => {
+        if (node.nodeType !== Node.TEXT_NODE || !node.textContent) return;
+        const fragment = document.createDocumentFragment();
+        node.textContent.split(/(\n)/).forEach(part => {
+          if (part === "\n") {
+            fragment.appendChild(document.createTextNode(part));
+            return;
+          }
+          const trimmed = part.trim();
+          const isHeading = (
+            trimmed.length >= 3
+            && trimmed.length <= 80
+            && /[A-ZÁÉÍÓÚÑ]/.test(trimmed)
+            && trimmed === trimmed.toLocaleUpperCase("es-CL")
+            && !trimmed.startsWith("•")
+          );
+          if (isHeading) {
+            alternativesSection = trimmed === "ALTERNATIVAS DISPONIBLES";
+            const heading = document.createElement("span");
+            heading.className = "assistant-section-heading";
+            heading.textContent = part;
+            fragment.appendChild(heading);
+            return;
+          }
+          if (alternativesSection && trimmed.startsWith("•")) {
+            const alternative = document.createElement("span");
+            alternative.className = "assistant-alternative-line";
+            alternative.textContent = part;
+            fragment.appendChild(alternative);
+            return;
+          }
+          fragment.appendChild(document.createTextNode(part));
+        });
+        node.replaceWith(fragment);
+      });
+    }
+
     function addMessage(role, text) {
       const article = document.createElement("article");
       article.className = `chat-message ${role === "user" ? "user-message" : "assistant-message"}`;
@@ -257,6 +314,7 @@
         cursor = nextIndex;
       }
       if (!renderedMarker && !messageText) paragraph.textContent = "";
+      if (role === "assistant") decorateAssistantMessage(paragraph);
       content.appendChild(paragraph);
       article.append(avatar, content);
       if (role === "assistant") attachMessageSpeechButton(article, paragraph);
@@ -334,11 +392,12 @@
         const url = safeUrl(product.url) || `/productos/${id}/`;
         const calculation = product.calculo_carrito;
         if (calculation) calculations.set(id, calculation);
-        if (product.carrito_cantidad) cartItems.set(id, Number(product.carrito_cantidad));
+        const cartQuantity = Math.max(1, Number(product.carrito_cantidad) || 1);
+        if (id && !calculation) cartItems.set(id, cartQuantity);
         const calculationText = product.cantidad_envases
           ? `<p class="assistant-product-calc">${escapeHtml(product.litros_necesarios)} L · ${escapeHtml(product.cantidad_envases)} envase(s) · Total ${formatClp(product.presupuesto_total)}</p>`
           : product.cantidad_requerida
-            ? `<p class="assistant-product-calc">${escapeHtml(product.rol || "Material")} · ${escapeHtml(product.cantidad_requerida)} unidad(es) · Subtotal ${formatClp(product.subtotal)}</p><p class="assistant-product-calc">${escapeHtml(product.detalle_material || "")}</p>`
+            ? `<p class="assistant-product-calc">${escapeHtml(product.rol || "Material")} · ${escapeHtml(product.cantidad_requerida)} ${escapeHtml(quantityUnit(product, product.cantidad_requerida))} · Subtotal ${formatClp(product.subtotal)}</p><p class="assistant-product-calc">${escapeHtml(product.detalle_material || "")}</p>`
             : "";
         const optionalText = product.es_opcional
           ? '<p class="assistant-product-optional"><i class="fa-solid fa-circle-info"></i> Opcional · no incluido en el total seleccionado</p>'
@@ -348,8 +407,8 @@
           : "";
         const addButton = calculation && product.stock_suficiente
           ? `<button type="button" data-chat-add="${id}"><i class="fa-solid fa-cart-plus"></i> Agregar cálculo</button>`
-          : product.carrito_cantidad && !product.cantidad_pendiente
-            ? `<button type="button" data-chat-product="${id}"><i class="fa-solid fa-cart-plus"></i> Agregar ${escapeHtml(product.carrito_cantidad)}</button>`
+          : id && Number(product.stock) > 0
+            ? `<button type="button" data-chat-product="${id}"><i class="fa-solid fa-cart-plus"></i> Agregar ${escapeHtml(cartQuantity)}</button>`
             : "";
         const imageMarkup = image
           ? `<img src="${image}" alt="${escapeHtml(product.nombre || "Producto SFI")}" loading="lazy">`
@@ -400,6 +459,16 @@
       suggestions.innerHTML = '<span style="flex-basis:100%;color:#657d8f;font-size:.6rem;font-weight:750">Puedes responder:</span>'
         + examples.map(item => `<button type="button" data-suggestion="${escapeHtml(item)}"><i class="fa-regular fa-message"></i> ${escapeHtml(item)}</button>`).join("");
       input.placeholder = `Ej.: ${String(examples[0]).slice(0, 140)}`;
+    }
+
+    function restoreInitialSuggestions() {
+      suggestions.innerHTML = initialSuggestionsHtml;
+      suggestions.classList.remove("is-disabled");
+      suggestions.querySelectorAll("button").forEach(button => {
+        button.disabled = false;
+        button.setAttribute("aria-disabled", "false");
+      });
+      input.placeholder = defaultInputPlaceholder;
     }
 
     function setSuggestionsDisabled(disabled) {
@@ -578,8 +647,7 @@
       selectedQueryMode = "auto";
       messages.innerHTML = "";
       addMessage("assistant", "Hola, soy el asistente SFI. Cuéntame qué necesitas para tu proyecto.");
-      suggestions.innerHTML = "";
-      input.placeholder = defaultInputPlaceholder;
+      restoreInitialSuggestions();
       errorBox.hidden = true;
       if (newQueryTip) newQueryTip.hidden = true;
       input.focus();
@@ -614,7 +682,7 @@
           renderMasters(entry.masters);
         }
       });
-      history = conversationEntries.slice(-10).map(entry => ({
+      history = conversationEntries.slice(-20).map(entry => ({
         role: entry.role,
         content: entry.text.slice(0, 4000),
       }));

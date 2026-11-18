@@ -351,6 +351,11 @@ Reglas obligatorias:
   corresponde cuando se usa con una paleta mezcladora compatible; no lo describas como una
   herramienta de fijación para un piso cerámico. Los clips de nivelación requieren cuñas
   compatibles y el guardapolvo debe quedar como terminación opcional, no material obligatorio.
+- En piso flotante o laminado conserva esa familia y reúne en una sola respuesta: habitación,
+  superficie, tipo de base y confirmación de que está firme, seca y nivelada. No supongas que
+  dormitorio, living, pasillo, oficina y cocina requieren el mismo producto. Para cocina solo
+  acepta una línea cuya ficha documente resistencia al agua. No recomiendes laminado convencional
+  para baño, logia, lavadero o exterior ni lo sustituyas por SPC o porcelanato sin confirmación.
 - Para cambiar o instalar una puerta reúne en una sola respuesta: ubicación interior/exterior,
   ancho y alto del vano, si se cambia solo la hoja o también el marco, estado del marco y sentido
   de apertura cuando sea relevante. No uses ejemplos de superficie como 3 x 4 metros para vanos.

@@ -789,24 +789,73 @@ def _ajustar_proyecto_ceramica(datos, tareas):
         datos.get("proyecto") or "",
         datos.get("_contexto_usuario") or "",
     ]))
-    es_piso_revestido = (
-        "piso" in contexto
-        and any(material in contexto for material in ("ceramica", "porcelanato"))
+    es_revestimiento_ceramico = any(
+        material in contexto for material in ("ceramica", "porcelanato")
     )
-    if not es_piso_revestido:
+    if not es_revestimiento_ceramico:
         return tareas
 
-    material_base_informado = bool(re.search(
-        r'\b(?:base|soporte|contrapiso|superficie(?:\s+actual)?)\s+'
-        r'(?:es\s+)?(?:de\s+)?'
-        r'(?:un\s+|una\s+)?(?:hormigon|concreto|madera|osb|ceramica)\b',
-        contexto,
-    )) or any(termino in contexto for termino in (
+    es_muro = any(termino in contexto for termino in (
+        "muro", "muros", "pared", "paredes", "revestimiento mural",
+    ))
+    es_piso = any(termino in contexto for termino in ("piso", "suelo"))
+    aplicacion = "muro" if es_muro and not es_piso else "piso" if es_piso else ""
+    ambientes = {
+        "bano": ("bano", "ducha", "lavamanos"),
+        "cocina": ("cocina",),
+        "lavadero": ("lavadero", "logia"),
+        "exterior": ("terraza", "balcon", "patio", "exterior"),
+        "interior_seco": (
+            "dormitorio", "habitacion", "living", "comedor", "pasillo",
+        ),
+    }
+    ambiente = next((
+        nombre for nombre, terminos in ambientes.items()
+        if any(termino in contexto for termino in terminos)
+    ), "")
+
+    descripcion_base_cementicia = (
+        "gris" in contexto
+        and any(termino in contexto for termino in ("dura", "duro"))
+        and any(termino in contexto for termino in ("firme", "continua", "continuo"))
+        and not any(termino in contexto for termino in (
+            "junta", "juntas", "palmeta", "palmetas", "madera", "osb",
+            "tabla", "tablas", "panel", "paneles",
+        ))
+    )
+    tipo_base = ""
+    base_inferida = False
+    if any(termino in contexto for termino in (
+        "ceramica existente", "piso ceramico existente", "palmetas existentes",
+        "ceramica antigua", "sobre ceramica", "encima de ceramica",
+    )):
+        tipo_base = "ceramica_existente"
+    elif any(termino in contexto for termino in (
+        "base de madera", "base madera", "base de osb", "base osb",
+        "soporte de madera", "soporte madera", "soporte osb",
+        "piso de madera", "piso osb", "muro de madera", "pared de madera",
+    )):
+        tipo_base = "madera_osb"
+    elif any(termino in contexto for termino in (
+        "fibrocemento", "fibro cemento",
+    )):
+        tipo_base = "fibrocemento"
+    elif any(termino in contexto for termino in (
+        "sobrelosa", "mortero de nivelacion", "mortero nivelacion",
+        "carpeta de mortero", "base de mortero", "contrapiso de mortero",
+    )):
+        tipo_base = "mortero_sobrelosa"
+    elif any(termino in contexto for termino in (
         "base de hormigon", "base es de hormigon", "base hormigon",
         "piso de hormigon", "piso hormigon", "sobre hormigon", "losa",
-        "radier", "contrapiso", "ceramica existente", "piso existente",
-        "base de madera", "base madera", "base osb", "soporte osb",
-    ))
+        "radier", "contrapiso de hormigon", "muro de hormigon",
+        "pared de hormigon", "muro de concreto", "pared de concreto",
+    )):
+        tipo_base = "hormigon_radier"
+    elif descripcion_base_cementicia:
+        tipo_base = "base_cementicia_probable"
+        base_inferida = True
+    material_base_informado = bool(tipo_base)
     base_firme = "firme" in contexto
     base_seca = any(termino in contexto for termino in (
         "seca", "seco", "sin humedad", "libre de humedad",
@@ -860,11 +909,21 @@ def _ajustar_proyecto_ceramica(datos, tareas):
         )
     ]
     if not (superficie_informada or dimensiones_informadas):
-        faltantes.append("Dimensiones o metros cuadrados del piso")
-    if not ubicacion_informada:
-        faltantes.append("Ubicacion o habitacion donde se instalara el piso")
+        faltantes.append(
+            "Dimensiones o metros cuadrados del piso"
+            if aplicacion == "piso"
+            else "Dimensiones o metros cuadrados de la superficie"
+        )
     if not material_base_informado:
-        faltantes.append("Material actual de la base o piso")
+        faltantes.append(
+            "Material actual de la base o piso"
+            if aplicacion == "piso"
+            else (
+                "Material actual del muro o soporte"
+                if aplicacion == "muro"
+                else "Material actual de la base, muro o soporte"
+            )
+        )
     if not estado_base_informado:
         faltantes.append(
             "Confirmar si la base esta seca y libre de humedad"
@@ -873,22 +932,58 @@ def _ajustar_proyecto_ceramica(datos, tareas):
         )
     datos["datos_faltantes_proyecto"] = faltantes[:4]
     datos["_ceramica_material_base"] = material_base_informado
+    datos["_ceramica_tipo_base"] = tipo_base
+    datos["_ceramica_base_inferida"] = base_inferida
     datos["_ceramica_estado_base"] = estado_base_informado
+    if not aplicacion:
+        faltantes.insert(0, "Aplicacion de la ceramica: piso o pared")
+    if not ambiente:
+        faltantes.insert(
+            1 if not aplicacion else 0,
+            "Ubicacion o habitacion donde se instalara la ceramica",
+        )
+    datos["datos_faltantes_proyecto"] = list(dict.fromkeys(faltantes))[:4]
     datos["_ceramica_base_pendiente"] = not all((
+        aplicacion,
+        ambiente,
         superficie_informada or dimensiones_informadas,
-        ubicacion_informada,
         material_base_informado,
         estado_base_informado,
     ))
     datos["_proyecto_ceramica"] = True
+    datos["_ceramica_aplicacion"] = aplicacion
+    datos["_ceramica_ambiente"] = ambiente
+    datos["_ceramica_requiere_antideslizante"] = bool(
+        aplicacion == "piso" and ambiente in {"bano", "cocina", "lavadero", "exterior"}
+    )
 
     pidio_porcelanato = "porcelanato" in contexto
     pidio_ceramica = "ceramica" in contexto and not pidio_porcelanato
-    revestimiento = (
-        "ceramica para piso interior cocina"
-        if pidio_ceramica
-        else "porcelanato para piso interior"
-    )
+    material = "ceramica" if pidio_ceramica else "porcelanato"
+    ambiente_busqueda = {
+        "bano": "bano zona humeda",
+        "cocina": "cocina",
+        "lavadero": "lavadero zona humeda",
+        "exterior": "exterior",
+        "interior_seco": "interior",
+    }.get(ambiente, "interior")
+    revestimiento = " ".join(filter(None, (
+        material,
+        aplicacion or "revestimiento",
+        ambiente_busqueda,
+        "antideslizante" if datos["_ceramica_requiere_antideslizante"] else "",
+    )))
+    base_superficie = "superficie_muros" if aplicacion == "muro" else "superficie_piso"
+    adhesion_segun_base = {
+        "ceramica_existente": "adhesivo flexible ceramica sobre ceramica",
+        "madera_osb": "adhesivo flexible ceramica para placa fibrocemento",
+        "fibrocemento": "adhesivo flexible ceramica para fibrocemento",
+    }
+    adhesion = adhesion_segun_base.get(tipo_base) or " ".join(filter(None, (
+        "adhesivo ceramico",
+        "para muro" if aplicacion == "muro" else "para piso",
+        "zona humeda" if ambiente in {"bano", "lavadero"} else "interior",
+    )))
     tareas_ceramica = [
         {
             "nombre": "Revestimiento principal",
@@ -899,18 +994,38 @@ def _ajustar_proyecto_ceramica(datos, tareas):
                     "silenciosamente entre ceramica y porcelanato."
                 ),
             },
-            "bases": {_normalizar(revestimiento): "superficie_piso"},
+            "bases": {_normalizar(revestimiento): base_superficie},
         },
+        *([{
+            "nombre": "Preparacion del soporte existente",
+            "busquedas": [
+                "promotor de adherencia ceramica sobre ceramica"
+                if tipo_base == "ceramica_existente"
+                else "placa fibrocemento compatible sobre madera OSB"
+            ],
+            "usos": {
+                _normalizar(
+                    "promotor de adherencia ceramica sobre ceramica"
+                    if tipo_base == "ceramica_existente"
+                    else "placa fibrocemento compatible sobre madera OSB"
+                ): (
+                    "Preparar el revestimiento existente para recibir una nueva capa."
+                    if tipo_base == "ceramica_existente"
+                    else "Crear un soporte compatible antes de instalar la ceramica."
+                ),
+            },
+            "bases": {},
+        }] if tipo_base in {"ceramica_existente", "madera_osb"} else []),
         {
             "nombre": "Adhesion del revestimiento",
-            "busquedas": ["adhesivo ceramico para piso interior"],
+            "busquedas": [adhesion],
             "usos": {
-                _normalizar("adhesivo ceramico para piso interior"): (
+                _normalizar(adhesion): (
                     "Adherir las piezas a una base compatible, firme, limpia y nivelada."
                 ),
             },
             "bases": {
-                _normalizar("adhesivo ceramico para piso interior"): "superficie_piso",
+                _normalizar(adhesion): base_superficie,
             },
         },
         {
@@ -939,7 +1054,7 @@ def _ajustar_proyecto_ceramica(datos, tareas):
                     "Rellenar las juntas con un producto compatible con su ancho y el revestimiento."
                 ),
             },
-            "bases": {_normalizar("frague flexible gris bolsa 2 kg"): "superficie_piso"},
+            "bases": {_normalizar("frague flexible gris bolsa 2 kg"): base_superficie},
         },
     ]
 
@@ -965,6 +1080,72 @@ def _ajustar_proyecto_ceramica(datos, tareas):
             "bases": {_normalizar(nombre): "referencial" for nombre, _ in herramientas},
         })
     return tareas_ceramica
+
+
+def _producto_compatible_con_revestimiento_ceramico(producto, datos, consulta):
+    """Aplica requisitos duros antes de puntuar el revestimiento principal."""
+    especificaciones = producto.especificaciones or {}
+    pares = {
+        _normalizar(clave): valor
+        for clave, valor in especificaciones.items()
+    } if isinstance(especificaciones, dict) else {}
+
+    def texto_valor(*claves):
+        valores = []
+        for clave in claves:
+            valor = pares.get(_normalizar(clave))
+            if isinstance(valor, (list, tuple, set)):
+                valores.extend(str(item) for item in valor)
+            elif valor not in (None, ""):
+                valores.append(str(valor))
+        return _normalizar(" ".join(valores))
+
+    texto = _normalizar(" ".join((
+        producto.nombre,
+        producto.descripcion,
+        producto.uso_recomendado,
+        texto_valor(
+            "Aplicacion", "Uso", "Ambientes", "Ambientes recomendados",
+            "Antideslizante", "Nivel de transito", "Diseno",
+        ),
+    )))
+    aplicacion = datos.get("_ceramica_aplicacion") or ""
+    ambiente = datos.get("_ceramica_ambiente") or ""
+    consulta_normalizada = _normalizar(consulta)
+
+    if any(accesorio in _normalizar(producto.nombre) for accesorio in (
+        "adhesivo", "frague", "separador", "nivelador", "cuna",
+        "silicona", "sellador", "membrana", "llana", "cortadora",
+        "disco", "mazo", "esponja", "rodillera",
+    )):
+        return False
+
+    if aplicacion == "piso" and "piso" not in texto:
+        return False
+    if aplicacion == "muro" and not any(palabra in texto for palabra in ("muro", "pared")):
+        return False
+    if "ceramica" in consulta_normalizada and "porcelanato" not in consulta_normalizada:
+        if "ceramica" not in texto or "porcelanato" in _normalizar(producto.nombre):
+            return False
+    if "porcelanato" in consulta_normalizada and "porcelanato" not in texto:
+        return False
+
+    ambientes_requeridos = {
+        "bano": ("bano", "zona humeda", "ducha", "lavamanos"),
+        "cocina": ("cocina",),
+        "lavadero": ("lavadero", "logia", "zona humeda"),
+        "exterior": ("exterior", "terraza", "balcon", "patio"),
+        "interior_seco": ("interior", "dormitorio", "living", "comedor", "pasillo"),
+    }
+    if ambiente and not any(
+        termino in texto for termino in ambientes_requeridos.get(ambiente, ())
+    ):
+        return False
+    if datos.get("_ceramica_requiere_antideslizante") and not any(
+        termino in texto for termino in ("antideslizante", "antislip")
+    ):
+        return False
+    return True
 
 
 def _especialidades_validas(datos, texto_plan, resolver_especialidad):
@@ -1622,6 +1803,7 @@ def resolver_proyecto_generico(
                 "piso ceramico", "piso de porcelanato", "piso porcelanato",
             )
         )
+        es_revestimiento_ceramico = bool(datos.get("_proyecto_ceramica"))
         faltantes_legibles = [
             faltante.strip().lstrip("¿").rstrip("?.")
             for faltante in datos_faltantes_iniciales
@@ -1634,10 +1816,20 @@ def resolver_proyecto_generico(
             "Necesito estos datos para preparar una recomendación completa:",
         ]
         sugerencias = faltantes_legibles[:3]
-        if es_piso:
+        if es_piso or es_revestimiento_ceramico:
             for faltante in faltantes_legibles:
                 clave = _normalizar(faltante)
-                if "tipo de piso" in clave:
+                if "aplicacion" in clave and any(
+                    material in proyecto_normalizado
+                    for material in ("ceramica", "porcelanato")
+                ):
+                    lineas.extend([
+                        "",
+                        "APLICACION DE LA CERAMICA",
+                        "• Piso: requiere una pieza apta para tránsito y para el ambiente indicado.",
+                        "• Pared o muro: utiliza un revestimiento mural compatible con el soporte.",
+                    ])
+                elif "tipo de piso" in clave:
                     lineas.extend([
                         "",
                         "TIPO DE PISO",
@@ -1651,7 +1843,11 @@ def resolver_proyecto_generico(
                 )):
                     lineas.extend([
                         "",
-                        "UBICACION DEL PISO",
+                        (
+                            "UBICACION DEL PISO"
+                            if datos.get("_ceramica_aplicacion") == "piso"
+                            else "UBICACION DE LA CERAMICA"
+                        ),
                         "• Zona húmeda: baño, lavadero o logia.",
                         "• Interior seco: dormitorio, living, comedor o pasillo.",
                         "• Cocina: considera humedad, limpieza y tránsito frecuente.",
@@ -1701,6 +1897,11 @@ def resolver_proyecto_generico(
             ])
             sugerencias = []
             claves_faltantes = [_normalizar(item) for item in faltantes_legibles]
+            if any("aplicacion" in clave for clave in claves_faltantes):
+                sugerencias.extend([
+                    "La cerámica será para el piso",
+                    "La cerámica será para una pared",
+                ])
             if any(any(termino in clave for termino in (
                 "medida", "dimension", "superficie", "metros cuadrados",
                 "ancho", "largo",
@@ -1860,6 +2061,16 @@ def resolver_proyecto_generico(
                 candidatos = [
                     candidato for candidato in candidatos
                     if "herramienta" not in _normalizar(candidato.categoria)
+                ]
+            if (
+                datos.get("_proyecto_ceramica")
+                and _normalizar(tarea["nombre"]) == "revestimiento principal"
+            ):
+                candidatos = [
+                    candidato for candidato in candidatos
+                    if _producto_compatible_con_revestimiento_ceramico(
+                        candidato, datos, consulta,
+                    )
                 ]
             if _normalizar(tarea["nombre"]) == "cubierta":
                 accesorios_cubierta = {
@@ -2203,6 +2414,38 @@ def resolver_proyecto_generico(
                     "CONDICIONES Y SUPUESTOS DE LA PROPUESTA\n"
                     + "\n".join(lineas_condiciones)
                 )
+        tipo_base_ceramica = datos.get("_ceramica_tipo_base") or ""
+        if datos.get("_proyecto_ceramica") and tipo_base_ceramica:
+            mensajes_base = {
+                "hormigon_radier": (
+                    "Confirmaste una base de hormigón, losa o radier. Debe estar curada, "
+                    "limpia, firme, seca, nivelada y libre de polvo, grasa, pintura y grietas activas."
+                ),
+                "mortero_sobrelosa": (
+                    "Confirmaste una sobrelosa o mortero de nivelación. Antes de revestir, "
+                    "verifica curado, adherencia, humedad, planitud y ausencia de fisuras activas."
+                ),
+                "ceramica_existente": (
+                    "La base es cerámica existente. No debe cubrirse sin comprobar piezas "
+                    "sueltas o huecas, adherencia, limpieza y compatibilidad del promotor y adhesivo."
+                ),
+                "madera_osb": (
+                    "La base es madera u OSB. No se considera apta para pegar cerámica "
+                    "directamente sin verificar rigidez y definir una placa o sistema de desacople compatible."
+                ),
+                "fibrocemento": (
+                    "La base es fibrocemento. Confirma que la placa, sus fijaciones y juntas "
+                    "sean aptas para recibir cerámica en el ambiente indicado."
+                ),
+                "base_cementicia_probable": (
+                    "Por la descripción, la base parece ser de hormigón, radier o mortero "
+                    "cementicio. Preparé la propuesta para una base cementicia; si no "
+                    "corresponde, indícalo para ajustar los materiales."
+                ),
+            }
+            mensaje_base = mensajes_base.get(tipo_base_ceramica)
+            if mensaje_base:
+                partes.append("BASE INTERPRETADA\n" + mensaje_base)
         if productos:
             etapas = []
             for tarea in tareas:

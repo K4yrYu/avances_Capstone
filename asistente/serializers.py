@@ -15,6 +15,8 @@ class ProductoContextoSerializer(serializers.Serializer):
     rol = serializers.CharField(max_length=100, required=False, allow_blank=True)
     detalle_material = serializers.CharField(max_length=500, required=False, allow_blank=True)
     es_opcional = serializers.BooleanField(required=False)
+    es_alternativa = serializers.BooleanField(required=False)
+    cantidad_pendiente = serializers.BooleanField(required=False)
     incluido_en_total = serializers.BooleanField(required=False)
 
 
