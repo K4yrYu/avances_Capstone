@@ -1,3 +1,5 @@
+import logging
+
 from django.conf import settings
 from django.shortcuts import render
 from rest_framework import status
@@ -19,6 +21,10 @@ from .services.recomendacion_colores import color_publico, pinturas_compatibles
 from .throttles import AsistenteRateThrottle
 
 
+logger = logging.getLogger(__name__)
+MENSAJE_ASISTENTE_NO_DISPONIBLE = 'El asistente no está disponible en este momento.'
+
+
 def asistente_sfi(request):
     return render(request, 'asistente/asistente.html', {
         'ia_configurada': bool(settings.GEMINI_API_KEY),
@@ -30,7 +36,15 @@ def asistente_sfi(request):
 @throttle_classes([AsistenteRateThrottle])
 def api_consultar_asistente(request):
     entrada = ConsultaAsistenteSerializer(data=request.data)
-    entrada.is_valid(raise_exception=True)
+    if not entrada.is_valid():
+        logger.warning(
+            'Consulta rechazada por validación en el asistente SFI: %s',
+            entrada.errors,
+        )
+        return Response(
+            {'detail': MENSAJE_ASISTENTE_NO_DISPONIBLE},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     try:
         argumentos = [
             entrada.validated_data['mensaje'],
@@ -41,10 +55,20 @@ def api_consultar_asistente(request):
         if entrada.validated_data['estimacion_contexto']:
             argumentos.append(entrada.validated_data['estimacion_contexto'])
         resultado = procesar_consulta(*argumentos)
-    except AsistenteNoDisponible as exc:
+    except AsistenteNoDisponible:
+        logger.exception('El proveedor del asistente SFI no pudo responder la consulta.')
         return Response(
-            {'detail': str(exc), 'configuracion_pendiente': not bool(settings.GEMINI_API_KEY)},
+            {
+                'detail': MENSAJE_ASISTENTE_NO_DISPONIBLE,
+                'configuracion_pendiente': not bool(settings.GEMINI_API_KEY),
+            },
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    except Exception:
+        logger.exception('Error inesperado al procesar una consulta del asistente SFI.')
+        return Response(
+            {'detail': MENSAJE_ASISTENTE_NO_DISPONIBLE},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     return Response(resultado)
 

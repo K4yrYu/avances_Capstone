@@ -1733,6 +1733,38 @@ def resolver_proyecto_generico(
         or datos.get("_proyecto_integral") is True
         or datos.get("modo_orientacion") == "propuesta_estandar"
     )
+    contexto_reparacion_mueble = _normalizar(
+        f"{proyecto} {datos.get('_contexto_usuario') or ''} "
+        + " ".join(
+            busqueda
+            for tarea in tareas
+            for busqueda in tarea.get("busquedas", [])
+        )
+    )
+    es_reparacion_mueble_madera_con_adhesivo = (
+        any(termino in contexto_reparacion_mueble for termino in (
+            "mesa", "silla", "mueble", "estante", "repisa", "velador",
+        ))
+        and "madera" in contexto_reparacion_mueble
+        and any(termino in contexto_reparacion_mueble for termino in (
+            "adhesivo", "pegamento", "cola fria", "encolar",
+        ))
+    )
+    if es_reparacion_mueble_madera_con_adhesivo and not any(
+        "sargento" in _normalizar(busqueda) or "prensa" in _normalizar(busqueda)
+        for tarea in tareas
+        for busqueda in tarea.get("busquedas", [])
+    ):
+        tareas.append({
+            "nombre": "Herramienta de sujeción recomendada",
+            "busquedas": ["prensa sargento acero 6 pulgadas"],
+            "usos": {
+                _normalizar("prensa sargento acero 6 pulgadas"): (
+                    "Mantener la unión inmóvil y bajo presión durante el tiempo de "
+                    "secado indicado por el fabricante del adhesivo."
+                ),
+            },
+        })
     tareas = _ajustar_radier_a_condiciones_informadas(
         datos, tareas, modo_estandar,
     )
@@ -1755,7 +1787,49 @@ def resolver_proyecto_generico(
     datos_faltantes_iniciales = _lista_textos(
         datos.get("datos_faltantes_proyecto"), 4, 100
     )
-    if _es_proyecto_mueble(proyecto):
+    # Incluso una propuesta cerámica solicitada como "estándar" necesita
+    # conocer el ambiente: una pieza para baño, cocina, interior seco o
+    # exterior no es intercambiable. Una vez indicada la ubicación, el modo
+    # estándar puede continuar dejando medidas y base como supuestos visibles.
+    if (
+        datos.get("_proyecto_ceramica")
+        and modo_estandar
+        and not datos.get("_ceramica_ambiente")
+    ):
+        aplicacion = datos.get("_ceramica_aplicacion") or ""
+        ubicacion = (
+            "UBICACION DEL PISO" if aplicacion == "piso"
+            else "UBICACION DE LA CERAMICA"
+        )
+        return {
+            "tipo": "aclaracion_proyecto",
+            "mensaje": "\n".join([
+                "PROYECTO",
+                proyecto,
+                "",
+                "ANTES DE PREPARAR LA PROPUESTA ESTANDAR",
+                "Necesito conocer la habitacion o ambiente para seleccionar una "
+                "ceramica compatible.",
+                "",
+                ubicacion,
+                "• Zona humeda: baño, lavadero o logia.",
+                "• Cocina: considera humedad, limpieza y transito frecuente.",
+                "• Interior seco: dormitorio, living, comedor o pasillo.",
+                "• Exterior: terraza, balcon o patio expuesto al clima.",
+                "",
+                "RESPONDE EN UN MENSAJE",
+                "Ejemplo: “Es para la cocina”. Luego preparare la propuesta "
+                "estandar completa y dejare visibles los demas supuestos.",
+            ]),
+            "productos": [],
+            "maestros": [],
+            "sugerencias": [
+                "Es para la cocina",
+                "Es para el baño",
+                "Es para un dormitorio",
+            ],
+        }
+    if _es_proyecto_mueble(proyecto) and not modo_estandar:
         faltantes_mueble = []
         if not _tiene_tipo_mueble(proyecto):
             faltantes_mueble.append("Tipo y uso del mueble")
@@ -1792,9 +1866,7 @@ def resolver_proyecto_generico(
                     proyecto, faltantes_mueble,
                 )[:3],
             }
-    if datos_faltantes_iniciales and (
-        not modo_estandar or datos.get("_ceramica_base_pendiente")
-    ):
+    if datos_faltantes_iniciales and not modo_estandar:
         proyecto_normalizado = _normalizar(proyecto)
         es_piso = any(
             termino in proyecto_normalizado
@@ -2192,6 +2264,48 @@ def resolver_proyecto_generico(
                 "cantidad_pendiente": not es_herramienta_opcional,
                 "es_opcional": es_herramienta_opcional or es_nivelacion_opcional,
             })
+            if es_reparacion_mueble_madera_con_adhesivo:
+                identidad_producto = _normalizar(
+                    f"{producto.nombre} {producto.categoria}"
+                )
+                if any(termino in identidad_producto for termino in (
+                    "adhesivo para madera", "cola fria", "pegamento para madera",
+                )):
+                    item.update({
+                        "carrito_cantidad": 1,
+                        "cantidad_pendiente": False,
+                        "es_alternativa": (
+                            "alternativa" in _normalizar(tarea["nombre"])
+                        ),
+                        "presentacion_sugerida": (
+                            "Presentación sugerida: 1 envase. El consumo real depende del "
+                            "tamaño y estado de la unión."
+                        ),
+                    })
+                elif "lija" in identidad_producto:
+                    item.update({
+                        "carrito_cantidad": 1,
+                        "cantidad_pendiente": False,
+                        "es_opcional": True,
+                        "presentacion_sugerida": (
+                            "Preparación opcional: 1 paquete, solo si hay residuos de "
+                            "adhesivo antiguo que deban retirarse suavemente."
+                        ),
+                    })
+                elif any(termino in identidad_producto for termino in (
+                    "tornillo", "escuadra", "perno",
+                )):
+                    item.update({
+                        "carrito_cantidad": 0,
+                        "cantidad_pendiente": True,
+                        "es_opcional": True,
+                        "incluido_en_total": False,
+                        "bloquear_carrito": True,
+                        "presentacion_sugerida": (
+                            "Refuerzo opcional pendiente de verificar dimensiones y tipo "
+                            "de unión; no comprar antes de esa comprobación."
+                        ),
+                    })
             base_calculo = tarea.get("bases", {}).get(
                 _normalizar(consulta), 'referencial',
             )
@@ -2369,7 +2483,8 @@ def resolver_proyecto_generico(
     cantidad_referenciales = len(productos_materiales) - len(productos_con_cantidad)
     partes = [
         "PROYECTO\n"
-        f"Analicé “{proyecto}” en {len(tareas)} etapa(s).",
+        f"Analicé “{proyecto}” en {len(tareas)} "
+        f"{'etapa' if len(tareas) == 1 else 'etapas'}.",
         (
             "RESULTADO\n"
             f"Encontré {len(productos)} producto(s) reales con stock en SFI."
@@ -2380,14 +2495,66 @@ def resolver_proyecto_generico(
             )
         ),
     ]
+    if productos and not modo_estandar:
+        etapas_productos = []
+        roles_agregados = set()
+        for tarea in tareas:
+            nombre_etapa = tarea["nombre"]
+            materiales = [
+                producto for producto in productos
+                if producto.get("rol") == nombre_etapa
+            ]
+            if not materiales:
+                continue
+            roles_agregados.add(nombre_etapa)
+            etapas_productos.append(nombre_etapa)
+            etapas_productos.extend(
+                f"• {producto['nombre']} — "
+                f"{producto.get('uso_en_proyecto') or producto.get('detalle_material') or 'Apoyo para esta etapa del proyecto.'}"
+                for producto in materiales
+            )
+
+        # Conserva visibles los productos adicionales que no provengan de una
+        # tarea explícita, sin inventarles una etapa ni una finalidad nueva.
+        productos_sin_etapa = [
+            producto for producto in productos
+            if producto.get("rol") not in roles_agregados
+        ]
+        if productos_sin_etapa:
+            etapas_productos.append("Complementos recomendados")
+            etapas_productos.extend(
+                f"• {producto['nombre']} — "
+                f"{producto.get('uso_en_proyecto') or producto.get('detalle_material') or 'Complemento disponible para el proyecto.'}"
+                for producto in productos_sin_etapa
+            )
+
+        if etapas_productos:
+            partes.append(
+                "MATERIALES Y PARA QUÉ SE USAN\n"
+                + "\n".join(etapas_productos)
+            )
     if modo_estandar:
         partes = [(
             "PROPUESTA ESTÁNDAR PARA TU PROYECTO\n"
-            f"Preparé una alternativa de “{proyecto}” organizada en {len(tareas)} etapas. "
+            f"Preparé una alternativa de “{proyecto}” organizada en {len(tareas)} "
+            f"{'etapa' if len(tareas) == 1 else 'etapas'}. "
             "Todos los productos mostrados están disponibles actualmente en SFI. "
             "Es una configuración base: si cambias una medida, material o condición, "
             "indícalo y actualizaré la propuesta."
         )]
+        if datos_faltantes_iniciales:
+            partes.append(
+                "SUPUESTOS DE LA PROPUESTA ESTÁNDAR\n"
+                "No detuve la propuesta para pedir estos datos porque solicitaste una "
+                "alternativa estándar:\n"
+                + "\n".join(
+                    f"• {faltante}: se mantiene como referencia y no se usará para "
+                    "inventar una cantidad exacta."
+                    for faltante in datos_faltantes_iniciales
+                )
+                + "\nSi indicas alguno de estos datos, actualizaré la misma propuesta "
+                "sin perder el resto del contexto."
+            )
         condiciones_radier = datos.get("_radier_condiciones") or {}
         if condiciones_radier:
             espesor = (
@@ -2463,6 +2630,29 @@ def resolver_proyecto_generico(
             partes.append(
                 f"EN RESUMEN\nEncontré {len(productos)} productos reales con stock para esta propuesta."
             )
+    if es_reparacion_mueble_madera_con_adhesivo:
+        partes.append(
+            "CÓMO ELEGIR EL ADHESIVO\n"
+            "Las colas para madera mostradas son alternativas: elige solamente una. "
+            "No deben sumarse entre sí. Si la pieza está quebrada, tiene holguras, "
+            "combina materiales diferentes o se usa en exterior, la solución debe "
+            "revisarse antes de comprar."
+        )
+        partes.append(
+            "CONDICIÓN DE ESTA PROPUESTA\n"
+            "Esta recomendación supone que la unión de madera está suelta o se "
+            "despegó, pero la madera no está quebrada. Si hay tornillos flojos, una "
+            "pieza rota o un encaje desgastado, indícalo antes de comprar porque la "
+            "solución cambia."
+        )
+        partes.append(
+            "PROCEDIMIENTO ORIENTATIVO\n"
+            "• Separa la unión sin forzar ni quebrar la madera.\n"
+            "• Retira solamente residuos sueltos y deja las superficies limpias y secas.\n"
+            "• Aplica el adhesivo según las instrucciones del fabricante.\n"
+            "• Mantén la unión inmóvil con el sargento durante el curado indicado.\n"
+            "• No uses la mesa hasta completar el tiempo de secado."
+        )
     if datos_faltantes:
         if falta_base_piso:
             partes.append(

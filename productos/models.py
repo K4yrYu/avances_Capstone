@@ -136,7 +136,7 @@ class Producto(models.Model):
     nombre = models.CharField(max_length=200)
     descripcion = models.TextField()
     precio = models.IntegerField(validators=[MinValueValidator(1)])
-    imagen = models.ImageField(upload_to='productos/', max_length=255)
+    imagen = models.ImageField(upload_to='productos/', max_length=255, blank=True)
     stock = models.PositiveIntegerField(default=0)
     controla_vencimiento = models.BooleanField(
         default=False,

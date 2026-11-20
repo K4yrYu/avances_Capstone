@@ -14,6 +14,8 @@ class ProductoContextoSerializer(serializers.Serializer):
     cantidad_requerida = serializers.FloatField(min_value=0, max_value=100000, required=False)
     rol = serializers.CharField(max_length=100, required=False, allow_blank=True)
     detalle_material = serializers.CharField(max_length=500, required=False, allow_blank=True)
+    presentacion_sugerida = serializers.CharField(max_length=300, required=False, allow_blank=True)
+    bloquear_carrito = serializers.BooleanField(required=False)
     es_opcional = serializers.BooleanField(required=False)
     es_alternativa = serializers.BooleanField(required=False)
     cantidad_pendiente = serializers.BooleanField(required=False)
@@ -32,7 +34,7 @@ class ConsultaAsistenteSerializer(serializers.Serializer):
         child=serializers.IntegerField(min_value=1),
         required=False,
         default=list,
-        max_length=18,
+        max_length=60,
     )
     estimacion_contexto = ProductoContextoSerializer(
         many=True,
@@ -50,7 +52,7 @@ class ConsultaAsistenteSerializer(serializers.Serializer):
 
     def validate_estimacion_contexto(self, value):
         unicos = {}
-        for item in value[:18]:
+        for item in value[:60]:
             unicos.setdefault(item['id'], item)
         return list(unicos.values())
 

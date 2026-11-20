@@ -72,7 +72,7 @@
         entry.role === "assistant" && Array.isArray(entry.products) && entry.products.length
       );
       if (!lastResult) return [];
-      return [...new Set(lastResult.products.map(product => Number(product.id)).filter(id => Number.isInteger(id) && id > 0))].slice(0, 18);
+      return [...new Set(lastResult.products.map(product => Number(product.id)).filter(id => Number.isInteger(id) && id > 0))].slice(0, 60);
     }
 
     function estimateContext() {
@@ -80,17 +80,19 @@
         entry.role === "assistant" && Array.isArray(entry.products) && entry.products.length
       );
       if (!lastResult) return [];
-      return lastResult.products.slice(0, 18).map(product => ({
+      return lastResult.products.map(product => ({
         id: Number(product.id),
         carrito_cantidad: Number(product.carrito_cantidad) || 1,
         cantidad_requerida: Number(product.cantidad_requerida) || 0,
         rol: String(product.rol || "").slice(0, 100),
         detalle_material: String(product.detalle_material || "").slice(0, 500),
+        presentacion_sugerida: String(product.presentacion_sugerida || "").slice(0, 300),
+        bloquear_carrito: Boolean(product.bloquear_carrito),
         es_opcional: Boolean(product.es_opcional),
         es_alternativa: Boolean(product.es_alternativa),
         cantidad_pendiente: Boolean(product.cantidad_pendiente),
         incluido_en_total: product.incluido_en_total !== false,
-      })).filter(product => Number.isInteger(product.id) && product.id > 0);
+      })).filter(product => Number.isInteger(product.id) && product.id > 0).slice(0, 60);
     }
 
     function getCookie(name) {
@@ -405,7 +407,12 @@
         const pendingText = product.cantidad_pendiente
           ? '<p class="assistant-product-pending"><i class="fa-solid fa-ruler-combined"></i> Cantidad pendiente de definir</p>'
           : "";
-        const addButton = calculation && product.stock_suficiente
+        const suggestedPresentation = product.presentacion_sugerida
+          ? `<p class="assistant-product-calc">${escapeHtml(product.presentacion_sugerida)}</p>`
+          : "";
+        const addButton = product.bloquear_carrito
+          ? ""
+          : calculation && product.stock_suficiente
           ? `<button type="button" data-chat-add="${id}"><i class="fa-solid fa-cart-plus"></i> Agregar cálculo</button>`
           : id && Number(product.stock) > 0
             ? `<button type="button" data-chat-product="${id}"><i class="fa-solid fa-cart-plus"></i> Agregar ${escapeHtml(cartQuantity)}</button>`
@@ -418,7 +425,7 @@
           .filter(value => value && value.toLocaleLowerCase("es-CL") !== "no aplica")
           .map(value => `<span>${escapeHtml(value)}</span>`)
           .join("");
-        return `<article class="assistant-product"><div class="assistant-product-image">${imageMarkup}</div><div class="assistant-product-body"><small>${escapeHtml(product.rol || product.marca || product.categoria || "SFI")}</small><h3>${escapeHtml(product.nombre || "Producto")}</h3><div class="assistant-product-meta">${metadata}<span>${escapeHtml(product.stock)} disponibles</span></div>${calculationText}${pendingText}${optionalText}<strong class="assistant-product-price">${formatClp(product.precio)} c/u</strong><div class="assistant-product-actions"><a href="${url}">Ver producto</a>${addButton}</div></div></article>`;
+        return `<article class="assistant-product"><div class="assistant-product-image">${imageMarkup}</div><div class="assistant-product-body"><small>${escapeHtml(product.rol || product.marca || product.categoria || "SFI")}</small><h3>${escapeHtml(product.nombre || "Producto")}</h3><div class="assistant-product-meta">${metadata}<span>${escapeHtml(product.stock)} disponibles</span></div>${calculationText}${suggestedPresentation}${pendingText}${optionalText}<strong class="assistant-product-price">${formatClp(product.precio)} c/u</strong><div class="assistant-product-actions"><a href="${url}">Ver producto</a>${addButton}</div></div></article>`;
       }).join("");
       messages.appendChild(container);
       container.querySelectorAll("img").forEach(image => image.addEventListener("error", function replaceImage() {
@@ -486,7 +493,14 @@
       errorBox.hidden = true;
       if (newQueryTip) newQueryTip.hidden = true;
       addMessage("user", message);
-      const historyForRequest = history.slice(-20);
+      const historyForRequest = history.slice(-20).map(entry => {
+        const content = String(entry.content || "");
+        if (content.length <= 4000) return entry;
+        return {
+          ...entry,
+          content: `${content.slice(0, 2850)}\n\n[Contenido intermedio resumido]\n\n${content.slice(-1050)}`,
+        };
+      });
       const queryModeForRequest = selectedQueryMode;
       selectedQueryMode = "auto";
       history.push({role: "user", content: message});
@@ -507,7 +521,10 @@
           }),
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(firstError(data) || "No fue posible consultar al asistente.");
+        if (!response.ok) {
+          console.error("Error detallado del asistente SFI:", response.status, data);
+          throw new Error("El asistente no está disponible en este momento.");
+        }
         typing.remove();
         const answer = String(data.mensaje || "Cuéntame un poco más sobre tu proyecto.");
         addMessage("assistant", answer);
@@ -528,7 +545,8 @@
         ) {
           history.pop();
         }
-        const messageText = error.message || "No fue posible consultar al asistente.";
+        console.error("Fallo al consultar el asistente SFI:", error);
+        const messageText = "El asistente no está disponible en este momento.";
         addMessage("assistant", messageText);
         errorBox.textContent = messageText;
         errorBox.hidden = false;

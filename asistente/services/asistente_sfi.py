@@ -927,9 +927,9 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
                 incluir = False
             datos[campo] = incluir
 
-    # Para labores manuales de jardÃ­n, convertir una bÃºsqueda amplia en
-    # herramientas concretas del catÃ¡logo. No hay una lista genÃ©rica: esta
-    # regla sÃ³lo se activa cuando la acciÃ³n descrita es mover o excavar tierra.
+    # Para labores manuales de jardín, convertir una búsqueda amplia en
+    # herramientas concretas del catálogo. No hay una lista genérica: esta
+    # regla sólo se activa cuando la acción descrita es mover o excavar tierra.
     # Para movimiento manual de tierra, una etiqueta amplia como
     # "herramientas manuales" no encuentra productos. Conservamos lo que
     # interpretó Gemini y añadimos términos de catálogo según la acción.
@@ -1572,6 +1572,7 @@ def _resolver_piso_flotante(datos):
                 f'{_formatear_decimal(cobertura_comprada)} m².'
             ),
             'es_alternativa': True,
+            'incluido_en_total': False,
             'etiqueta_cantidad': unidad_cantidad,
         })
         alternativas.append(item)
@@ -1982,6 +1983,11 @@ def _evaluar_alcance_proyecto(datos):
         str(datos.get('_contexto_usuario') or ''),
     )))
     contexto = _texto_normalizado(texto_original)
+    es_proyecto_mueble = any(termino in contexto for termino in (
+        'mueble', 'closet', 'ropero', 'armario', 'escritorio', 'estante',
+        'repisero', 'biblioteca', 'rack', 'zapatero', 'velador', 'cajonera',
+        'comoda', 'despensa', 'vanitorio', 'meson',
+    ))
 
     medidas_con_unidad = list(re.finditer(
         r'\b(\d+(?:[.,]\d+)?)\s*(?:x|por|×)\s*'
@@ -2096,6 +2102,25 @@ def _evaluar_alcance_proyecto(datos):
     ))
     lado_mayor = max(ancho_cm, fondo_cm) / 100
 
+    # Un mueble se dimensiona por frente, altura y profundidad, no como una
+    # obra que ocupa esa superficie de terreno. Aplicarle los topes de una
+    # techumbre o una vivienda bloqueaba clósets murales grandes pero viables.
+    if es_proyecto_mueble:
+        dimension_mayor = max(ancho_cm, fondo_cm, alto_cm) / 100
+        superficie_frontal = (
+            (ancho_cm * alto_cm) / 10000
+            if ancho_cm and alto_cm else superficie_principal
+        )
+        if dimension_mayor > 15 or alto_cm > 600 or superficie_frontal > 60:
+            return _respuesta_proyecto_fuera_de_alcance(
+                'Las dimensiones superan el alcance orientativo para mobiliario a medida.',
+                'SFI admite como referencia muebles de hasta 15 m de desarrollo, '
+                '6 m de altura y 60 m² de frente.',
+                'un carpintero o fabricante de mobiliario y, si corresponde, un '
+                'profesional que verifique anclajes y soporte',
+            )
+        return None
+
     if alto_cm > 400:
         return _respuesta_proyecto_fuera_de_alcance(
             'La altura indicada supera el límite absoluto de seguridad de SFI.',
@@ -2208,7 +2233,6 @@ def _resolver_proyecto(datos):
             ],
         }
     if es_piso_revestimiento and material_piso_informado:
-        datos['modo_orientacion'] = 'propuesta_estandar'
         return resolver_proyecto_generico(
             datos,
             buscar_productos=lambda consulta: _buscar_productos(consulta, limite=60),
@@ -2335,6 +2359,181 @@ def _mensaje_busqueda_precisa(consulta, cantidad):
         sustantivo = 'pintura formulada' if cantidad == 1 else 'pinturas formuladas'
         return f'Encontré {cantidad} {sustantivo} para piscina.'
     return f'Encontré {cantidad} producto(s) relacionados con “{consulta}”.'
+
+
+def _consulta_pide_adhesivo(consulta):
+    texto = _texto_normalizado(consulta)
+    return bool(re.search(
+        r'\b(?:adhesiv\w*|ashediv\w*|pegament\w*|cola fria|pegar|encolar)\b',
+        texto,
+    ))
+
+
+def _es_producto_adhesivo(producto):
+    especificaciones = (
+        producto.especificaciones
+        if isinstance(producto.especificaciones, dict) else {}
+    )
+    identidad = _texto_normalizado(
+        f'{producto.nombre} {producto.categoria} {producto.descripcion}'
+    )
+    return (
+        _texto_normalizado(producto.categoria) == 'adhesivos'
+        or bool(especificaciones.get('familia_adhesivo'))
+        or bool(re.search(
+            r'\b(?:adhesiv\w*|pegament\w*|cola fria|epoxi\w*|poxipol|poxilina)\b',
+            identidad,
+        ))
+    )
+
+
+def _aclarar_reparacion_mueble_con_adhesivo(mensaje, historial=None):
+    """Aclara reparaciones con adhesivo sin limitarse a una pata o un mueble."""
+    texto = _texto_normalizado(mensaje)
+    historial = historial or []
+    # Si la persona pide explorar adhesivos de forma expresa, no la obligamos
+    # a describir una reparación. El flujo normal de búsqueda mostrará las
+    # alternativas y permitirá pedir orientación después.
+    if re.search(
+        r'\b(?:solo\s+)?(?:quiero|necesito|muestrame|ver)\s+(?:ver\s+)?'
+        r'(?:opciones\s+de\s+|alternativas\s+de\s+)?adhesiv\w*\s+para\s+madera\b',
+        texto,
+    ):
+        return None
+    viene_de_aclaracion_adhesivo = any(
+        item.get('role') == 'assistant'
+        and 'antes de recomendar un adhesivo' in _texto_normalizado(item.get('content'))
+        for item in historial[-4:]
+        if isinstance(item, dict)
+    )
+    if not (_consulta_pide_adhesivo(texto) or viene_de_aclaracion_adhesivo):
+        return None
+    contexto = _texto_normalizado(' '.join(
+        str(item.get('content') or '')
+        for item in historial[-4:]
+        if isinstance(item, dict)
+    ))
+    contexto_actual = f'{contexto} {texto}'.strip()
+    if not viene_de_aclaracion_adhesivo and not re.search(
+        r'\b(?:mesa|mueble|silla|estante|repis\w*|velador|puerta|marco|'
+        r'cajon\w*|moldura|tabla|tablero|juguete|madera)\b',
+        contexto_actual,
+    ):
+        return None
+    if viene_de_aclaracion_adhesivo and not re.search(
+        r'\b(?:mesa|mueble|silla|estante|repis\w*|velador|puerta|marco|'
+        r'cajon\w*|moldura|tabla|tablero|juguete|madera|pata\w*)\b',
+        contexto_actual,
+    ):
+        return None
+    tiene_material = bool(re.search(
+        r'\b(?:madera|melamina|mdf|osb|vidrio|cristal|metal|acero|plastico|pvc)\b',
+        contexto_actual,
+    ))
+    tiene_parte = bool(re.search(
+        r'\b(?:pata\w*|cubierta|tablero|borde|tapacanto|union|junta|respaldo|'
+        r'repisa|puerta|marco|cajon\w*|moldura|tabla|asiento|pelda\w*)\b',
+        contexto_actual,
+    ))
+    tiene_estado_dano = bool(re.search(
+        r'\b(?:despeg\w*|solt\w*|floja|flojo|quebrad\w*|rot\w*|fisura\w*|'
+        r'grieta\w*|levantad\w*|desgastad\w*|tornill\w*|fijacion\w*)\b',
+        texto,
+    ))
+    if tiene_material and tiene_parte and tiene_estado_dano:
+        return None
+
+    faltantes = []
+    if not tiene_material:
+        faltantes.append('el material de la pieza u objeto')
+    if not tiene_parte:
+        faltantes.append('qué parte está dañada')
+    if not tiene_estado_dano:
+        faltantes.append(
+            'si esa parte está suelta, despegada, quebrada o tiene las fijaciones dañadas'
+        )
+    detalle = faltantes[0] if len(faltantes) == 1 else ' y '.join(faltantes)
+    return {
+        'tipo': 'aclaracion',
+        'mensaje': (
+            'ANTES DE RECOMENDAR UN ADHESIVO\n\n'
+            f'Necesito confirmar {detalle}. El adhesivo y la preparación cambian según '
+            'el material, el ambiente y el tipo de daño; una unión despegada, una pieza '
+            'quebrada y un tapacanto levantado requieren soluciones diferentes.\n\n'
+            'RESPONDE TODO EN UN MENSAJE\n'
+            'Ejemplo: “Es una silla de madera de interior y una unión se despegó”.'
+        ),
+        'productos': [],
+        'maestros': [],
+        'sugerencias': [
+            'Es de madera, se usa en interior y una unión se despegó',
+            'Es de melamina y se levantó el tapacanto',
+            'Es de vidrio y una pieza se soltó',
+            'Solo quiero ver adhesivos para madera',
+        ],
+    }
+
+
+def _resolver_seguimiento_reparacion_mueble_adhesivo(mensaje, historial=None):
+    """Cierra el cuestionario de adhesivos sin reinterpretarlo como otro proyecto."""
+    historial = historial or []
+    viene_de_aclaracion = any(
+        item.get('role') == 'assistant'
+        and 'antes de recomendar un adhesivo' in _texto_normalizado(item.get('content'))
+        for item in historial[-6:]
+        if isinstance(item, dict)
+    )
+    if not viene_de_aclaracion:
+        return None
+
+    mensajes_usuario = [
+        str(item.get('content') or '')
+        for item in historial[-8:]
+        if isinstance(item, dict) and item.get('role') == 'user'
+    ]
+    contexto = _texto_normalizado(' '.join([*mensajes_usuario, mensaje]))
+    if not (
+        re.search(r'\b(?:mesa|mueble|silla|estante|repis\w*|velador)\b', contexto)
+        and re.search(r'\bmadera\b', contexto)
+        and re.search(r'\bpata\w*\b', contexto)
+        and re.search(r'\b(?:despeg\w*|solt\w*|floja|flojo)\b', contexto)
+    ):
+        return None
+
+    return resolver_interpretacion({
+        'intencion': 'planificar_proyecto',
+        'proyecto': 'Reparación de pata de mesa de madera suelta o despegada',
+        '_proyecto_estandar': True,
+        '_contexto_usuario': contexto,
+        'tareas_proyecto': [{
+            'nombre': 'Alternativas de adhesivo para madera (elige una)',
+            'busquedas': [
+                'adhesivo cola fría para madera Waltek 250 g',
+                'cola fría Afix madera pintable 500 g',
+                'SikaBond-232 cola fría profesional para madera 500 g',
+            ],
+            'usos_materiales': [{
+                'busqueda': 'adhesivo cola fría para madera Waltek 250 g',
+                'uso': (
+                    'Alternativa económica y de formato pequeño para una reparación '
+                    'interior de madera limpia y con buen encaje.'
+                ),
+            }, {
+                'busqueda': 'cola fría Afix madera pintable 500 g',
+                'uso': (
+                    'Alternativa económica de mayor contenido y terminación pintable '
+                    'para uniones interiores compatibles.'
+                ),
+            }, {
+                'busqueda': 'SikaBond-232 cola fría profesional para madera 500 g',
+                'uso': (
+                    'Alternativa profesional de curado rápido para ensambles interiores '
+                    'que puedan mantenerse prensados.'
+                ),
+            }],
+        }],
+        'datos_faltantes_proyecto': [],
+    })
 
 
 def _buscar_productos(consulta, limite=6):
@@ -2485,8 +2684,8 @@ def _buscar_productos(consulta, limite=6):
         # puede resolverse con cualquier otro kit ni con cualquier producto de baño.
         coincidencias_minimas = min(len(palabras_originales), 3)
         if puntaje and coincidencias >= coincidencias_minimas:
-            # Si el catÃ¡logo tiene una coincidencia directa por nombre o
-            # identidad, no debemos mezclar productos encontrados sÃ³lo por
+            # Si el catálogo tiene una coincidencia directa por nombre o
+            # identidad, no debemos mezclar productos encontrados sólo por
             # una palabra expandida. Ej.: "picota" expande a "jardinera",
             # pero un macetero jardinera no es una picota.
             coincidencia_directa = any(
@@ -2507,7 +2706,7 @@ def _buscar_productos(consulta, limite=6):
 
 
 def _aplicar_contexto_productos(datos, mensaje, productos_contexto):
-    ids = list(dict.fromkeys(productos_contexto or []))[:18]
+    ids = list(dict.fromkeys(productos_contexto or []))
     if not ids:
         return datos
     productos = {
@@ -3121,6 +3320,14 @@ def resolver_interpretacion(datos):
                 'productos': [],
                 'sugerencias': ['Ver pinturas', 'Buscar herramientas', 'Buscar materiales'],
             }
+        principales = list(productos)
+        complementarios = []
+        if _consulta_pide_adhesivo(consulta):
+            principales = [producto for producto in productos if _es_producto_adhesivo(producto)]
+            complementarios = [producto for producto in productos if producto not in principales]
+            if principales:
+                productos = [*principales, *complementarios[:2]]
+
         presupuesto = int(datos.get('presupuesto') or 0)
         if presupuesto:
             alcanzables = [producto for producto in productos if producto.precio <= presupuesto]
@@ -3168,10 +3375,23 @@ def resolver_interpretacion(datos):
                     'Estos son sus precios actuales registrados en SFI.'
                 )
         productos_publicos = []
+        ids_principales = {producto.pk for producto in principales}
         for producto in productos:
             producto_publico = _producto_publico(producto)
             producto_publico['carrito_cantidad'] = 1
+            if _consulta_pide_adhesivo(consulta):
+                producto_publico['rol'] = (
+                    'Resultado principal · adhesivo'
+                    if producto.pk in ids_principales
+                    else 'También podría servirte · complemento'
+                )
             productos_publicos.append(producto_publico)
+        if complementarios and principales and not presupuesto:
+            mensaje = (
+                f'Encontré {len(principales)} adhesivo(s) que responden a “{consulta}”. '
+                'Los artículos adicionales aparecen separados como complementos; no son '
+                'adhesivos equivalentes y solo corresponden si la reparación los requiere.'
+            )
         sugerencias_productos = (
             ['¿Para qué sirve?', '¿Cómo se utiliza?', '¿Cuál es el más económico?']
             if len(productos_publicos) == 1
@@ -3305,6 +3525,88 @@ def _producto_mencionado_para_uso(consulta, productos):
     return productos
 
 
+def _productos_mencionados_en_seguimiento(mensaje, productos):
+    """Obtiene uno o varios materiales nombrados sin alterar la propuesta."""
+    productos = list(productos or [])
+    texto = _texto_normalizado(mensaje)
+    if not texto or not productos:
+        return []
+
+    posiciones = {
+        'primero': 0, 'primer': 0,
+        'segundo': 1,
+        'tercero': 2, 'tercer': 2,
+        'cuarto': 3,
+        'quinto': 4,
+    }
+    seleccionados = []
+    for palabra, indice in posiciones.items():
+        if re.search(rf'\b{palabra}\b', texto) and indice < len(productos):
+            seleccionados.append(productos[indice])
+
+    palabras_genericas = {
+        'para', 'madera', 'metal', 'interior', 'exterior', 'producto',
+        'material', 'unidad', 'pack', 'caja', 'bolsa', 'saco', 'envase',
+        'blanco', 'blanca', 'gris', 'negro', 'negra', 'mm', 'cm', 'kg',
+    }
+    for producto in productos:
+        nombre = _texto_normalizado(producto.nombre)
+        especificaciones = (
+            producto.especificaciones
+            if isinstance(producto.especificaciones, dict) else {}
+        )
+        identidad = _texto_normalizado(' '.join(filter(None, (
+            producto.nombre,
+            producto.categoria,
+            producto.descripcion,
+            producto.uso_recomendado,
+            str(especificaciones.get('familia_adhesivo') or ''),
+            ' '.join(str(valor) for valor in especificaciones.values()),
+        ))))
+        if nombre and nombre in texto:
+            seleccionados.append(producto)
+            continue
+        palabras_nombre = {
+            palabra for palabra in re.findall(r'[a-z][a-z0-9]+', identidad)
+            if len(palabra) >= 4 and palabra not in palabras_genericas
+        }
+        # Palabras funcionales como adhesivo, sellador, tornillo o lija son
+        # suficientemente claras dentro de las tarjetas del proyecto. Si dos
+        # productos comparten la misma familia, se explican ambos.
+        if any(re.search(rf'\b{re.escape(palabra)}\w*', texto)
+               for palabra in palabras_nombre):
+            seleccionados.append(producto)
+
+    ids = set()
+    return [
+        producto for producto in seleccionados
+        if not (producto.pk in ids or ids.add(producto.pk))
+    ]
+
+
+def _pregunta_informativa_sobre_materiales(mensaje):
+    """Distingue una consulta informativa de una orden para cambiar el plan."""
+    texto = _texto_normalizado_pregunta_uso(mensaje)
+    if re.search(
+        r'\b(?:agrega\w*|anade\w*|incluye\w*|incorpora\w*|quita\w*|'
+        r'elimina\w*|cambia\w*|reemplaza\w*|sustituye\w*|modifica\w*|'
+        r'ajusta\w*)\b',
+        texto,
+    ):
+        return False
+    return bool(
+        _pregunta_uso_producto(mensaje)
+        or re.search(
+            r'\b(?:explica(?:me)?|cuenta(?:me)?|habla(?:me)?)\b.{0,45}'
+            r'\b(?:material(?:es)?|producto(?:s)?|adhesivo|sellador|tornillo|'
+            r'lija|mortero|pintura|barniz|madera|perfil|plancha)\b|'
+            r'\b(?:sirve|sirven|funciona|funcionan|es apto|son aptos|'
+            r'es compatible|son compatibles)\b',
+            texto,
+        )
+    )
+
+
 def _orientacion_de_uso_gemini(producto):
     """Obtiene una explicación pedagógica sin reemplazar la ficha SFI.
 
@@ -3394,11 +3696,43 @@ def _respuesta_uso_producto(productos):
         )
 
     especificaciones = producto.especificaciones or {}
+    es_adhesivo = (
+        _texto_normalizado(producto.categoria) == 'adhesivos'
+        or bool(especificaciones.get('familia_adhesivo'))
+    )
+    detalle_adhesivo = []
+    if es_adhesivo and isinstance(especificaciones, dict):
+        materiales = especificaciones.get('materiales_compatibles') or []
+        if materiales:
+            detalle_adhesivo.append(
+                '• Materiales compatibles: '
+                + ', '.join(str(valor) for valor in materiales)
+                + '.'
+            )
+        no_compatible = especificaciones.get('no_compatible') or []
+        if no_compatible:
+            detalle_adhesivo.append(
+                '• No usar sobre: '
+                + ', '.join(str(valor) for valor in no_compatible)
+                + '.'
+            )
+        for clave, etiqueta in (
+            ('preparacion', 'Preparación'),
+            ('aplicacion_recomendada', 'Aplicación'),
+            ('cantidad_orientativa', 'Cantidad orientativa'),
+            ('advertencia', 'Advertencia'),
+        ):
+            valor = especificaciones.get(clave)
+            if valor:
+                detalle_adhesivo.append(f'• {etiqueta}: {str(valor).rstrip(".")}.')
     datos_tecnicos = []
     claves_internas = {
         'datos tecnicos', 'ficha tecnica', 'uso recomendado',
         'rol en el proyecto', 'rol en proyecto', 'origen del registro',
-        'proyectos sugeridos',
+        'proyectos sugeridos', 'materiales compatibles', 'no compatible',
+        'preparacion', 'aplicacion recomendada', 'cantidad orientativa',
+        'advertencia', 'fuente tecnica', 'fuente precio',
+        'fecha consulta fuente',
     }
     if isinstance(especificaciones, dict):
         for clave, valor in especificaciones.items():
@@ -3439,6 +3773,8 @@ def _respuesta_uso_producto(productos):
             '',
             'FICHA TÉCNICA',
             *detalle_ficha,
+            *(['', 'COMPATIBILIDAD Y APLICACIÓN', *detalle_adhesivo]
+              if detalle_adhesivo else []),
             *(['', 'ORIENTACIÓN DEL ASISTENTE', orientacion_gemini]
               if orientacion_gemini else []),
         ]),
@@ -3454,7 +3790,7 @@ def _respuesta_uso_producto(productos):
 
 def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
     """Explica las tarjetas actuales sin reinterpretar ni reconstruir el proyecto."""
-    ids = list(dict.fromkeys(productos_contexto or []))[:18]
+    ids = list(dict.fromkeys(productos_contexto or []))
     if not ids:
         return None
 
@@ -3468,7 +3804,7 @@ def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
         r'seleccion\w*|recomiend\w*)\b',
         texto,
     ))
-    pide_uso = _pregunta_uso_producto(mensaje)
+    pide_uso = _pregunta_informativa_sobre_materiales(mensaje)
     ultimo_asistente = next((
         _texto_normalizado(item.get('content'))
         for item in reversed(historial)
@@ -3485,9 +3821,25 @@ def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
     productos = [encontrados[pk] for pk in ids if pk in encontrados]
     if pide_uso:
         consulta = _consulta_sin_pregunta_de_uso(mensaje)
-        productos = _producto_mencionado_para_uso(consulta, productos)
+        mencionados = _productos_mencionados_en_seguimiento(mensaje, productos)
+        productos = mencionados or _producto_mencionado_para_uso(consulta, productos)
+        # Una consulta con el nombre expreso de una ficha debe poder resolverse
+        # aunque el producto haya quedado fuera del contexto visual de un
+        # proyecto extenso. La coincidencia exacta evita reinterpretar o
+        # reconstruir la propuesta y conserva el proyecto para el seguimiento.
+        consulta_normalizada = _texto_normalizado(consulta).strip()
+        if not mencionados and len(productos) != 1 and consulta_normalizada:
+            candidatos_catalogo = _buscar_productos(consulta, limite=8)
+            coincidencia_exacta = [
+                producto for producto in candidatos_catalogo
+                if _texto_normalizado(producto.nombre).strip() == consulta_normalizada
+                or _texto_normalizado(producto.nombre).strip()
+                in _texto_normalizado(mensaje)
+            ]
+            if len(coincidencia_exacta) == 1:
+                productos = coincidencia_exacta
         palabras_consulta = set(re.findall(r'[a-z0-9]+', consulta))
-        if palabras_consulta and len(productos) > 1:
+        if not mencionados and palabras_consulta and len(productos) > 1:
             coincidencias = [
                 producto for producto in productos
                 if palabras_consulta & set(re.findall(
@@ -3499,6 +3851,38 @@ def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
         respuesta_uso = _respuesta_uso_producto(productos)
         if respuesta_uso:
             return respuesta_uso
+        if len(productos) > 1 and mencionados:
+            lineas = []
+            for producto in productos:
+                uso = ' '.join(str(
+                    producto.uso_recomendado or producto.descripcion or ''
+                ).split())[:300]
+                if not uso:
+                    uso = (
+                        f'Cumple una función de {producto.categoria}; revisa su ficha '
+                        'y compatibilidad antes de utilizarlo.'
+                    )
+                lineas.append(f'• {producto.nombre}: {uso}')
+            return {
+                'tipo': 'explicacion_materiales',
+                'mensaje': '\n'.join([
+                    'PARA QUÉ SIRVE CADA MATERIAL',
+                    'Estos productos ya pertenecen a la propuesta actual; explicarlos '
+                    'no modifica cantidades ni vuelve a generar el proyecto.',
+                    '',
+                    *lineas,
+                    '',
+                    'Si quieres añadir, quitar o reemplazar alguno, indícalo '
+                    'expresamente y actualizaré la propuesta.',
+                ]),
+                'productos': [],
+                'maestros': [],
+                'sugerencias': [
+                    'Explicar otro material de la propuesta',
+                    'Quiero reemplazar un material',
+                    'Volver al resumen del proyecto',
+                ],
+            }
         return {
             'tipo': 'aclaracion_producto',
             'mensaje': (
@@ -3625,7 +4009,7 @@ def _comparar_alternativas_economicas(
     if not pide_alternativa_economica:
         return None
 
-    ids = list(dict.fromkeys(productos_contexto or []))[:18]
+    ids = list(dict.fromkeys(productos_contexto or []))
     encontrados = {
         producto.pk: producto
         for producto in Producto.objects.filter(pk__in=ids, activo=True)
@@ -3718,6 +4102,7 @@ def _comparar_alternativas_economicas(
                     f'Cobertura adquirida: {_formatear_decimal(cobertura_comprada)} m².'
                 ),
                 'es_alternativa': True,
+                'incluido_en_total': False,
             })
             items.append(item)
         return {
@@ -3764,6 +4149,8 @@ def _comparar_alternativas_economicas(
                 item = _producto_publico(alternativa)
                 item['carrito_cantidad'] = 1
                 item['rol'] = 'Alternativa más económica'
+                item['es_alternativa'] = True
+                item['incluido_en_total'] = False
                 alternativas.append(item)
                 alternativas_usadas.add(alternativa.pk)
         else:
@@ -4479,118 +4866,6 @@ def _clasificar_seguimiento_natural(mensaje, productos_contexto):
     return ''
 
 
-def _resolver_agregado_estimacion(mensaje, productos_contexto, estimacion_contexto):
-    """Añade un producto solicitado sin reconstruir la propuesta vigente."""
-    if not productos_contexto:
-        return None
-    texto = _texto_normalizado(mensaje)
-    coincidencia = re.search(
-        r'\b(?:agrega(?:me)?|anade(?:me)?|incluye(?:me)?|incorpora(?:me)?|suma(?:me)?)\b\s+(.+)',
-        texto,
-    )
-    if not coincidencia:
-        return None
-
-    consulta = coincidencia.group(1)
-    consulta = re.split(
-        r'\s+(?:a|en)\s+(?:la\s+)?(?:lista|estimacion|propuesta|presupuesto|proyecto)\b|'
-        r'\s+(?:eso|que)\s+falt\w*\b',
-        consulta,
-        maxsplit=1,
-    )[0]
-    consulta = re.sub(r'^(?:una?|el|la|los|las)\s+', '', consulta).strip()
-    if len(consulta) < 3:
-        return None
-
-    ids_actuales = list(dict.fromkeys(productos_contexto))[:18]
-    detalles = {
-        int(item['id']): item
-        for item in (estimacion_contexto or [])
-        if isinstance(item, dict) and item.get('id')
-    }
-    productos_bd = Producto.objects.filter(pk__in=ids_actuales, activo=True)
-    por_id = {producto.pk: producto for producto in productos_bd}
-    productos = []
-    for producto_id in ids_actuales:
-        producto = por_id.get(producto_id)
-        if not producto:
-            continue
-        item = _producto_publico(producto)
-        detalle = detalles.get(producto_id, {})
-        for campo in (
-            'carrito_cantidad', 'cantidad_requerida', 'rol', 'detalle_material',
-            'es_opcional', 'es_alternativa', 'cantidad_pendiente', 'incluido_en_total',
-        ):
-            if campo in detalle:
-                item[campo] = detalle[campo]
-        cantidad_carrito = int(item.get('carrito_cantidad') or 1)
-        if item.get('cantidad_requerida'):
-            item['subtotal'] = producto.precio * cantidad_carrito
-        productos.append(item)
-
-    candidatos = [
-        producto for producto in _buscar_productos(consulta, limite=10)
-        if producto.stock > 0
-    ]
-    solicitado = next(
-        (producto for producto in candidatos if producto.pk in ids_actuales),
-        candidatos[0] if candidatos else None,
-    )
-    if not solicitado:
-        return {
-            'tipo': 'seguimiento_estimacion',
-            'mensaje': (
-                f'No encontré un producto activo con stock relacionado con “{consulta}”. '
-                'Conservé la estimación actual sin cambios.'
-            ),
-            'productos': productos,
-            'maestros': [],
-            'sugerencias': ['Buscar un producto similar', 'Volver al resumen del proyecto'],
-        }
-    if solicitado.pk in ids_actuales:
-        return {
-            'tipo': 'seguimiento_estimacion',
-            'mensaje': f'{solicitado.nombre} ya se encuentra incluido en la estimación.',
-            'productos': productos,
-            'maestros': [],
-            'sugerencias': ['Agregar otro producto', 'Volver al resumen del proyecto'],
-        }
-
-    agregado = _producto_publico(solicitado)
-    texto_producto = _texto_normalizado(
-        f'{solicitado.nombre} {solicitado.categoria} {solicitado.uso_recomendado}'
-    )
-    es_herramienta = (
-        'herramienta' in _texto_normalizado(solicitado.categoria)
-        or any(nombre in texto_producto for nombre in (
-            'brocha', 'rodillo', 'taladro', 'sierra', 'martillo', 'lijadora',
-            'cinta metrica',
-        ))
-    )
-    agregado.update({
-        'rol': 'Herramienta opcional' if es_herramienta else 'Material agregado',
-        'carrito_cantidad': 1,
-        'es_opcional': es_herramienta,
-        'incluido_en_total': not es_herramienta,
-    })
-    productos.append(agregado)
-    mensaje_tipo = 'herramienta opcional' if es_herramienta else 'material'
-    return {
-        'tipo': 'seguimiento_estimacion',
-        'mensaje': (
-            f'Añadí {solicitado.nombre} como {mensaje_tipo} a la estimación actual. '
-            + (
-                'No modifica el total de materiales hasta que decidas incluirla.'
-                if es_herramienta else
-                'Su cantidad inicial es una unidad y puedes ajustarla antes de agregarla al carrito.'
-            )
-        ),
-        'productos': productos,
-        'maestros': [],
-        'sugerencias': ['Agregar otro producto', 'Volver al resumen del proyecto'],
-    }
-
-
 def _resolver_total_contextual(historial):
     """Recupera el último total ya calculado sin reconstruir el proyecto."""
     ultimo_total = None
@@ -4988,16 +5263,98 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
     return None
 
 
+def _resolver_consulta_fuera_contexto_sfi(mensaje, historial=None, productos_contexto=None):
+    """Detiene solicitudes iniciales ajenas al dominio ferretero de SFI.
+
+    Los seguimientos conservan prioridad porque respuestas breves como "el
+    segundo" o "sí, agrégalo" solo tienen sentido junto al contexto previo.
+    """
+    historial = historial or []
+    if historial or productos_contexto:
+        return None
+
+    texto = _texto_normalizado(mensaje)
+    if not texto:
+        return None
+    texto_sin_saludo = re.sub(
+        r'\b(?:hola|buenos dias|buenas tardes|buenas noches|wenas|buenas)\b',
+        ' ', texto,
+    ).strip(' ,.!?')
+    if not texto_sin_saludo:
+        return None
+
+    vocabulario_sfi = re.compile(
+        r'\b(?:ferreter\w*|producto\w*|material\w*|herramient\w*|maestr\w*|'
+        r'constru\w*|obra\w*|proyecto\w*|repar\w*|arregl\w*|instal\w*|'
+        r'mont\w*|armar|fabric\w*|manteni\w*|remodel\w*|cambiar|reemplaz\w*|'
+        r'pint\w*|barniz\w*|sell\w*|impermeabil\w*|peg\w*|adhesiv\w*|'
+        r'cola fria|silicona\w*|mortero\w*|cement\w*|hormigon\w*|radier\w*|'
+        r'ladrill\w*|ceramic\w*|porcelanat\w*|frag\w*|yeso\w*|estuco\w*|'
+        r'madera\w*|melamina\w*|mdf|osb|metal\w*|acero\w*|aluminio\w*|'
+        r'pvc|policarbonat\w*|zinc\w*|teja\w*|plancha\w*|perfil\w*|'
+        r'tornill\w*|clav\w*|perno\w*|tuerca\w*|golilla\w*|fijaci\w*|'
+        r'taladr\w*|martill\w*|sierra\w*|esmeril\w*|lija\w*|brocha\w*|'
+        r'rodillo\w*|llana\w*|nivel\w*|huincha\w*|cinta metrica|'
+        r'techo\w*|techumbre\w*|cubierta\w*|piso\w*|muro\w*|pared\w*|'
+        r'puerta\w*|ventana\w*|reja\w*|cerco\w*|porton\w*|escalera\w*|'
+        r'mueble\w*|mesa\w*|silla\w*|closet\w*|armario\w*|repisa\w*|'
+        r'cocina\w*|bano\w*|lavamanos\w*|sanitari\w*|ducha\w*|grifer\w*|'
+        r'caneria\w*|tuberia\w*|desague\w*|gotera\w*|filtracion\w*|humedad\w*|'
+        r'electric\w*|enchufe\w*|interruptor\w*|cable\w*|ampolleta\w*|luz|luces|'
+        r'jardin\w*|riego\w*|manguera\w*|pala\w*|picota\w*|carretilla\w*|'
+        r'piscina\w*|quincho\w*|pergola\w*|bodega\w*|cobertizo\w*|terraza\w*|'
+        r'candado\w*|cerradura\w*|bisagra\w*|cadena\w*|seguridad\w*)\b'
+    )
+    if vocabulario_sfi.search(texto):
+        return None
+    # El catálogo puede incorporar familias nuevas que todavía no figuren en
+    # el vocabulario anterior. Una coincidencia real mantiene la consulta dentro
+    # del alcance sin inventar productos ni depender solamente de palabras clave.
+    if _buscar_productos(mensaje, limite=1):
+        return None
+
+    return {
+        'tipo': 'fuera_contexto',
+        'mensaje': (
+            'Lo sentimos, esta consulta está fuera del ámbito del asistente SFI. '
+            'Puedo ayudarte con productos de ferretería, herramientas, materiales, '
+            'construcción, mantenimiento, reparaciones y proyectos relacionados.'
+        ),
+        'productos': [],
+        'maestros': [],
+        'sugerencias': [
+            'Quiero buscar un producto',
+            'Necesito ayuda con una reparación',
+            'Quiero preparar un proyecto',
+        ],
+    }
+
+
 def procesar_consulta(
     mensaje, historial, productos_contexto=None, modo_consulta='auto',
     estimacion_contexto=None,
 ):
+    fuera_contexto = _resolver_consulta_fuera_contexto_sfi(
+        mensaje, historial, productos_contexto,
+    )
+    if fuera_contexto:
+        return fuera_contexto
     gotera_directa = _resolver_gotera_con_cubierta_identificada(mensaje, historial)
     if gotera_directa:
         return gotera_directa
     busqueda_por_funcion = _resolver_busqueda_por_funcion(mensaje)
     if busqueda_por_funcion:
         return busqueda_por_funcion
+    # Una aclaración iniciada por el propio asistente debe resolverse antes de
+    # reclasificar el mensaje breve como un problema cotidiano distinto.
+    aclaracion_adhesivo = _aclarar_reparacion_mueble_con_adhesivo(mensaje, historial)
+    if aclaracion_adhesivo:
+        return aclaracion_adhesivo
+    seguimiento_adhesivo = _resolver_seguimiento_reparacion_mueble_adhesivo(
+        mensaje, historial,
+    )
+    if seguimiento_adhesivo:
+        return seguimiento_adhesivo
     situacion_cotidiana = _resolver_situacion_cotidiana(mensaje)
     if situacion_cotidiana:
         return situacion_cotidiana
@@ -5015,13 +5372,6 @@ def procesar_consulta(
         return diagnostico_filtracion
     texto_actual = _texto_normalizado(mensaje)
     contexto_ids = list(dict.fromkeys(productos_contexto or []))
-    agregado_estimacion = _resolver_agregado_estimacion(
-        mensaje,
-        productos_contexto or [],
-        estimacion_contexto or [],
-    )
-    if agregado_estimacion:
-        return agregado_estimacion
     referencia_singular = bool(re.search(
         r'\b(?:ese|esa|aquel|aquella|el producto|la opcion)\b',
         texto_actual,

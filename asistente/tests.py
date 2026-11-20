@@ -894,6 +894,45 @@ class AsistenteSfiTests(TestCase):
             '¿Qué necesito para lijar?', [], [], 'auto',
         )
 
+    def test_api_oculta_error_de_validacion_y_lo_registra(self):
+        with self.assertLogs('asistente.views', level='WARNING') as registros:
+            response = self.client.post(
+                reverse('api_consultar_asistente'),
+                {
+                    'mensaje': '¿Para qué sirve?',
+                    'historial': [{
+                        'role': 'assistant',
+                        'content': 'x' * 4001,
+                    }],
+                },
+                content_type='application/json',
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()['detail'],
+            'El asistente no está disponible en este momento.',
+        )
+        self.assertNotIn('4000', response.content.decode())
+        self.assertTrue(any('4000' in registro for registro in registros.output))
+
+    @patch('asistente.views.procesar_consulta', side_effect=RuntimeError('detalle interno'))
+    def test_api_oculta_excepcion_inesperada_y_la_registra(self, _procesar):
+        with self.assertLogs('asistente.views', level='ERROR') as registros:
+            response = self.client.post(
+                reverse('api_consultar_asistente'),
+                {'mensaje': 'Necesito orientación', 'historial': []},
+                content_type='application/json',
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.json()['detail'],
+            'El asistente no está disponible en este momento.',
+        )
+        self.assertNotIn('detalle interno', response.content.decode())
+        self.assertTrue(any('detalle interno' in registro for registro in registros.output))
+
     def test_api_acepta_modo_inicial_sin_bloquear_la_consulta(self):
         serializer = ConsultaAsistenteSerializer(data={
             'mensaje': 'Necesito reparar una filtración',
@@ -905,6 +944,33 @@ class AsistenteSfiTests(TestCase):
             serializer.validated_data['modo_consulta'],
             'problema_cotidiano',
         )
+
+    def test_consulta_ajena_a_ferreteria_no_genera_un_proyecto(self):
+        resultado = procesar_consulta('Quiero hacer una pizza', [])
+
+        self.assertEqual(resultado['tipo'], 'fuera_contexto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('fuera del ámbito', resultado['mensaje'])
+        self.assertIn('ferretería', resultado['mensaje'])
+
+    def test_otra_consulta_ajena_tambien_se_mantiene_fuera_de_contexto(self):
+        resultado = procesar_consulta('Escríbeme un poema romántico', [])
+
+        self.assertEqual(resultado['tipo'], 'fuera_contexto')
+        self.assertEqual(resultado['productos'], [])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_problema_cotidiano_ferretero_no_es_bloqueado(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'buscar_producto',
+            'consulta_producto': 'impermeabilizante para techo',
+        }
+
+        resultado = procesar_consulta(
+            'Necesito algo para que no entre agua por el techo', [],
+        )
+
+        self.assertNotEqual(resultado['tipo'], 'fuera_contexto')
 
     def test_tarea_cotidiana_de_clavar_recomienda_martillo_real(self):
         martillo = Producto.objects.create(
@@ -2119,7 +2185,31 @@ class PlanificadorGenericoProyectosTests(TestCase):
 
         self.assertIsNone(resultado)
 
-    def test_piso_ceramico_no_avanza_sin_conocer_la_base(self):
+    def test_alcance_permite_closet_mural_grande_de_5_por_6_metros(self):
+        resultado = _evaluar_alcance_proyecto({
+            'proyecto': 'Clóset mural a medida',
+            '_contexto_usuario': 'Quiero un clóset de 5 x 6 metros',
+            'ancho_cm': 500,
+            'alto_cm': 600,
+            'fondo_cm': 60,
+        })
+
+        self.assertIsNone(resultado)
+
+    def test_alcance_mueble_conserva_un_limite_propio(self):
+        resultado = _evaluar_alcance_proyecto({
+            'proyecto': 'Clóset mural a medida',
+            '_contexto_usuario': 'Quiero un clóset de 18 metros de ancho',
+            'ancho_cm': 1800,
+            'alto_cm': 260,
+            'fondo_cm': 60,
+        })
+
+        self.assertEqual(resultado['tipo'], 'proyecto_fuera_de_alcance')
+        self.assertIn('mobiliario a medida', resultado['mensaje'])
+        self.assertIn('15 m', resultado['mensaje'])
+
+    def test_piso_ceramico_estandar_con_ubicacion_avanza_con_supuestos(self):
         resultado = resolver_interpretacion({
             'intencion': 'planificar_proyecto',
             'proyecto': 'Instalación de piso de cerámica para cocina',
@@ -2135,8 +2225,47 @@ class PlanificadorGenericoProyectosTests(TestCase):
             'datos_faltantes_proyecto': [],
         })
 
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertIn('PROPUESTA ESTÁNDAR PARA TU PROYECTO', resultado['mensaje'])
+        self.assertIn('Material actual de la base', resultado['mensaje'])
+        self.assertTrue(resultado['productos'])
+
+    def test_piso_ceramico_estandar_pregunta_ubicacion_antes_de_proponer(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Instalación de piso de cerámica estándar',
+            '_proyecto_estandar': True,
+            'modo_orientacion': 'propuesta_estandar',
+            '_contexto_usuario': 'quiero un piso de cerámica estándar',
+            'tareas_proyecto': [{
+                'nombre': 'Piso',
+                'busquedas': ['cerámica piso interior'],
+            }],
+            'datos_faltantes_proyecto': [],
+        })
+
         self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
-        self.assertIn('base', resultado['mensaje'].casefold())
+        self.assertIn('UBICACION DEL PISO', resultado['mensaje'])
+        self.assertNotIn('BASE ACTUAL', resultado['mensaje'])
+        self.assertFalse(resultado['productos'])
+
+    def test_piso_ceramico_no_estandar_pide_ubicacion_medidas_base_y_estado(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Instalación de piso de cerámica',
+            '_contexto_usuario': 'quiero hacer un piso de cerámica',
+            'tareas_proyecto': [{
+                'nombre': 'Piso',
+                'busquedas': ['cerámica piso interior'],
+            }],
+            'datos_faltantes_proyecto': [],
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn('UBICACION DEL PISO', resultado['mensaje'])
+        self.assertIn('Dimensiones o metros cuadrados', resultado['mensaje'])
+        self.assertIn('BASE ACTUAL', resultado['mensaje'])
+        self.assertIn('ESTADO DE LA BASE', resultado['mensaje'])
         self.assertFalse(resultado['productos'])
 
     def test_piso_ceramico_conserva_material_solicitado(self):
@@ -2900,7 +3029,16 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertIn('120 × 80 × 35 cm', resultado['mensaje'])
         self.assertNotIn('3 × 4 metros', resultado['mensaje'])
 
-    def test_mueble_estandar_no_inventa_tipo_ni_muestra_productos(self):
+    def test_mueble_estandar_entrega_referencia_sin_cuestionario(self):
+        Producto.objects.create(
+            nombre='Plancha melamina blanca 18 mm 1,83 x 2,50 m',
+            descripcion='Tablero para fabricar muebles de interior.',
+            uso_recomendado='Cuerpo y divisiones de muebles.',
+            precio=39990,
+            stock=12,
+            categoria='Maderas y tableros',
+            activo=True,
+        )
         resultado = resolver_interpretacion({
             'intencion': 'planificar_proyecto',
             'proyecto': 'Fabricar mueble de melamina estándar',
@@ -2909,15 +3047,18 @@ class PlanificadorGenericoProyectosTests(TestCase):
                 'nombre': 'Fabricación',
                 'busquedas': ['plancha melamina blanca 18 mm'],
             }],
-            'datos_faltantes_proyecto': [],
+            'datos_faltantes_proyecto': [
+                'Tipo y uso del mueble',
+                'Dimensiones del espacio disponible',
+            ],
         })
 
-        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
-        self.assertEqual(resultado['productos'], [])
-        self.assertIn('TIPO Y USO DEL MUEBLE', resultado['mensaje'])
-        self.assertIn('ANCHO, ALTO Y FONDO', resultado['mensaje'])
-        self.assertIn('clóset', resultado['mensaje'])
-        self.assertNotIn('PRODUCTOS POR ETAPA', resultado['mensaje'])
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertTrue(resultado['productos'])
+        self.assertIn('PROPUESTA ESTÁNDAR PARA TU PROYECTO', resultado['mensaje'])
+        self.assertIn('SUPUESTOS DE LA PROPUESTA ESTÁNDAR', resultado['mensaje'])
+        self.assertIn('Tipo y uso del mueble', resultado['mensaje'])
+        self.assertNotIn('ANTES DE RECOMENDAR PRODUCTOS', resultado['mensaje'])
 
     def test_estandar_no_se_confunde_con_referencia_esta(self):
         from .services.asistente_sfi import _aplicar_contexto_productos
@@ -3642,6 +3783,56 @@ class PlanificadorGenericoProyectosTests(TestCase):
             self.assertEqual(resultado['productos'], [])
 
         self.assertEqual(interpretar.call_count, 5)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_producto_especifico_se_explica_en_proyecto_con_mas_de_18_productos(
+        self, interpretar,
+    ):
+        interpretar.return_value = {'respuesta': 'Permite verificar medidas.'}
+        productos = [
+            Producto.objects.create(
+                nombre=f'Material de proyecto {indice}',
+                descripcion='Material auxiliar del proyecto.',
+                precio=1000 + indice,
+                stock=10,
+                categoria='Construcción',
+                activo=True,
+            )
+            for indice in range(22)
+        ]
+        cinta = Producto.objects.create(
+            nombre='Cinta métrica Stanley Pro 8 m / 26 pies',
+            descripcion='Cinta métrica para medir longitudes.',
+            uso_recomendado='Verificar dimensiones y alineación antes de trabajar.',
+            precio=12990,
+            stock=25,
+            categoria='Herramientas',
+            activo=True,
+        )
+
+        resultado = procesar_consulta(
+            'Cinta métrica Stanley Pro 8 m / 26 pies para que sirve?',
+            [{'role': 'assistant', 'content': 'Propuesta estándar de proyecto.'}],
+            [producto.pk for producto in productos] + [cinta.pk],
+        )
+
+        self.assertEqual(resultado['tipo'], 'uso_producto')
+        self.assertIn(cinta.nombre, resultado['mensaje'])
+        self.assertIn('Verificar dimensiones', resultado['mensaje'])
+
+    def test_serializer_acepta_contexto_de_proyecto_extenso(self):
+        serializer = ConsultaAsistenteSerializer(data={
+            'mensaje': 'Cinta métrica para que sirve?',
+            'productos_contexto': list(range(1, 24)),
+            'estimacion_contexto': [
+                {'id': indice, 'nombre': f'Producto {indice}'}
+                for indice in range(1, 24)
+            ],
+        })
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(len(serializer.validated_data['productos_contexto']), 23)
+        self.assertEqual(len(serializer.validated_data['estimacion_contexto']), 23)
 
     def test_pregunta_de_uso_prioriza_el_nombre_exacto_sobre_accesorios(self):
         from .services.asistente_sfi import _producto_mencionado_para_uso
@@ -5317,3 +5508,278 @@ class PlanificadorGenericoProyectosTests(TestCase):
             for item in resultado['productos']
         ))
         self.assertIn('Aplicar barniz o pintura', resultado['mensaje'])
+
+    def test_pegamento_generico_no_se_convierte_en_adhesivo_ceramico(self):
+        from .services.sinonimos_ferreteros import expandir_consulta
+
+        palabras, _ = expandir_consulta(['pegamento'])
+
+        self.assertIn('adhesivo', palabras)
+        self.assertNotIn('ceramico', palabras)
+
+    def test_busqueda_cotidiana_distingue_adhesivo_para_calzado(self):
+        from .services.asistente_sfi import _buscar_productos
+
+        calzado = Producto.objects.create(
+            nombre='Adhesivo transparente prueba para calzado 9 g',
+            descripcion='Gel flexible para reparar zapatos y zapatillas.',
+            uso_recomendado='Punteras, bordes, talones y suelas de calzado.',
+            precio=5990,
+            stock=10,
+            categoria='Adhesivos',
+            especificaciones={
+                'familia_adhesivo': 'adhesivo flexible para calzado',
+                'materiales_compatibles': ['cuero', 'tela'],
+            },
+            activo=True,
+        )
+        Producto.objects.create(
+            nombre='Adhesivo cerámico prueba saco 25 kg',
+            descripcion='Para revestimientos cerámicos.',
+            precio=8990,
+            stock=10,
+            categoria='Adhesivos',
+            activo=True,
+        )
+
+        resultados = _buscar_productos('necesito pegar una zapatilla')
+
+        self.assertTrue(resultados)
+        self.assertEqual(resultados[0].pk, calzado.pk)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_ficha_adhesivo_explica_compatibilidad_aplicacion_y_cantidad(self, interpretar):
+        from .services.asistente_sfi import _respuesta_uso_producto
+
+        interpretar.return_value = {'respuesta': ''}
+        producto = Producto.objects.create(
+            nombre='Adhesivo instantáneo prueba 2 ml',
+            descripcion='Adhesivo para reparaciones pequeñas.',
+            uso_recomendado='Unir piezas pequeñas con encaje correcto.',
+            precio=3990,
+            stock=10,
+            categoria='Adhesivos',
+            especificaciones={
+                'familia_adhesivo': 'cianoacrilato instantáneo',
+                'materiales_compatibles': ['cerámica', 'metal'],
+                'no_compatible': ['polietileno'],
+                'preparacion': 'Limpiar y secar',
+                'aplicacion_recomendada': 'Aplicar una gota',
+                'cantidad_orientativa': 'Depende del tamaño de la reparación',
+            },
+            activo=True,
+        )
+
+        resultado = _respuesta_uso_producto([producto])
+
+        self.assertIn('COMPATIBILIDAD Y APLICACIÓN', resultado['mensaje'])
+        self.assertIn('Materiales compatibles: cerámica, metal', resultado['mensaje'])
+        self.assertIn('No usar sobre: polietileno', resultado['mensaje'])
+        self.assertIn('Aplicación: Aplicar una gota', resultado['mensaje'])
+        self.assertIn('Cantidad orientativa:', resultado['mensaje'])
+
+    def test_reparar_mesa_pide_material_y_tipo_de_dano_antes_de_buscar(self):
+        resultado = procesar_consulta(
+            'algo pegamento para arreglar la mesa',
+            [{'role': 'assistant', 'content': '¿Qué producto necesitas buscar?'}],
+        )
+
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('material del mueble', resultado['mensaje'])
+        self.assertIn('qué parte está dañada', resultado['mensaje'])
+
+    def test_reparar_mesa_no_confunde_pata_con_estado_del_dano(self):
+        resultado = procesar_consulta(
+            'Una de las patas y es de madera',
+            [{
+                'role': 'assistant',
+                'content': (
+                    'ANTES DE RECOMENDAR UN ADHESIVO: indica el material, '
+                    'la parte dañada y su estado.'
+                ),
+            }],
+        )
+
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('suelta, despegada, quebrada', resultado['mensaje'])
+
+    def test_adhesivo_madera_tambien_aclara_puertas_y_otras_piezas(self):
+        resultado = procesar_consulta(
+            'Necesito pegamento para reparar una puerta de madera',
+            [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('suelta, despegada, quebrada', resultado['mensaje'])
+        self.assertIn('tipo de daño', resultado['mensaje'])
+
+    def test_adhesivo_para_mesa_sin_verbo_tambien_pide_aclaracion(self):
+        resultado = procesar_consulta('Necesito un adhesivo para mi mesa', [])
+
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('material de la pieza u objeto', resultado['mensaje'])
+        self.assertIn('qué parte está dañada', resultado['mensaje'])
+
+    def test_reparacion_madera_con_adhesivo_incluye_sargento_y_presentacion(self):
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Reparar pata de mesa de madera despegada con adhesivo',
+            '_proyecto_estandar': True,
+            'tareas_proyecto': [{
+                'nombre': 'Unión de madera',
+                'busquedas': ['adhesivo para madera interior envase 1 kg'],
+                'usos_materiales': [{
+                    'busqueda': 'adhesivo para madera interior envase 1 kg',
+                    'uso': 'Volver a unir la pata despegada.',
+                }],
+            }],
+            'datos_faltantes_proyecto': [],
+        })
+
+        adhesivo = next(
+            item for item in resultado['productos']
+            if item['categoria'] == 'Adhesivos'
+        )
+        self.assertFalse(adhesivo['cantidad_pendiente'])
+        self.assertEqual(adhesivo['carrito_cantidad'], 1)
+        self.assertIn('Presentación sugerida: 1 envase', adhesivo['presentacion_sugerida'])
+        self.assertTrue(any(
+            'sargento' in item['nombre'].lower()
+            for item in resultado['productos']
+        ))
+
+    def test_seguimiento_despegada_conserva_mesa_y_no_deriva_a_ceramica(self):
+        historial = [
+            {
+                'role': 'user',
+                'content': 'Necesito un ashedivo para arreglar mi mesa',
+            },
+            {
+                'role': 'assistant',
+                'content': 'ANTES DE RECOMENDAR UN ADHESIVO: indica material y daño.',
+            },
+            {
+                'role': 'user',
+                'content': 'Una de las patas y es de madera',
+            },
+            {
+                'role': 'assistant',
+                'content': 'ANTES DE RECOMENDAR UN ADHESIVO: indica si está despegada.',
+            },
+        ]
+
+        resultado = procesar_consulta('Despegada', historial)
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertIn('Reparación de pata de mesa', resultado['mensaje'])
+        self.assertNotIn('cerámica', resultado['mensaje'].lower())
+        self.assertNotIn('metros cuadrados', resultado['mensaje'].lower())
+        self.assertTrue(any(
+            producto['categoria'] == 'Adhesivos'
+            for producto in resultado['productos']
+        ))
+        self.assertTrue(any(
+            'sargento' in producto['nombre'].lower()
+            for producto in resultado['productos']
+        ))
+
+    def test_busqueda_adhesivo_separa_resultados_principales_de_complementos(self):
+        adhesivo = Producto.objects.create(
+            nombre='Cola fría madera prueba 500 g',
+            descripcion='Adhesivo para uniones de madera.',
+            precio=4990,
+            stock=20,
+            categoria='Adhesivos',
+            activo=True,
+        )
+        tornillo = Producto.objects.create(
+            nombre='Tornillo madera complemento prueba pack 20',
+            descripcion='Fijación mecánica para madera.',
+            precio=2990,
+            stock=20,
+            categoria='Ferretería',
+            activo=True,
+        )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'buscar_producto',
+            'consulta_producto': 'pegamento para madera prueba',
+        })
+
+        por_id = {item['id']: item for item in resultado['productos']}
+        self.assertEqual(por_id[adhesivo.pk]['rol'], 'Resultado principal · adhesivo')
+        self.assertEqual(
+            por_id[tornillo.pk]['rol'],
+            'También podría servirte · complemento',
+        )
+        self.assertIn('no son adhesivos equivalentes', resultado['mensaje'])
+
+    def test_proyecto_generico_lista_materiales_y_explica_su_uso(self):
+        Producto.objects.create(
+            nombre='Adhesivo madera explicativo prueba',
+            descripcion='Adhesivo para reparar uniones de madera.',
+            uso_recomendado='Unir nuevamente las piezas de madera de la mesa.',
+            precio=5990,
+            stock=10,
+            categoria='Adhesivos',
+            activo=True,
+        )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Reparación de pata de mesa de madera',
+            'tareas_proyecto': [{
+                'nombre': 'Unión y pegado',
+                'busquedas': ['adhesivo madera explicativo prueba'],
+                'usos_materiales': [{
+                    'busqueda': 'adhesivo madera explicativo prueba',
+                    'uso': 'Unir nuevamente la pata con la estructura de la mesa.',
+                }],
+            }],
+            'datos_faltantes_proyecto': [],
+        })
+
+        self.assertEqual(resultado['tipo'], 'plan_proyecto_generico')
+        self.assertIn('MATERIALES Y PARA QUÉ SE USAN', resultado['mensaje'])
+        self.assertIn('Unión y pegado', resultado['mensaje'])
+        self.assertIn('Adhesivo madera explicativo prueba', resultado['mensaje'])
+        self.assertIn(
+            'Unir nuevamente la pata con la estructura de la mesa.',
+            resultado['mensaje'],
+        )
+
+    def test_pregunta_por_varios_materiales_explica_sin_rehacer_propuesta(self):
+        adhesivo = Producto.objects.create(
+            nombre='Adhesivo madera seguimiento prueba',
+            descripcion='Une piezas de madera limpias y ajustadas.',
+            uso_recomendado='Pegar nuevamente una unión de madera.',
+            precio=4990,
+            stock=12,
+            categoria='Adhesivos',
+            activo=True,
+        )
+        lija = Producto.objects.create(
+            nombre='Lija madera seguimiento prueba grano 120',
+            descripcion='Prepara superficies de madera.',
+            uso_recomendado='Retirar residuos sueltos antes del encolado.',
+            precio=1990,
+            stock=20,
+            categoria='Herramientas',
+            activo=True,
+        )
+
+        resultado = procesar_consulta(
+            '¿Para qué sirven el adhesivo y la lija?',
+            [],
+            [adhesivo.pk, lija.pk],
+        )
+
+        self.assertEqual(resultado['tipo'], 'explicacion_materiales')
+        self.assertIn(adhesivo.nombre, resultado['mensaje'])
+        self.assertIn(lija.nombre, resultado['mensaje'])
+        self.assertIn('no modifica cantidades', resultado['mensaje'])
+        self.assertEqual(resultado['productos'], [])

@@ -112,6 +112,7 @@ def _catalogo_compacto(contexto=''):
             'stock': producto.stock,
             'presentacion': producto.presentacion,
             'descripcion': producto.descripcion[:280],
+            'uso_recomendado': producto.uso_recomendado[:280],
             'color': producto.color,
             'ambiente': producto.get_ambiente_uso_display(),
             'superficies': producto.superficies_compatibles_display,
@@ -120,6 +121,14 @@ def _catalogo_compacto(contexto=''):
             'rendimiento': str(producto.rendimiento or ''),
             'unidad_rendimiento': producto.unidad_rendimiento,
             'ficha_verificada': producto.informacion_tecnica_verificada,
+            'compatibilidad_adhesivo': {
+                clave: valor
+                for clave, valor in (producto.especificaciones or {}).items()
+                if clave in {
+                    'familia_adhesivo', 'materiales_compatibles', 'no_compatible',
+                    'preparacion', 'aplicacion_recomendada', 'cantidad_orientativa',
+                }
+            },
         }
         for producto in productos
     ]
