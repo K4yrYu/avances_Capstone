@@ -5,7 +5,10 @@ from productos.models import Producto
 
 class MensajeHistorialSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=['user', 'assistant'])
-    content = serializers.CharField(min_length=1, max_length=4000, trim_whitespace=True)
+    # Una propuesta completa puede superar 4.000 caracteres. El límite global
+    # del historial evita aceptar cargas desmedidas sin rechazar seguimientos
+    # legítimos iniciados desde una respuesta extensa.
+    content = serializers.CharField(min_length=1, max_length=30000, trim_whitespace=True)
 
 
 class ProductoContextoSerializer(serializers.Serializer):
@@ -45,6 +48,8 @@ class ConsultaAsistenteSerializer(serializers.Serializer):
     def validate_historial(self, value):
         if len(value) > 20:
             raise serializers.ValidationError('Solo se permiten los últimos 20 mensajes.')
+        if sum(len(item.get('content') or '') for item in value) > 120000:
+            raise serializers.ValidationError('El historial de la consulta es demasiado extenso.')
         return value
 
     def validate_productos_contexto(self, value):

@@ -249,6 +249,8 @@ def _pide_todas_las_comunas(mensaje):
     respuestas_breves = {
         'cualquiera', 'de cualquiera', 'todas', 'todos',
         'muestrame todos', 'mostrar todos', 'ver todos',
+        'todos los disponibles', 'ver todos los disponibles',
+        'muestrame todos los disponibles',
     }
     return texto in respuestas_breves or any(frase in texto for frase in (
         'cualquier comuna', 'todas las comunas', 'sin importar la comuna',
@@ -585,7 +587,7 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
             datos['estado_superficie'] = 'humedad'
     proyecto_estandar_explicito = bool(re.search(
         r'\b(?:estandar|basico|basica)\b|\b(?:de|como) referencia\b',
-        texto_mensaje,
+        texto_usuario,
     ))
     # Una construcción completa no debe depender de que el cliente conozca la
     # expresión "propuesta estándar". Detectamos solamente obras reconocibles y
@@ -619,6 +621,15 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
         and not intervencion_acotada
     )
     datos['_proyecto_estandar'] = proyecto_estandar_explicito
+    # Gemini puede sugerir una orientacion estandar, pero esa decision cambia
+    # el flujo: omite preguntas y aplica supuestos. Solo el texto real del
+    # cliente puede autorizarla. Los proyectos integrales conservan sus etapas
+    # completas, aunque se presentan como propuesta directa si el usuario no
+    # escribio "estandar", "basico" o un equivalente.
+    if proyecto_estandar_explicito:
+        datos['modo_orientacion'] = 'propuesta_estandar'
+    elif datos.get('modo_orientacion') == 'propuesta_estandar':
+        datos['modo_orientacion'] = 'propuesta_directa'
     # "No tengo nada" cambia el alcance: se parte desde el terreno o la base,
     # no desde una estructura o radier existente.
     datos['_parte_desde_cero'] = bool(re.search(
@@ -952,7 +963,6 @@ def _plan_estandar_incompleto(datos):
     if not (
         datos.get('_proyecto_estandar') is True
         or datos.get('_proyecto_integral') is True
-        or datos.get('modo_orientacion') == 'propuesta_estandar'
     ):
         return False
     tareas = [
@@ -2240,21 +2250,24 @@ def _resolver_proyecto(datos):
             buscar_maestros=buscar_maestros,
             resolver_especialidad=_especialidad_desde_texto,
         )
-    if (
-        datos.get('_proyecto_estandar') is True
-        or datos.get('_proyecto_integral') is True
-    ):
-        return resolver_proyecto_generico(
+    # Techumbre posee plantillas deterministas por material. Debe resolverse
+    # antes del plan generico para que una solicitud "estandar" no permita que
+    # Gemini omita la cubierta principal o mezcle fijaciones incompatibles.
+    if any(termino in f' {proyecto} ' for termino in (
+        'techo', 'techumbre', 'cubierta', 'policarbonato',
+    )):
+        return resolver_proyecto_techumbre(
             datos,
             buscar_productos=lambda consulta: _buscar_productos(consulta, limite=60),
             producto_publico=_producto_publico,
             buscar_maestros=buscar_maestros,
             resolver_especialidad=_especialidad_desde_texto,
         )
-    if any(termino in f' {proyecto} ' for termino in (
-        'techo', 'techumbre', 'cubierta', 'policarbonato',
-    )):
-        return resolver_proyecto_techumbre(
+    if (
+        datos.get('_proyecto_estandar') is True
+        or datos.get('_proyecto_integral') is True
+    ):
+        return resolver_proyecto_generico(
             datos,
             buscar_productos=lambda consulta: _buscar_productos(consulta, limite=60),
             producto_publico=_producto_publico,
@@ -3926,8 +3939,8 @@ def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
         'productos': [],
         'maestros': [],
         'sugerencias': [
+            '¿Qué herramientas necesito para este proyecto?',
             'Muéstrame alternativas más económicas',
-            'Quiero cambiar el material principal',
             'Volver al resumen del proyecto',
         ],
     }
@@ -4122,15 +4135,44 @@ def _comparar_alternativas_economicas(
             'productos': items,
             'maestros': [],
             'sugerencias': [
+                '¿Por qué elegiste estos materiales?',
+                '¿Qué herramientas necesito para este proyecto?',
                 'Comparar resistencia y colores',
                 'Volver al resumen del proyecto',
             ],
         }
 
+    # En propuestas extensas se comparan solamente materiales seleccionados,
+    # no herramientas, seguridad ni elementos opcionales. Además se conserva
+    # como máximo un producto por etapa para evitar decenas de búsquedas
+    # redundantes en una sola respuesta rápida.
+    productos_comparables = []
+    roles_usados = set()
+    for producto in productos:
+        detalle = detalles.get(producto.pk, {})
+        rol = _texto_normalizado(detalle.get('rol') or producto.categoria)
+        if (
+            detalle.get('es_opcional')
+            or detalle.get('incluido_en_total') is False
+            or any(termino in rol for termino in (
+                'herramienta', 'seguridad', 'proteccion', 'alternativa',
+            ))
+        ):
+            continue
+        clave_rol = rol or f'producto-{producto.pk}'
+        if clave_rol in roles_usados:
+            continue
+        productos_comparables.append(producto)
+        roles_usados.add(clave_rol)
+        if len(productos_comparables) >= 8:
+            break
+    if not productos_comparables:
+        productos_comparables = productos[:8]
+
     lineas = []
     alternativas = []
     alternativas_usadas = set()
-    for producto in productos:
+    for producto in productos_comparables:
         candidatos = [
             candidato for candidato in _buscar_productos(producto.nombre, limite=20)
             if candidato.pk != producto.pk
@@ -4171,9 +4213,9 @@ def _comparar_alternativas_economicas(
         'productos': alternativas,
         'maestros': [],
         'sugerencias': [
+            '¿Por qué elegiste estos materiales?',
+            '¿Qué herramientas necesito para este proyecto?',
             'Volver al resumen del proyecto',
-            'Comparar por durabilidad',
-            'Mantener los productos originales',
         ],
     }
 
@@ -4900,6 +4942,41 @@ def _resolver_total_contextual(historial):
     }
 
 
+def _resolver_resumen_contextual(historial):
+    """Recupera la última propuesta sin volver a interpretarla con Gemini."""
+    for item in reversed(historial):
+        if item.get('role') != 'assistant':
+            continue
+        contenido = str(item.get('content') or '').strip()
+        if any(marca in contenido.upper() for marca in (
+            'PROPUESTA ESTÁNDAR PARA TU PROYECTO',
+            'PRODUCTOS POR ETAPA',
+            'MATERIALES Y PARA QUÉ SE USAN',
+            'RESULTADO\nENCONTRÉ',
+        )):
+            return {
+                'tipo': 'resumen_proyecto',
+                'mensaje': contenido,
+                'productos': [],
+                'maestros': [],
+                'sugerencias': [
+                    '¿Por qué elegiste estos materiales?',
+                    '¿Qué herramientas necesito para este proyecto?',
+                    'Muéstrame alternativas más económicas',
+                ],
+            }
+    return {
+        'tipo': 'seguimiento_proyecto',
+        'mensaje': (
+            'No encontré un resumen anterior completo en esta conversación. '
+            'Describe el proyecto que deseas retomar y conservaré su contexto.'
+        ),
+        'productos': [],
+        'maestros': [],
+        'sugerencias': ['Describir el proyecto nuevamente'],
+    }
+
+
 def _resolver_accion_seguimiento(mensaje, productos_contexto):
     """Resuelve botones de seguimiento sin reinterpretar el proyecto completo."""
     if not productos_contexto:
@@ -5132,6 +5209,7 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             'productos': herramientas,
             'maestros': [],
             'sugerencias': [
+                '¿Por qué elegiste estos materiales?',
                 'Volver al resumen del proyecto',
                 '¿Qué maestro realiza este trabajo?',
             ],
@@ -5176,6 +5254,7 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             if any(termino in contexto for termino in terminos):
                 especialidades.append(especialidad)
         especialidades = list(dict.fromkeys(especialidades))[:3]
+        maestros_relacionados = []
         if especialidades:
             principal = especialidades[0]
             apoyos = especialidades[1:]
@@ -5195,6 +5274,39 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
                 f'{complemento} Antes de contratar, confirma experiencia en el tipo de '
                 'material y trabajo mostrado.'
             )
+            # Una techumbre no puede asignarse a un oficio distinto solo para
+            # llenar la respuesta. Se muestran perfiles actuales de apoyo
+            # únicamente cuando sus especialidades se desprenden de los
+            # materiales del proyecto (por ejemplo, estructura de madera).
+            if principal == 'Techumbre':
+                perfiles_usados = set()
+                techumbristas = buscar_maestros('Techumbre', None, limite=5)
+                for maestro in techumbristas:
+                    if maestro['id'] not in perfiles_usados:
+                        maestros_relacionados.append(maestro)
+                        perfiles_usados.add(maestro['id'])
+                for especialidad_apoyo in apoyos:
+                    for maestro in buscar_maestros(
+                        especialidad_apoyo, None, limite=5,
+                    ):
+                        if maestro['id'] not in perfiles_usados:
+                            maestro = dict(maestro)
+                            maestro['rol_en_proyecto'] = (
+                                f'Apoyo de {especialidad_apoyo}; no reemplaza al '
+                                'especialista en Techumbre.'
+                            )
+                            maestros_relacionados.append(maestro)
+                            perfiles_usados.add(maestro['id'])
+                if not techumbristas:
+                    mensaje_respuesta += (
+                        ' Actualmente no hay un perfil disponible registrado como '
+                        'especialista en Techumbre.'
+                    )
+                if maestros_relacionados and apoyos:
+                    mensaje_respuesta += (
+                        ' Los perfiles mostrados corresponden solamente a etapas de '
+                        'apoyo y no sustituyen al techumbrista.'
+                    )
             sugerencias = [
                 *(f'Buscar maestro de {especialidad}' for especialidad in especialidades),
                 '¿Qué debo consultar antes de contratarlo?',
@@ -5210,7 +5322,7 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             'tipo': 'seguimiento_proyecto',
             'mensaje': mensaje_respuesta,
             'productos': [],
-            'maestros': [],
+            'maestros': maestros_relacionados,
             'sugerencias': sugerencias,
         }
     pide_alternativas = any(frase in texto for frase in (
@@ -5391,6 +5503,12 @@ def procesar_consulta(
         mensaje,
         productos_contexto or [],
     )
+    if re.search(
+        r'\b(?:volver|regresar|mostrar|muestrame|ver)\b.{0,30}'
+        r'\b(?:resumen|propuesta|proyecto)\b',
+        texto_actual,
+    ):
+        return _resolver_resumen_contextual(historial)
     if flujo_natural == 'total':
         return _resolver_total_contextual(historial)
     mensaje_economico = (
@@ -5537,7 +5655,11 @@ def procesar_consulta(
                 *(interpretacion.get('herramientas_proyecto') or []),
                 *(propuesta_completa.get('herramientas_proyecto') or []),
             ]))[:3]
-            propuesta_completa['modo_orientacion'] = 'propuesta_estandar'
+            propuesta_completa['modo_orientacion'] = (
+                'propuesta_estandar'
+                if interpretacion.get('_proyecto_estandar') is True
+                else 'propuesta_directa'
+            )
             interpretacion = _normalizar_preferencias_extraidas(
                 propuesta_completa,
                 mensaje,

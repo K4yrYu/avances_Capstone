@@ -416,7 +416,33 @@ def _preguntas_guiadas(faltantes, proyecto=''):
         pregunta = faltante.strip().lstrip("¿").rstrip("?.")
         clave = _normalizar(pregunta)
         lineas.extend(["", f"{indice}. {pregunta.upper()}"])
-        if (
+        if "quincho" in contexto and "base existente" in clave:
+            lineas.extend([
+                "• Indica si ya existe un radier o losa firme donde se construirá.",
+                "• Si se hará desde terreno natural, escribe “no existe radier”.",
+            ])
+        elif "quincho" in contexto and "diseno general" in clave:
+            lineas.extend([
+                "• Abierto: sin cerramientos laterales permanentes.",
+                "• Semiabierto: con uno o más lados protegidos.",
+                "• Cerrado: con cerramientos en todo el perímetro.",
+            ])
+        elif "quincho" in contexto and "altura aproximada" in clave:
+            lineas.extend([
+                "• Indica la altura aproximada en metros; por ejemplo: 2,4 m.",
+                "• Si variará por la pendiente, informa la altura menor y la mayor.",
+            ])
+        elif (
+            "quincho" in contexto
+            and "estructura" in clave
+            and "cubierta" in clave
+        ):
+            lineas.extend([
+                "• Indica si prefieres estructura de madera o metal.",
+                "• Para la cubierta puedes elegir zinc, policarbonato o tejas.",
+                "• Si no tienes preferencia, escribe “elige tú ambos materiales”.",
+            ])
+        elif (
             any(termino in contexto for termino in ("mueble", "gabinete"))
             and "tipo" in clave
             and "mueble" in clave
@@ -534,6 +560,36 @@ def _sugerencias_respuesta(proyecto, faltantes):
     """Entrega ejemplos de respuesta útiles, nunca acciones ajenas al cuestionario."""
     contexto = _normalizar(proyecto)
     claves = " ".join(_normalizar(item) for item in faltantes)
+
+    if "quincho" in contexto:
+        if len(faltantes) > 1:
+            return [
+                (
+                    "Mide 3 × 4 m; existe un radier firme; será semiabierto; "
+                    "tendrá 2,4 m de altura; estructura metálica y cubierta de zinc"
+                ),
+                (
+                    "Mide 3 × 4 m; no existe radier; será abierto; tendrá 2,4 m; "
+                    "elige tú la estructura y la cubierta"
+                ),
+            ]
+        if any(termino in claves for termino in ("ancho", "largo")):
+            return ["El quincho medirá 3 × 4 m"]
+        if "base existente" in claves:
+            return [
+                "Ya existe un radier firme y reutilizable",
+                "Se construirá desde terreno natural; no existe radier",
+            ]
+        if "diseno general" in claves:
+            return ["Será abierto", "Será semiabierto", "Será cerrado"]
+        if "altura aproximada" in claves:
+            return ["Tendrá aproximadamente 2,4 m de altura"]
+        if "estructura" in claves and "cubierta" in claves:
+            return [
+                "Estructura metálica y cubierta de zinc",
+                "Estructura de madera y cubierta de policarbonato",
+                "Elige tú ambos materiales",
+            ]
 
     if any(termino in contexto for termino in ("techo", "techumbre", "cubierta")):
         partes = []
@@ -669,7 +725,6 @@ def _extraer_tareas(datos):
     es_propuesta_estandar = (
         datos.get("_proyecto_estandar") is True
         or datos.get("_proyecto_integral") is True
-        or datos.get("modo_orientacion") == "propuesta_estandar"
     )
     herramientas = (
         _lista_textos(datos.get("herramientas_proyecto"), 8, 80)
@@ -777,6 +832,127 @@ def _ajustar_radier_a_condiciones_informadas(datos, tareas, modo_estandar):
             "bases": {},
         })
     return tareas_ajustadas[:MAX_TAREAS]
+
+
+def _ajustar_cuestionario_quincho(datos):
+    """Conserva un cuestionario breve y completo para quinchos no estandar.
+
+    La zona de fuego forma parte de la propuesta base del quincho y no se
+    pregunta. Se muestran juntos todos los datos realmente pendientes para que
+    el cliente pueda responderlos en un solo mensaje. En turnos posteriores
+    desaparecen los requisitos ya reconocidos.
+    """
+    contexto = _normalizar(" ".join([
+        datos.get("proyecto") or "",
+        datos.get("_contexto_usuario") or "",
+    ]))
+    es_construccion_quincho = (
+        "quincho" in contexto
+        and any(termino in contexto for termino in (
+            "construir", "construccion", "hacer un quincho",
+            "armar", "levantar", "desde cero",
+        ))
+        and not any(termino in contexto for termino in (
+            "reparar quincho", "arreglar quincho", "cambiar quincho",
+        ))
+    )
+    if not es_construccion_quincho:
+        return
+
+    datos["_quincho_zona_fuego_estandar"] = True
+
+    try:
+        dimensiones = (
+            Decimal(str(datos.get("ancho_cm") or 0)) > 0
+            and Decimal(str(datos.get("fondo_cm") or 0)) > 0
+        )
+    except (ArithmeticError, TypeError, ValueError):
+        dimensiones = False
+
+    if any(termino in contexto for termino in (
+        "radier existente", "sobre radier", "base de hormigon",
+        "base es de hormigon", "losa existente",
+    )):
+        base = "radier_existente"
+    elif any(termino in contexto for termino in (
+        "terreno natural", "suelo de tierra", "sobre tierra",
+        "sin radier", "no hay radier", "no existe radier",
+        "no exite radier", "desde cero", "desde 0",
+    )):
+        base = "terreno_natural"
+    else:
+        base = ""
+
+    if "semiabierto" in contexto or "semi abierto" in contexto:
+        diseno = "semiabierto"
+    elif "cerrado" in contexto:
+        diseno = "cerrado"
+    elif re.search(r"\babierto\b", contexto):
+        diseno = "abierto"
+    else:
+        diseno = ""
+
+    try:
+        altura_cm = max(0, int(datos.get("alto_cm") or 0))
+    except (TypeError, ValueError):
+        altura_cm = 0
+    if not altura_cm:
+        patrones_altura = (
+            r"(?:altura|altira|alto)(?:\s+aproximad[ao])?\s*(?:de|es|:)?\s*"
+            r"(\d+(?:[.,]\d+)?)\s*(m|metros?|cm)\b",
+            r"(\d+(?:[.,]\d+)?)\s*(m|metros?|cm)\s+de\s+(?:altura|altira|alto)\b",
+        )
+        for patron in patrones_altura:
+            coincidencia = re.search(patron, contexto)
+            if not coincidencia:
+                continue
+            valor = Decimal(coincidencia.group(1).replace(",", "."))
+            altura_cm = int(valor if coincidencia.group(2) == "cm" else valor * 100)
+            datos["alto_cm"] = altura_cm
+            break
+
+    material_estructura = _normalizar(datos.get("material_estructura"))
+    if material_estructura not in {"madera", "metal", "hormigon", "otra"}:
+        if re.search(r"estructura.{0,25}\bmadera\b", contexto):
+            material_estructura = "madera"
+        elif re.search(r"estructura.{0,25}\b(?:metal|acero|metalica)\b", contexto):
+            material_estructura = "metal"
+        else:
+            material_estructura = ""
+    tipo_cubierta = _normalizar(datos.get("tipo_cubierta"))
+    if not tipo_cubierta:
+        if "policarbonato" in contexto:
+            tipo_cubierta = "policarbonato"
+        elif re.search(r"\b(?:zinc|plancha galvanizada)\b", contexto):
+            tipo_cubierta = "zinc"
+        elif re.search(r"\btejas?\b", contexto):
+            tipo_cubierta = "tejas"
+    delega_materiales = bool(
+        datos.get("_delega_eleccion")
+        or re.search(r"\b(?:elige tu|recomienda|recomiendame)\b", contexto)
+    )
+
+    datos["_quincho_base"] = base
+    datos["_quincho_diseno"] = diseno
+    datos["_quincho_altura_cm"] = altura_cm
+    datos["_quincho_material_estructura"] = material_estructura
+    datos["_quincho_tipo_cubierta"] = tipo_cubierta
+
+    faltantes = []
+    if not dimensiones:
+        faltantes.append("Ancho y largo del quincho")
+    if not base:
+        faltantes.append("Base existente del quincho")
+    if not diseno:
+        faltantes.append("Diseño general del quincho")
+    if not altura_cm:
+        faltantes.append("Altura aproximada del quincho")
+    if not delega_materiales and not (material_estructura and tipo_cubierta):
+        faltantes.append("Material de la estructura y cubierta del quincho")
+
+    # Al volver a interpretar la conversación, los datos ya reconocidos
+    # desaparecen naturalmente y solo se repiten los requisitos pendientes.
+    datos["datos_faltantes_proyecto"] = faltantes
 
 
 def _ajustar_proyecto_ceramica(datos, tareas):
@@ -1213,7 +1389,6 @@ def resolver_proyecto_generico(
         and (
             datos.get('_proyecto_estandar') is True
             or datos.get('_proyecto_integral') is True
-            or datos.get('modo_orientacion') == 'propuesta_estandar'
             or 'estandar' in _normalizar(proyecto)
         )
     )
@@ -1223,7 +1398,6 @@ def resolver_proyecto_generico(
         and (
             datos.get('_proyecto_estandar') is True
             or datos.get('_proyecto_integral') is True
-            or datos.get('modo_orientacion') == 'propuesta_estandar'
             or 'estandar' in _normalizar(proyecto)
         )
     )
@@ -1233,7 +1407,6 @@ def resolver_proyecto_generico(
         and (
             datos.get('_proyecto_estandar') is True
             or datos.get('_proyecto_integral') is True
-            or datos.get('modo_orientacion') == 'propuesta_estandar'
             or 'estandar' in _normalizar(proyecto)
         )
     )
@@ -1253,7 +1426,6 @@ def resolver_proyecto_generico(
         ))
         and (
             datos.get('_proyecto_estandar') is True
-            or datos.get('modo_orientacion') == 'propuesta_estandar'
             or 'estandar' in contexto_proyecto
         )
     )
@@ -1728,11 +1900,11 @@ def resolver_proyecto_generico(
                 "nombre": "Herramientas recomendadas",
                 "busquedas": herramientas_estandar,
             })
-    modo_estandar = (
-        datos.get("_proyecto_estandar") is True
-        or datos.get("_proyecto_integral") is True
-        or datos.get("modo_orientacion") == "propuesta_estandar"
-    )
+    # El modo estandar omite cuestionarios y aplica supuestos, por lo que solo
+    # puede activarlo una solicitud explicita ya validada por Django. Un
+    # proyecto integral puede seguir usando un catalogo completo sin afirmar
+    # que el cliente pidio una propuesta estandar.
+    modo_estandar = datos.get("_proyecto_estandar") is True
     contexto_reparacion_mueble = _normalizar(
         f"{proyecto} {datos.get('_contexto_usuario') or ''} "
         + " ".join(
@@ -1768,6 +1940,7 @@ def resolver_proyecto_generico(
     tareas = _ajustar_radier_a_condiciones_informadas(
         datos, tareas, modo_estandar,
     )
+    _ajustar_cuestionario_quincho(datos)
     tareas = _ajustar_proyecto_ceramica(datos, tareas)
     if not proyecto or not tareas:
         return {
@@ -1785,7 +1958,7 @@ def resolver_proyecto_generico(
         }
 
     datos_faltantes_iniciales = _lista_textos(
-        datos.get("datos_faltantes_proyecto"), 4, 100
+        datos.get("datos_faltantes_proyecto"), 8, 100
     )
     # Incluso una propuesta cerámica solicitada como "estándar" necesita
     # conocer el ambiente: una pieza para baño, cocina, interior seco o
@@ -2147,7 +2320,7 @@ def resolver_proyecto_generico(
             if _normalizar(tarea["nombre"]) == "cubierta":
                 accesorios_cubierta = {
                     "perfil", "union", "cierre", "tornillo", "golilla",
-                    "sellador", "silicona", "cinta", "canaleta", "bajada",
+                    "clavo", "sellador", "silicona", "cinta", "canaleta", "bajada",
                 }
                 candidatos = [
                     candidato for candidato in candidatos
@@ -2772,16 +2945,16 @@ def resolver_proyecto_generico(
     if not datos_faltantes:
         sugerencias.extend([
             "¿Por qué elegiste estos materiales?",
-            "Muéstrame alternativas más económicas",
             "Ajustar medidas o materiales del proyecto",
             "¿Qué herramientas necesito para este proyecto?",
+            "¿Algún maestro puede ayudarme con este proyecto?",
         ])
     else:
         sugerencias.append("Ajustar el proyecto")
 
     return {
         "tipo": "plan_proyecto_generico",
-        "modo_orientacion": datos.get("modo_orientacion") or (
+        "modo_orientacion": (
             "propuesta_estandar" if modo_estandar else "propuesta_directa"
         ),
         "mensaje": "\n\n".join(partes),
@@ -2797,6 +2970,178 @@ def resolver_proyecto_generico(
         "calculo_orientativo": True,
         "sugerencias": sugerencias[:4],
     }
+
+
+def _familia_cubierta_estandar(texto):
+    """Clasifica solo las familias de cubierta soportadas por SFI."""
+    contexto = _normalizar(texto)
+    if "policarbonato" in contexto:
+        return "policarbonato"
+    if any(termino in contexto for termino in ("zinc", "galvanizada", "metalica")):
+        return "zinc"
+    if "teja asfaltica" in contexto or "tejas asfalticas" in contexto:
+        return "teja_asfaltica"
+    return ""
+
+
+def _tareas_techumbre_estandar(familia):
+    """Plantillas aisladas para no delegar una techumbre estandar a Gemini."""
+    drenaje = {
+        "nombre": "Evacuacion de aguas lluvia",
+        "busquedas": [
+            "canaleta galvanizada aguas lluvia 125 mm",
+            "bajada aguas lluvia PVC 75 mm",
+        ],
+        "usos_materiales": [
+            {
+                "busqueda": "canaleta galvanizada aguas lluvia 125 mm",
+                "uso": "Recoger el agua que escurre desde el borde de la cubierta.",
+            },
+            {
+                "busqueda": "bajada aguas lluvia PVC 75 mm",
+                "uso": "Conducir el agua desde la canaleta hasta una descarga adecuada.",
+            },
+        ],
+        "bases_calculo": ["referencial", "referencial"],
+    }
+    if familia == "policarbonato":
+        return [
+            {
+                "nombre": "Cubierta de policarbonato",
+                "busquedas": ["policarbonato alveolar 6 mm 1,05 x 2,90 m"],
+                "usos_materiales": [{
+                    "busqueda": "policarbonato alveolar 6 mm 1,05 x 2,90 m",
+                    "uso": "Formar la cubierta con los alveolos orientados en el sentido de la pendiente.",
+                }],
+                "bases_calculo": ["superficie_cubierta"],
+            },
+            {
+                "nombre": "Fijacion compatible",
+                "busquedas": ["tornillo para policarbonato con golilla pack 100"],
+                "usos_materiales": [{
+                    "busqueda": "tornillo para policarbonato con golilla pack 100",
+                    "uso": "Fijar la plancha sin reemplazar la golilla compatible por una fijacion generica.",
+                }],
+                "bases_calculo": ["referencial"],
+            },
+            {
+                "nombre": "Perfiles de union y cierre",
+                "busquedas": [
+                    "perfil H union policarbonato alveolar 6 mm",
+                    "perfil U cierre policarbonato alveolar 6 mm",
+                ],
+                "usos_materiales": [
+                    {
+                        "busqueda": "perfil H union policarbonato alveolar 6 mm",
+                        "uso": "Unir planchas contiguas respetando la dilatacion del sistema.",
+                    },
+                    {
+                        "busqueda": "perfil U cierre policarbonato alveolar 6 mm",
+                        "uso": "Proteger y terminar los bordes expuestos de las planchas.",
+                    },
+                ],
+                "bases_calculo": ["referencial", "referencial"],
+            },
+            {
+                "nombre": "Cierre de alveolos",
+                "busquedas": [
+                    "cinta de aluminio DVP 25 mm gris 10 m",
+                    "cinta Filter Tape DVP 25 mm gris 11 m",
+                ],
+                "usos_materiales": [
+                    {
+                        "busqueda": "cinta de aluminio DVP 25 mm gris 10 m",
+                        "uso": "Cerrar el extremo superior de los alveolos contra agua y suciedad.",
+                    },
+                    {
+                        "busqueda": "cinta Filter Tape DVP 25 mm gris 11 m",
+                        "uso": "Proteger el extremo inferior permitiendo evacuar la condensacion.",
+                    },
+                ],
+                "bases_calculo": ["referencial", "referencial"],
+            },
+            {
+                "nombre": "Sellado complementario",
+                "busquedas": ["sellador neutro compatible con policarbonato"],
+                "usos_materiales": [{
+                    "busqueda": "sellador neutro compatible con policarbonato",
+                    "uso": "Complementar encuentros puntuales; no reemplaza perfiles, cintas ni holguras de dilatacion.",
+                }],
+                "bases_calculo": ["referencial"],
+            },
+            drenaje,
+        ]
+    if familia == "zinc":
+        return [
+            {
+                "nombre": "Cubierta de zinc",
+                "busquedas": ["plancha zinc acanalado 0,35 mm x 3 m"],
+                "usos_materiales": [{
+                    "busqueda": "plancha zinc acanalado 0,35 mm x 3 m",
+                    "uso": "Formar la cubierta metalica respetando traslapos y pendiente de instalacion.",
+                }],
+                "bases_calculo": ["superficie_cubierta"],
+            },
+            {
+                "nombre": "Fijacion de la cubierta",
+                "busquedas": ["tornillo techo autoperforante 12 x 2 pulgadas pack 100"],
+                "usos_materiales": [{
+                    "busqueda": "tornillo techo autoperforante 12 x 2 pulgadas pack 100",
+                    "uso": "Fijar la plancha a una estructura compatible con sello para intemperie.",
+                }],
+                "bases_calculo": ["referencial"],
+            },
+            {
+                "nombre": "Traslapos y remates",
+                "busquedas": ["cinta butilica impermeable", "cumbrera galvanizada"],
+                "usos_materiales": [
+                    {
+                        "busqueda": "cinta butilica impermeable",
+                        "uso": "Sellar traslapos y encuentros indicados por el sistema de cubierta.",
+                    },
+                    {
+                        "busqueda": "cumbrera galvanizada",
+                        "uso": "Cerrar el encuentro superior de una techumbre a dos aguas.",
+                    },
+                ],
+                "bases_calculo": ["referencial", "referencial"],
+            },
+            drenaje,
+        ]
+    if familia == "teja_asfaltica":
+        return [
+            {
+                # El nombre exacto "Cubierta" activa el filtro que excluye
+                # clavos, perfiles y sellos de la seleccion principal.
+                "nombre": "Cubierta",
+                "busquedas": ["teja asfaltica"],
+                "usos_materiales": [{
+                    "busqueda": "teja asfaltica",
+                    "uso": "Formar la terminacion impermeable sobre una base continua compatible.",
+                }],
+                "bases_calculo": ["superficie_cubierta"],
+            },
+            {
+                "nombre": "Base impermeable",
+                "busquedas": ["membrana impermeable para techumbre"],
+                "usos_materiales": [{
+                    "busqueda": "membrana impermeable para techumbre",
+                    "uso": "Proteger la base continua antes de instalar las tejas.",
+                }],
+                "bases_calculo": ["superficie_cubierta"],
+            },
+            {
+                "nombre": "Fijacion especifica",
+                "busquedas": ["clavo terrano para teja asfaltica 1 pulgada"],
+                "usos_materiales": [{
+                    "busqueda": "clavo terrano para teja asfaltica 1 pulgada",
+                    "uso": "Fijar las tejas en la posicion y cantidad indicadas por su fabricante.",
+                }],
+                "bases_calculo": ["referencial"],
+            },
+            drenaje,
+        ]
+    return []
 
 
 def resolver_proyecto_techumbre(
@@ -2815,6 +3160,7 @@ def resolver_proyecto_techumbre(
         alto_cm = max(0, int(datos.get("alto_cm") or 0))
     except (TypeError, ValueError):
         ancho_cm = largo_cm = alto_cm = 0
+    modo_estandar = datos.get("_proyecto_estandar") is True
     material = _normalizar(datos.get("material_estructura"))
     estado = _normalizar(datos.get("estado_estructura"))
     cubierta = _texto_seguro(datos.get("tipo_cubierta"), 100)
@@ -2824,7 +3170,7 @@ def resolver_proyecto_techumbre(
     cubierta_generica = "policarbonato" in texto and not re.search(
         r"\b(?:alveolar|ondulad[oa]|compact[oa]|\d+(?:[.,]\d+)?\s*mm)\b", texto
     )
-    if cubierta_generica and datos.get("_autoriza_recomendacion_cubierta"):
+    if cubierta_generica and (datos.get("_autoriza_recomendacion_cubierta") or modo_estandar):
         candidatas = [
             producto for producto in buscar_productos("policarbonato")
             if producto.stock > 0
@@ -2856,17 +3202,37 @@ def resolver_proyecto_techumbre(
             faltantes.append(texto_faltante)
             claves_faltantes.add(clave)
 
-    if not ancho_cm or not largo_cm:
+    familia_estandar = _familia_cubierta_estandar(texto) if modo_estandar else ""
+    if modo_estandar and not familia_estandar:
+        return {
+            "tipo": "aclaracion_proyecto",
+            "mensaje": (
+                "PROYECTO\nTechumbre estandar por material\n\n"
+                "ANTES DE RECOMENDAR PRODUCTOS\n"
+                "Indica el material principal de la cubierta: policarbonato, zinc "
+                "o teja asfaltica. Cada sistema utiliza fijaciones, uniones y "
+                "sellos diferentes, por lo que no elegire uno sin tu confirmacion."
+            ),
+            "productos": [],
+            "maestros": [],
+            "sugerencias": [
+                "Quiero una techumbre estandar de policarbonato",
+                "Quiero una techumbre estandar de zinc",
+                "Quiero una techumbre estandar de teja asfaltica",
+            ],
+        }
+
+    if not modo_estandar and (not ancho_cm or not largo_cm):
         agregar_faltante("largo y ancho del área a cubrir")
     material_faltante = material not in {"madera", "metal", "hormigon", "otra"}
     estado_faltante = estado not in {"nueva", "reutilizable", "reparar", "reemplazar"}
-    if material_faltante and estado_faltante:
+    if not modo_estandar and material_faltante and estado_faltante:
         agregar_faltante("material y estado de la estructura de apoyo")
-    elif material_faltante:
+    elif not modo_estandar and material_faltante:
         agregar_faltante("material de la estructura de apoyo")
-    elif estado_faltante:
+    elif not modo_estandar and estado_faltante:
         agregar_faltante("estado de la estructura de apoyo")
-    elif estado == "nueva" and not alto_cm:
+    elif not modo_estandar and estado == "nueva" and not alto_cm:
         agregar_faltante("altura de la estructura nueva")
     if not cubierta:
         agregar_faltante("material, formato y espesor de la cubierta")
@@ -2919,8 +3285,41 @@ def resolver_proyecto_techumbre(
         "metal": "tornillo autoperforante metal",
         "hormigon": "fijacion para hormigon",
         "otra": "fijacion para techumbre",
-    }[material]
+    }.get(material, "fijacion para techumbre")
     datos_plan = dict(datos)
+    if modo_estandar:
+        datos_plan["tareas_proyecto"] = _tareas_techumbre_estandar(familia_estandar)
+        datos_plan["material_principal_proyecto"] = ""
+        especialidades = ["Techumbre"]
+        if material == "madera":
+            especialidades.append("Carpinteria")
+        elif material == "metal":
+            especialidades.append("Soldadura")
+        elif material == "hormigon":
+            especialidades.append("Albanileria")
+        datos_plan["especialidades_proyecto"] = especialidades
+        datos_plan["datos_faltantes_proyecto"] = []
+        datos_plan["herramientas_proyecto"] = []
+        datos_plan["incluir_herramientas"] = False
+        resultado = resolver_proyecto_generico(
+            datos_plan,
+            buscar_productos=buscar_productos,
+            producto_publico=producto_publico,
+            buscar_maestros=buscar_maestros,
+            resolver_especialidad=resolver_especialidad,
+        )
+        if not ancho_cm or not largo_cm:
+            supuesto = (
+                "SUPUESTOS DE LA TECHUMBRE ESTANDAR\n"
+                "La propuesta define un sistema compatible por material, pero no "
+                "inventa cantidades sin ancho y largo. La estructura, pendiente, "
+                "apoyos y drenaje deben verificarse en terreno antes de comprar."
+            )
+            bloques = resultado.get("mensaje", "").split("\n\n")
+            bloques.insert(1, supuesto)
+            resultado["mensaje"] = "\n\n".join(bloques)
+        return resultado
+
     tareas_techumbre = []
     if estado == "nueva":
         consulta_estructura = {

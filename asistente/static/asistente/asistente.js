@@ -36,6 +36,8 @@
     let history = [];
     let selectedQueryMode = "auto";
     let consultaEnCurso = false;
+    let conversationGeneration = 0;
+    let activeRequestController = null;
     let conversationEntries = [];
     let calculations = new Map();
     let cartItems = new Map();
@@ -325,13 +327,37 @@
       return article;
     }
 
-    function loadingMessages(message, queryMode) {
+    function masterSearchIsActive(recentHistory) {
+      const latestAssistantMessage = [...(recentHistory || [])]
+        .reverse()
+        .find(entry => entry.role === "assistant");
+      const content = String(latestAssistantMessage?.content || "").toLocaleLowerCase("es");
+      return (
+        /(?:maestro|maestra|profesional)/.test(content)
+        && /(?:buscar por comuna|ver todos los disponibles|en qué comuna|que comuna)/.test(content)
+      );
+    }
+
+    function loadingMessages(message, queryMode, masterFlowActive = false) {
       const normalized = String(message || "").toLocaleLowerCase("es");
       const commonEnd = [
         "Comprobando stock y compatibilidad…",
         "Preparando la respuesta…",
         "Esta consulta requiere algunas comprobaciones adicionales…",
       ];
+
+      if (
+        masterFlowActive
+        || /\b(?:maestro|maestra|profesional|carpintero|pintor|gasfíter|gasfiter|electricista|ceramista)\b/.test(normalized)
+      ) {
+        return [
+          "Buscando maestros disponibles para tu proyecto…",
+          "Revisando especialidad y disponibilidad…",
+          "Buscando maestros disponibles para tu proyecto…",
+          "Revisando especialidad y disponibilidad…",
+          "Preparando los profesionales encontrados…",
+        ];
+      }
 
       if (queryMode === "producto") {
         return ["Entendiendo tu búsqueda…", "Revisando el catálogo…", ...commonEnd];
@@ -351,11 +377,11 @@
       return ["Entendiendo tu consulta…", "Revisando el catálogo SFI…", ...commonEnd];
     }
 
-    function addTyping(message, queryMode) {
+    function addTyping(message, queryMode, masterFlowActive = false) {
       const article = addMessage("assistant", "");
       article.dataset.typing = "true";
       const content = article.querySelector(".message-content");
-      const messages = loadingMessages(message, queryMode);
+      const messages = loadingMessages(message, queryMode, masterFlowActive);
       content.innerHTML = (
         '<div class="typing-state" role="status" aria-live="polite">'
         + '<span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>'
@@ -488,6 +514,9 @@
 
     async function askAssistant(message) {
       if (consultaEnCurso) return;
+      const requestGeneration = conversationGeneration;
+      const requestController = new AbortController();
+      activeRequestController = requestController;
       consultaEnCurso = true;
       setSuggestionsDisabled(true);
       errorBox.hidden = true;
@@ -504,12 +533,17 @@
       const queryModeForRequest = selectedQueryMode;
       selectedQueryMode = "auto";
       history.push({role: "user", content: message});
-      const typing = addTyping(message, queryModeForRequest);
+      const typing = addTyping(
+        message,
+        queryModeForRequest,
+        masterSearchIsActive(historyForRequest),
+      );
       submit.disabled = true;
       submit.querySelector("span").textContent = "Pensando...";
       try {
         const response = await fetch(root.dataset.apiUrl, {
           method: "POST",
+          signal: requestController.signal,
           credentials: "same-origin",
           headers: {"Content-Type": "application/json", Accept: "application/json", "X-CSRFToken": getCookie("csrftoken")},
           body: JSON.stringify({
@@ -521,6 +555,7 @@
           }),
         });
         const data = await response.json().catch(() => ({}));
+        if (requestGeneration !== conversationGeneration) return;
         if (!response.ok) {
           console.error("Error detallado del asistente SFI:", response.status, data);
           throw new Error("El asistente no está disponible en este momento.");
@@ -538,6 +573,7 @@
         if (newQueryTip) newQueryTip.hidden = false;
       } catch (error) {
         typing.remove();
+        if (error.name === "AbortError" || requestGeneration !== conversationGeneration) return;
         if (
           history.length
           && history[history.length - 1].role === "user"
@@ -551,6 +587,8 @@
         errorBox.textContent = messageText;
         errorBox.hidden = false;
       } finally {
+        if (activeRequestController === requestController) activeRequestController = null;
+        if (requestGeneration !== conversationGeneration) return;
         consultaEnCurso = false;
         submit.disabled = false;
         setSuggestionsDisabled(false);
@@ -657,6 +695,10 @@
 
     clear.addEventListener("click", () => {
       stopSpeech();
+      conversationGeneration += 1;
+      activeRequestController?.abort();
+      activeRequestController = null;
+      consultaEnCurso = false;
       history = [];
       conversationEntries = [];
       sessionStorage.removeItem(conversationStorageKey);
@@ -666,8 +708,12 @@
       messages.innerHTML = "";
       addMessage("assistant", "Hola, soy el asistente SFI. Cuéntame qué necesitas para tu proyecto.");
       restoreInitialSuggestions();
+      setSuggestionsDisabled(false);
       errorBox.hidden = true;
       if (newQueryTip) newQueryTip.hidden = true;
+      input.value = "";
+      submit.disabled = false;
+      submit.querySelector("span").textContent = "Enviar";
       input.focus();
     });
 

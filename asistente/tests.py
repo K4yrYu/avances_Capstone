@@ -3,7 +3,7 @@ import base64
 from unittest.mock import Mock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -13,10 +13,44 @@ from usuarios.models import Usuario
 from .services import procesar_configuracion_foto, procesar_consulta, resolver_interpretacion
 from .services.asistente_sfi import (
     _evaluar_alcance_proyecto,
+    _normalizar_preferencias_extraidas,
     _resolver_accion_seguimiento,
     _resolver_herramientas_iniciales,
     _resolver_proyecto,
+    _resolver_resumen_contextual,
 )
+
+
+class PrioridadModoEstandarTests(SimpleTestCase):
+    def test_gemini_no_activa_modo_estandar_sin_peticion_del_usuario(self):
+        datos = _normalizar_preferencias_extraidas(
+            {'modo_orientacion': 'propuesta_estandar'},
+            'Quiero construir un cobertizo de madera',
+            [],
+        )
+
+        self.assertFalse(datos['_proyecto_estandar'])
+        self.assertEqual(datos['modo_orientacion'], 'propuesta_directa')
+
+    def test_peticion_explicita_activa_modo_estandar(self):
+        datos = _normalizar_preferencias_extraidas(
+            {'modo_orientacion': 'propuesta_directa'},
+            'Quiero un cobertizo estandar de madera',
+            [],
+        )
+
+        self.assertTrue(datos['_proyecto_estandar'])
+        self.assertEqual(datos['modo_orientacion'], 'propuesta_estandar')
+
+    def test_seguimiento_conserva_modo_estandar_solicitado_antes(self):
+        datos = _normalizar_preferencias_extraidas(
+            {'modo_orientacion': 'propuesta_directa'},
+            'La estructura debe ser metalica',
+            [{'role': 'user', 'content': 'Quiero una bodega estandar'}],
+        )
+
+        self.assertTrue(datos['_proyecto_estandar'])
+        self.assertEqual(datos['modo_orientacion'], 'propuesta_estandar')
 from .serializers import ConsultaAsistenteSerializer
 from .services.cliente_gemini import cliente_gemini
 from .services.gemini import (
@@ -25,9 +59,160 @@ from .services.gemini import (
 )
 from .services.sinonimos_ferreteros import expandir_consulta
 from .services.planificador_proyectos import (
+    _ajustar_cuestionario_quincho,
     _ajustar_proyecto_ceramica,
+    _preguntas_guiadas,
     _producto_compatible_con_revestimiento_ceramico,
 )
+
+
+class CuestionarioQuinchoTests(SimpleTestCase):
+    def _datos(self, contexto, **extras):
+        datos = {
+            'proyecto': 'Construcción de quincho',
+            '_contexto_usuario': contexto,
+            'datos_faltantes_proyecto': ['dato genérico de Gemini'],
+        }
+        datos.update(extras)
+        _ajustar_cuestionario_quincho(datos)
+        return datos
+
+    def test_solicita_todos_los_datos_y_asume_zona_de_fuego(self):
+        datos = self._datos('Quiero hacer un quincho')
+
+        self.assertEqual(
+            datos['datos_faltantes_proyecto'],
+            [
+                'Ancho y largo del quincho',
+                'Base existente del quincho',
+                'Diseño general del quincho',
+                'Altura aproximada del quincho',
+                'Material de la estructura y cubierta del quincho',
+            ],
+        )
+        self.assertTrue(datos['_quincho_zona_fuego_estandar'])
+
+
+    def test_retira_datos_reconocidos_hasta_completar_cuestionario(self):
+        casos = (
+            (
+                'Quiero hacer un quincho de 3 x 4 m sobre un radier existente',
+                {'ancho_cm': 300, 'fondo_cm': 400},
+                [
+                    'Diseño general del quincho',
+                    'Altura aproximada del quincho',
+                    'Material de la estructura y cubierta del quincho',
+                ],
+            ),
+            (
+                'Quiero hacer un quincho de 3 x 4 m sobre un radier existente, semiabierto',
+                {'ancho_cm': 300, 'fondo_cm': 400},
+                [
+                    'Altura aproximada del quincho',
+                    'Material de la estructura y cubierta del quincho',
+                ],
+            ),
+            (
+                'Quiero hacer un quincho de 3 x 4 m sobre un radier existente, semiabierto, de 2,4 m de altura',
+                {'ancho_cm': 300, 'fondo_cm': 400},
+                ['Material de la estructura y cubierta del quincho'],
+            ),
+            (
+                'Quiero hacer un quincho de 3 x 4 m sobre un radier existente, semiabierto, de 2,4 m de altura, con estructura metálica y cubierta de zinc',
+                {'ancho_cm': 300, 'fondo_cm': 400},
+                [],
+            ),
+        )
+        for contexto, extras, esperado in casos:
+            with self.subTest(contexto=contexto):
+                datos = self._datos(contexto, **extras)
+                self.assertEqual(datos['datos_faltantes_proyecto'], esperado)
+
+    def test_pregunta_de_altura_no_repite_ancho_y_largo(self):
+        preguntas = ' '.join(_preguntas_guiadas(
+            ['Altura aproximada del quincho'],
+            'Construcción de quincho',
+        )).casefold()
+
+        self.assertIn('altura aproximada', preguntas)
+        self.assertNotIn('ancho × largo', preguntas)
+
+    def test_quincho_estandar_no_es_detenido_por_cuestionario(self):
+        datos = self._datos(
+            'Quiero un quincho estándar',
+            _proyecto_estandar=True,
+        )
+
+        self.assertEqual(
+            datos['datos_faltantes_proyecto'],
+            [
+                'Ancho y largo del quincho',
+                'Base existente del quincho',
+                'Diseño general del quincho',
+                'Altura aproximada del quincho',
+                'Material de la estructura y cubierta del quincho',
+            ],
+        )
+        self.assertTrue(datos['_quincho_zona_fuego_estandar'])
+
+    def test_reconoce_respuesta_cotidiana_con_error_ortografico(self):
+        datos = self._datos(
+            '3x4m, desde 0 no exite radier, con diseño abierto y una altira de 2m',
+            ancho_cm=300,
+            fondo_cm=400,
+        )
+
+        self.assertEqual(datos['_quincho_base'], 'terreno_natural')
+        self.assertEqual(datos['_quincho_diseno'], 'abierto')
+        self.assertEqual(datos['_quincho_altura_cm'], 200)
+        self.assertEqual(
+            datos['datos_faltantes_proyecto'],
+            ['Material de la estructura y cubierta del quincho'],
+        )
+
+
+class HistorialAsistenteSerializerTests(SimpleTestCase):
+    def test_acepta_una_propuesta_extensa_para_un_seguimiento(self):
+        serializer = ConsultaAsistenteSerializer(data={
+            'mensaje': 'Muéstrame alternativas más económicas',
+            'historial': [{
+                'role': 'assistant',
+                'content': 'Propuesta extensa ' + ('material disponible. ' * 350),
+            }],
+        })
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_rechaza_un_historial_total_excesivo(self):
+        serializer = ConsultaAsistenteSerializer(data={
+            'mensaje': 'Continuar',
+            'historial': [
+                {'role': 'assistant', 'content': 'x' * 10000}
+                for _ in range(13)
+            ],
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('historial', serializer.errors)
+
+    def test_volver_al_resumen_recupera_la_propuesta_sin_gemini(self):
+        resultado = _resolver_resumen_contextual([
+            {
+                'role': 'assistant',
+                'content': (
+                    'PROPUESTA ESTÁNDAR PARA TU PROYECTO\n'
+                    'PRODUCTOS POR ETAPA\n• Material principal'
+                ),
+            },
+            {'role': 'assistant', 'content': 'Explicación posterior del material'},
+        ])
+
+        self.assertEqual(resultado['tipo'], 'resumen_proyecto')
+        self.assertIn('PRODUCTOS POR ETAPA', resultado['mensaje'])
+        self.assertIn(
+            '¿Qué herramientas necesito para este proyecto?',
+            resultado['sugerencias'],
+        )
 
 
 class CatalogoGeminiReducidoTests(TestCase):
@@ -1506,6 +1691,30 @@ class AsistenteSfiTests(TestCase):
         self.assertEqual(resultado['tipo'], 'maestros')
         nombres = {item['nombre'] for item in resultado['maestros']}
         self.assertTrue({'María Soto', 'Jorge Rojas', 'Daniela Silva'}.issubset(nombres))
+
+    def test_todos_los_disponibles_conserva_especialidad_del_flujo(self):
+        historial = [
+            {'role': 'user', 'content': 'Necesito un maestro pintor'},
+            {
+                'role': 'assistant',
+                'content': (
+                    'Puedo buscar profesionales de Pintura. '
+                    '¿Prefieres buscar por comuna o ver todos los disponibles?'
+                ),
+            },
+        ]
+
+        resultado = self.consultar_maestro('Todos los disponibles', historial)
+
+        self.assertEqual(resultado['tipo'], 'maestros')
+        nombres = {item['nombre'] for item in resultado['maestros']}
+        self.assertTrue({'María Soto', 'Jorge Rojas', 'Daniela Silva'}.issubset(nombres))
+
+    def test_todos_los_disponibles_sin_flujo_no_busca_maestros(self):
+        resultado = self.consultar_maestro('Todos los disponibles')
+
+        self.assertNotEqual(resultado['tipo'], 'maestros')
+        self.assertFalse(resultado.get('maestros', []))
 
     def test_buscar_en_otra_comuna_pregunta_cual(self):
         historial = [{
@@ -3341,10 +3550,11 @@ class PlanificadorGenericoProyectosTests(TestCase):
             for producto in resultado['productos']
         ))
 
-    def test_gemini_puede_orientar_con_propuesta_estandar_sin_bloquearse(self):
+    def test_peticion_explicita_puede_orientar_con_propuesta_estandar(self):
         resultado = resolver_interpretacion({
             'intencion': 'planificar_proyecto',
             'modo_orientacion': 'propuesta_estandar',
+            '_proyecto_estandar': True,
             'proyecto': 'Cobertizo de madera orientativo',
             'tareas_proyecto': [{
                 'nombre': 'Estructura base',
@@ -5783,3 +5993,68 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertIn(lija.nombre, resultado['mensaje'])
         self.assertIn('no modifica cantidades', resultado['mensaje'])
         self.assertEqual(resultado['productos'], [])
+
+
+class TechumbreEstandarPorMaterialTests(TestCase):
+    def _resolver(self, material, **extras):
+        datos = {
+            'proyecto': f'Techumbre estandar de {material}',
+            'tipo_cubierta': material,
+            '_proyecto_estandar': True,
+        }
+        datos.update(extras)
+        return _resolver_proyecto(datos)
+
+    def test_policarbonato_incluye_sistema_compatible_completo(self):
+        resultado = self._resolver('policarbonato')
+        nombres = ' '.join(
+            producto['nombre'].lower() for producto in resultado['productos']
+        )
+
+        self.assertIn('policarbonato alveolar', nombres)
+        self.assertIn('perfil h', nombres)
+        self.assertIn('perfil u', nombres)
+        self.assertIn('filter tape', nombres)
+        self.assertIn('cinta de aluminio', nombres)
+        self.assertNotIn('plancha zinc', nombres)
+
+    def test_zinc_no_mezcla_componentes_de_policarbonato(self):
+        resultado = self._resolver('zinc')
+        nombres = ' '.join(
+            producto['nombre'].lower() for producto in resultado['productos']
+        )
+
+        self.assertIn('plancha zinc', nombres)
+        self.assertIn('cumbrera galvanizada', nombres)
+        self.assertIn('cinta but', nombres)
+        self.assertNotIn('perfil h', nombres)
+        self.assertNotIn('filter tape', nombres)
+
+    def test_teja_asfaltica_conserva_cubierta_membrana_y_clavo(self):
+        resultado = self._resolver('teja asfaltica')
+        nombres = ' '.join(
+            producto['nombre'].lower() for producto in resultado['productos']
+        )
+
+        self.assertIn('iko cambridge', nombres)
+        self.assertIn('membrana impermeable', nombres)
+        self.assertIn('clavo terrano', nombres)
+
+    def test_estructura_madera_relaciona_carpinteria_como_apoyo(self):
+        resultado = self._resolver(
+            'policarbonato',
+            material_estructura='madera',
+        )
+
+        self.assertEqual(resultado['especialidades'][0], 'Techumbre')
+        self.assertIn('Carpintería', resultado['especialidades'])
+
+    def test_sin_material_pide_elegir_familia_sin_inventarla(self):
+        resultado = _resolver_proyecto({
+            'proyecto': 'Techumbre estandar',
+            '_proyecto_estandar': True,
+        })
+
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('policarbonato, zinc o teja asfaltica', resultado['mensaje'])
