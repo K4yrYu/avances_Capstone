@@ -15,6 +15,7 @@ from .services.asistente_sfi import (
     _evaluar_alcance_proyecto,
     _normalizar_preferencias_extraidas,
     _resolver_accion_seguimiento,
+    _resolver_consulta_fuera_contexto_sfi,
     _resolver_herramientas_iniciales,
     _resolver_proyecto,
     _resolver_resumen_contextual,
@@ -297,6 +298,13 @@ class PisoFlotanteTests(TestCase):
         self.assertTrue(all(not item.get('incluido_en_total', True) for item in complementos))
         self.assertIn('estimación separada', resultado['mensaje'])
 
+    def test_pregunta_funcional_de_pieza_ferretera_no_se_descarta(self):
+        resultado = _resolver_consulta_fuera_contexto_sfi(
+            'Como se llama la pieza que une dos tubos y evita una fuga',
+        )
+
+        self.assertIsNone(resultado)
+
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_comparacion_economica_usa_subtotales_y_excluye_complementos(self, interpretar):
         propuesta = _resolver_proyecto({
@@ -416,7 +424,205 @@ class AsistenteSfiTests(TestCase):
             unidad_venta='unidad', contenido=Decimal('3.200'), unidad_contenido='m',
             especificaciones={'Sección nominal': '2 x 3 pulgadas', 'Material': 'Pino'},
         )
+        self.kit_ducha = Producto.objects.create(
+            nombre='Kit ducha cromado con monomando y ducha telÃ©fono',
+            descripcion='Conjunto para ducha con monomando, flexible y ducha telÃ©fono.',
+            uso_recomendado='Conectar y utilizar una ducha telÃ©fono con monomando.',
+            precio=64990, imagen='productos/kit-ducha-asistente.webp', stock=12,
+            categoria='GasfiterÃ­a', marca='SFI', activo=True,
+        )
         self.crear_maestros_para_busquedas()
+
+    def test_identifica_flexible_de_ducha_por_descripcion(self):
+        resultado = procesar_consulta(
+            'Como se llama la pieza que va desde el monomando de la ducha hasta la ducha telefono',
+            [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'identificacion_pieza')
+        self.assertIn('flexible de ducha', resultado['mensaje'].casefold())
+        self.assertTrue(any(
+            'flexible' in producto['nombre'].casefold()
+            and 'ducha' in producto['nombre'].casefold()
+            for producto in resultado['productos']
+        ))
+
+    def test_identifica_sifon_por_descripcion_y_no_lo_marca_fuera_de_contexto(self):
+        sifon = Producto.objects.create(
+            nombre='Sifón rígido lavaplatos 1 1/2 pulgada',
+            descripcion='Sifón para descarga de lavaplatos.',
+            uso_recomendado='Conservar un sello de agua en el desagüe del lavaplatos.',
+            precio=7990, imagen='productos/sifon-asistente.webp', stock=10,
+            categoria='Gasfitería', marca='SFI', activo=True,
+        )
+
+        resultado = procesar_consulta(
+            'Como se llama la pieza que va debajo del lavaplatos y evita que suban malos olores',
+            [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'identificacion_pieza')
+        self.assertIn('sifón de lavaplatos', resultado['mensaje'].casefold())
+        self.assertTrue(any(
+            'sifón' in producto['nombre'].casefold()
+            or 'sifon' in producto['nombre'].casefold()
+            for producto in resultado['productos']
+        ))
+
+    def test_identifica_valvula_de_corte_de_gas_y_excluye_productos_ajenos(self):
+        resultado = procesar_consulta('Como se llama la pieza para cortar el gas', [])
+
+        self.assertEqual(resultado['tipo'], 'identificacion_pieza')
+        self.assertIn('válvula de corte de gas', resultado['mensaje'].casefold())
+        self.assertTrue(resultado['productos'])
+        self.assertTrue(all(
+            'gas' in producto['nombre'].casefold()
+            and not 'sanitario' in producto['nombre'].casefold()
+            for producto in resultado['productos']
+        ))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_pregunta_maestro_por_productos_de_ducha_recomienda_gasfiter(self, interpretar):
+        flexible = Producto.objects.create(
+            nombre='Flexible de ducha acero inoxidable cromado 1,5 m',
+            descripcion='Manguera flexible para conectar monomando y ducha teléfono.',
+            uso_recomendado='Conectar el monomando con la ducha teléfono.',
+            precio=10990, stock=40, categoria='Gasfitería', marca='SFI', activo=True,
+        )
+
+        resultado = procesar_consulta(
+            'Que maestro trabaja con estos productos',
+            [],
+            [flexible.id, self.kit_ducha.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'seguimiento_proyecto')
+        self.assertIn('especialidad principal es Gasfitería', resultado['mensaje'])
+        self.assertNotIn('A cuál de los productos', resultado['mensaje'])
+        self.assertIn('Buscar maestro de Gasfitería', resultado['sugerencias'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_pregunta_maestro_por_valvulas_y_tubo_de_gas_recomienda_instalador_sec(self, interpretar):
+        valvula = Producto.objects.create(
+            nombre='Válvula de corte para gas 1/2 pulgada',
+            descripcion='Válvula para interrumpir el suministro de gas.',
+            precio=7990, stock=55, categoria='Gasfitería', marca='SFI', activo=True,
+        )
+        tubo = Producto.objects.create(
+            nombre='Tubo cobre rígido para gas 1/2 pulgada x 3 m',
+            descripcion='Tubería de cobre para una instalación de gas.',
+            precio=28990, stock=30, categoria='Gasfitería', marca='SFI', activo=True,
+        )
+
+        resultado = procesar_consulta(
+            'Que maestro me ayuda con esta instalacion',
+            [],
+            [valvula.id, tubo.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'seguimiento_proyecto')
+        self.assertIn(
+            'especialidad principal es Instalaciones de gas · SEC gas',
+            resultado['mensaje'],
+        )
+        self.assertIn('instalador autorizado SEC', resultado['mensaje'])
+        self.assertIn('Buscar instalador SEC de gas', resultado['sugerencias'])
+
+    def test_identifica_control_remoto_para_porton_sin_mezclar_controlador_solar(self):
+        control_porton = Producto.objects.create(
+            nombre='Control remoto portón automático 433 MHz',
+            descripcion='Control remoto para accionar un portón automático compatible.',
+            precio=14990, stock=28, categoria='Electricidad', marca='SFI', activo=True,
+        )
+        Producto.objects.create(
+            nombre='Controlador carga solar MPPT 40 A',
+            descripcion='Controlador de carga para sistema solar.',
+            precio=149990, stock=10, categoria='Electricidad', marca='SFI', activo=True,
+        )
+
+        resultado = procesar_consulta(
+            'Como se llama la pieza que permite abrir un portón automático', [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'identificacion_pieza')
+        self.assertIn('control remoto para portón automático', resultado['mensaje'])
+        self.assertIn(control_porton.id, [item['id'] for item in resultado['productos']])
+        self.assertTrue(all(
+            'portón' in item['nombre'].casefold()
+            and 'control' in item['nombre'].casefold()
+            and 'solar' not in item['nombre'].casefold()
+            for item in resultado['productos']
+        ))
+
+    def test_identifica_tutor_para_plantas_por_funcion(self):
+        tutor = Producto.objects.create(
+            nombre='Tutor bambú 1,2 m pack 10',
+            descripcion='Tutor de bambú para sostener plantas durante el crecimiento.',
+            uso_recomendado='Guiar y sostener tallos de plantas.',
+            precio=4990, stock=65, categoria='Jardinería', marca='SFI', activo=True,
+        )
+        amarras = Producto.objects.create(
+            nombre='Amarras plásticas jardín pack 50',
+            descripcion='Amarras flexibles para fijar plantas a tutores.',
+            uso_recomendado='Sujetar el tallo al tutor sin dañarlo.',
+            precio=2990, stock=80, categoria='Jardinería', marca='SFI', activo=True,
+        )
+
+        resultado = procesar_consulta(
+            'Que se usa para sostener una planta mientras crece', [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'identificacion_pieza')
+        self.assertIn('tutor para plantas', resultado['mensaje'].casefold())
+        self.assertIn(tutor.id, [item['id'] for item in resultado['productos']])
+        self.assertIn(amarras.id, [item['id'] for item in resultado['productos']])
+
+    def test_identifica_conector_electrico_y_confirma_disponibilidad(self):
+        conector = Producto.objects.create(
+            nombre='Conector eléctrico regleta 12 polos',
+            descripcion='Regleta para unir cables eléctricos dentro de una caja.',
+            uso_recomendado='Conectar conductores eléctricos de forma ordenada.',
+            precio=2490, stock=30, categoria='Electricidad', marca='SFI', activo=True,
+        )
+        Producto.objects.create(
+            nombre='Cinta aisladora PVC 18 mm x 20 m',
+            descripcion='Cinta para aislar empalmes eléctricos.',
+            precio=2490, stock=90, categoria='Electricidad', marca='SFI', activo=True,
+        )
+
+        resultado = procesar_consulta(
+            'Que se usa para conectar un cable dentro de una caja electrica?', [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'identificacion_pieza')
+        self.assertIn('conector eléctrico', resultado['mensaje'].casefold())
+        self.assertIn('disponibilidad en sfi', resultado['mensaje'].casefold())
+        self.assertIn(conector.id, [item['id'] for item in resultado['productos']])
+        self.assertTrue(all(
+            any(termino in item['nombre'].casefold() for termino in (
+                'conector', 'bornera', 'regleta', 'terminal',
+            ))
+            for item in resultado['productos']
+        ))
+
+    def test_identifica_alargador_para_conectar_multiples_dispositivos(self):
+        alargador = Producto.objects.create(
+            nombre='Alargador eléctrico 10 m 10 A',
+            descripcion='Alargador para extender temporalmente una alimentación eléctrica.',
+            uso_recomendado='Llevar alimentación eléctrica hasta el lugar de trabajo.',
+            precio=12990, stock=45, categoria='Electricidad', marca='SFI', activo=True,
+        )
+
+        resultado = procesar_consulta(
+            'Necesito algo para conectar multoples dispositivos electronicos', [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'identificacion_pieza')
+        self.assertIn('alargador eléctrico', resultado['mensaje'].casefold())
+        self.assertIn('disponibilidad en sfi', resultado['mensaje'].casefold())
+        self.assertIn(alargador.id, [item['id'] for item in resultado['productos']])
 
     def test_pagina_del_asistente_es_publica_y_accesible_desde_inicio(self):
         pagina = self.client.get(reverse('asistente_sfi'))
@@ -4005,6 +4211,111 @@ class PlanificadorGenericoProyectosTests(TestCase):
             self.assertEqual(resultado['productos'], [])
 
         self.assertEqual(interpretar.call_count, 5)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_posicion_despues_de_aclaracion_de_uso_explica_producto(self, interpretar):
+        """«El primero» debe responder la función, no lanzar otra búsqueda."""
+        interpretar.return_value = {'respuesta': 'Se usa como adaptador físico.'}
+        primero = Producto.objects.create(
+            nombre='Adaptador euroamericano de prueba 10 A',
+            descripcion='Adaptador de enchufe europeo a toma compatible.',
+            uso_recomendado='Permite conectar un enchufe europeo de dos polos a una toma compatible.',
+            precio=2190,
+            stock=10,
+            categoria='Electricidad',
+            activo=True,
+        )
+        Producto.objects.create(
+            nombre='Adaptador Schuko de prueba 10 A',
+            descripcion='Adaptador con conexión a tierra compatible.',
+            uso_recomendado='Permite adaptar una conexión Schuko compatible.',
+            precio=4390,
+            stock=10,
+            categoria='Electricidad',
+            activo=True,
+        )
+        segundo = Producto.objects.get(nombre='Adaptador Schuko de prueba 10 A')
+
+        resultado = procesar_consulta(
+            'El primero',
+            [{
+                'role': 'assistant',
+                'content': (
+                    'Puedo explicarte para qué sirve cada producto. Indica su nombre '
+                    'o su posición en las tarjetas mostradas.'
+                ),
+            }],
+            [primero.pk, segundo.pk],
+        )
+
+        self.assertEqual(resultado['tipo'], 'uso_producto')
+        self.assertIn(primero.nombre, resultado['mensaje'])
+        self.assertIn('Permite conectar un enchufe europeo', resultado['mensaje'])
+        self.assertNotIn(segundo.nombre, resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_ordinal_abreviado_o_numerico_explica_tarjeta_elegida(self, interpretar):
+        """Acepta «2do», «2da tarjeta» y «la 2» como segunda tarjeta."""
+        interpretar.return_value = {'respuesta': 'Orienta sobre la compatibilidad.'}
+        primero = Producto.objects.create(
+            nombre='Adaptador primero de prueba',
+            descripcion='Primer adaptador.',
+            uso_recomendado='Cumple la primera función.',
+            precio=2000, stock=10, categoria='Electricidad', activo=True,
+        )
+        segundo = Producto.objects.create(
+            nombre='Adaptador segundo de prueba',
+            descripcion='Segundo adaptador.',
+            uso_recomendado='Conecta un enchufe Schuko a una toma chilena compatible.',
+            precio=4000, stock=10, categoria='Electricidad', activo=True,
+        )
+        historial_aclaracion = [{
+            'role': 'assistant',
+            'content': (
+                'Puedo explicarte para qué sirve cada producto. Indica su nombre '
+                'o su posición en las tarjetas mostradas.'
+            ),
+        }]
+
+        for mensaje in ('¿Para qué sirve el 2do?', 'La 2da tarjeta', 'La 2'):
+            resultado = procesar_consulta(
+                mensaje, historial_aclaracion, [primero.pk, segundo.pk],
+            )
+            self.assertEqual(resultado['tipo'], 'uso_producto')
+            self.assertIn(segundo.nombre, resultado['mensaje'])
+            self.assertNotIn(primero.nombre, resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_referencia_numerica_funciona_con_cualquier_tarjeta_visible(self, interpretar):
+        """La selección no está limitada a las primeras cinco tarjetas."""
+        interpretar.return_value = {'respuesta': 'Explicación orientativa.'}
+        productos = [
+            Producto.objects.create(
+                nombre=f'Producto de referencia {indice}',
+                descripcion=f'Ficha de producto {indice}.',
+                uso_recomendado=f'Función del producto {indice}.',
+                precio=1000 + indice,
+                stock=10,
+                categoria='Herramientas',
+                activo=True,
+            )
+            for indice in range(1, 8)
+        ]
+        resultado = procesar_consulta(
+            'El producto 7',
+            [{
+                'role': 'assistant',
+                'content': (
+                    'Puedo explicarte para qué sirve cada producto. Indica su nombre '
+                    'o su posición en las tarjetas mostradas.'
+                ),
+            }],
+            [producto.pk for producto in productos],
+        )
+
+        self.assertEqual(resultado['tipo'], 'uso_producto')
+        self.assertIn('Producto de referencia 7', resultado['mensaje'])
+        self.assertNotIn('Producto de referencia 6', resultado['mensaje'])
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_producto_especifico_se_explica_en_proyecto_con_mas_de_18_productos(

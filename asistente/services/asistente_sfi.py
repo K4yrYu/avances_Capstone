@@ -3546,15 +3546,33 @@ def _productos_mencionados_en_seguimiento(mensaje, productos):
         return []
 
     posiciones = {
-        'primero': 0, 'primer': 0,
-        'segundo': 1,
-        'tercero': 2, 'tercer': 2,
-        'cuarto': 3,
-        'quinto': 4,
+        'primero': 0, 'primera': 0, 'primer': 0,
+        'segundo': 1, 'segunda': 1,
+        'tercero': 2, 'tercera': 2, 'tercer': 2,
+        'cuarto': 3, 'cuarta': 3,
+        'quinto': 4, 'quinta': 4,
+        'sexto': 5, 'sexta': 5,
+        'septimo': 6, 'septima': 6,
+        'octavo': 7, 'octava': 7,
+        'noveno': 8, 'novena': 8,
+        'decimo': 9, 'decima': 9,
     }
     seleccionados = []
     for palabra, indice in posiciones.items():
         if re.search(rf'\b{palabra}\b', texto) and indice < len(productos):
+            seleccionados.append(productos[indice])
+
+    # En una conversación real es habitual responder «el 2do», «la 2da
+    # tarjeta» o simplemente «la 2». Todas esas variantes deben apuntar a la
+    # tarjeta correspondiente, sin iniciar una búsqueda nueva.
+    for coincidencia in re.finditer(
+        r'\b(?:el|la|producto|tarjeta)?\s*'
+        r'(?:n(?:umero|ro)\s*)?'
+        r'([1-9][0-9]*)(?:er|ro|ra|do|da|to|ta)?\b',
+        texto,
+    ):
+        indice = int(coincidencia.group(1)) - 1
+        if indice < len(productos):
             seleccionados.append(productos[indice])
 
     palabras_genericas = {
@@ -3823,12 +3841,22 @@ def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
         r'seleccion\w*|recomiend\w*)\b',
         texto,
     ))
-    pide_uso = _pregunta_informativa_sobre_materiales(mensaje)
     ultimo_asistente = next((
         _texto_normalizado(item.get('content'))
         for item in reversed(historial)
         if item.get('role') == 'assistant'
     ), '')
+    # Si la respuesta anterior pidió escoger una tarjeta para explicar su uso,
+    # una posición como «el primero» debe conservar ese propósito. De otro modo
+    # el flujo cae en una nueva búsqueda de catálogo y se pierde la explicación.
+    responde_aclaracion_uso = any(frase in ultimo_asistente for frase in (
+        'puedo explicarte para que sirve cada producto',
+        'indica su nombre o su posicion en las tarjetas mostradas',
+    ))
+    pide_uso = (
+        _pregunta_informativa_sobre_materiales(mensaje)
+        or responde_aclaracion_uso
+    )
     responde_ambiguedad = 'a cual de los productos mostrados' in ultimo_asistente
     if not pide_motivo and not pide_uso and not responde_ambiguedad:
         return None
@@ -4818,6 +4846,211 @@ def _resolver_busqueda_por_funcion(mensaje):
     })
 
 
+def _resolver_identificacion_pieza(mensaje):
+    """Identifica piezas descritas por su ubicación o función.
+
+    Esta ruta resuelve descripciones de alta certeza antes de tratarlas como una
+    búsqueda literal. El nombre técnico y la explicación se entregan al cliente,
+    pero las tarjetas continúan saliendo exclusivamente del catálogo SFI.
+    """
+    texto = _texto_normalizado(mensaje)
+
+    def respuesta_identificacion(nombre, consulta, funcion, verificacion, productos=None):
+        productos_publicos = []
+        candidatos = productos if productos is not None else _buscar_productos(consulta, limite=6)
+        for producto in candidatos:
+            item = _producto_publico(producto)
+            item.update({'carrito_cantidad': 1, 'rol': 'Kit o componente relacionado'})
+            productos_publicos.append(item)
+
+        mensaje_respuesta = (
+            'IDENTIFICACIÓN DE LA PIEZA\n\n'
+            f'La pieza se llama {nombre}. {funcion}\n\n'
+        )
+        if productos_publicos:
+            mensaje_respuesta += (
+                f'DISPONIBILIDAD EN SFI\nEncontré {len(productos_publicos)} opción(es) activa(s) '
+                'con stock en el catálogo. Si es un kit, revisa su ficha '
+                f'para confirmar que incluya la pieza que necesitas. Antes de comprar, {verificacion}.'
+            )
+        else:
+            mensaje_respuesta += (
+                'DISPONIBILIDAD EN SFI\nNo encontré esta pieza disponible como producto en SFI. '
+                f'Antes de comprar, {verificacion}.'
+            )
+        return {
+            'tipo': 'identificacion_pieza',
+            'mensaje': mensaje_respuesta,
+            'productos': productos_publicos,
+            'maestros': [],
+            'sugerencias': ['¿Para qué sirve?', '¿Cómo verifico la compatibilidad?'],
+        }
+
+    menciona_lavaplatos = bool(re.search(r'\b(?:lavaplatos|fregadero)\b', texto))
+    evita_olores = bool(re.search(
+        r'\b(?:malos? olores?|olores?|olor|evita(?:r)? que suba(?:n)?)\b', texto,
+    ))
+    debajo = bool(re.search(r'\b(?:debajo|bajo)\b', texto))
+    menciona_desague = bool(re.search(r'\b(?:desague|desagüe)\b', texto))
+    if menciona_lavaplatos and evita_olores and (debajo or menciona_desague):
+        return respuesta_identificacion(
+            'sifón de lavaplatos',
+            'sifon lavaplatos',
+            'Va bajo el lavaplatos y mantiene un sello de agua que ayuda a impedir '
+            'el retorno de olores desde el desagüe.',
+            'verifica el diámetro de la descarga, el espacio disponible y el tipo de conexión',
+        )
+
+    menciona_gas = bool(re.search(r'\bgas\b', texto))
+    solicita_corte_gas = bool(re.search(
+        r'\b(?:cortar|corte|cerrar|cierre|paso|detener)\b', texto,
+    ))
+    if menciona_gas and solicita_corte_gas:
+        valvulas_gas = [
+            producto
+            for producto in Producto.objects.filter(activo=True, stock__gt=0).order_by('nombre')
+            if 'gas' in _texto_normalizado(producto.nombre)
+            and any(termino in _texto_normalizado(producto.nombre) for termino in (
+                'valvula', 'llave', 'corte',
+            ))
+        ]
+        return respuesta_identificacion(
+            'llave de paso o válvula de corte de gas',
+            'valvula corte gas',
+            'Permite interrumpir el paso de gas hacia un artefacto para una mantención o una emergencia.',
+            'confirma la medida, el tipo de gas y la compatibilidad con tu instalación; su instalación o reemplazo debe realizarlo un instalador autorizado SEC',
+            productos=valvulas_gas[:6],
+        )
+
+    menciona_dispositivos = bool(re.search(
+        r'\b(?:dispositivo|dispositivos|equipo|equipos|aparato|aparatos|electronico|electronicos)\b',
+        texto,
+    ))
+    solicita_conexion_multiple = bool(re.search(
+        r'\b(?:conectar|conecta|enchufar|enchufa|alimentar)\b', texto,
+    )) and bool(re.search(r'\b(?:multiples?|multoples?|varios?|muchos?)\b', texto))
+    if menciona_dispositivos and solicita_conexion_multiple:
+        alargadores = [
+            producto
+            for producto in Producto.objects.filter(activo=True, stock__gt=0).order_by('nombre')
+            if any(termino in _texto_normalizado(producto.nombre) for termino in (
+                'alargador', 'extension electrica',
+            ))
+        ]
+        return respuesta_identificacion(
+            'alargador eléctrico; para conectar varios equipos a la vez se usa además una zapatilla o multitoma',
+            'alargador electrico',
+            'El alargador lleva la alimentación hasta el lugar de uso. Para varios dispositivos, la zapatilla o multitoma debe respetar la potencia máxima del circuito.',
+            'revisa la potencia total de los equipos y no sobrecargues el alargador ni conectes artefactos de alto consumo en una multitoma doméstica',
+            productos=alargadores[:6],
+        )
+
+    menciona_caja_electrica = bool(re.search(
+        r'\b(?:caja electrica|caja de conexiones|caja estanca|caja de paso)\b', texto,
+    ))
+    menciona_cable = bool(re.search(r'\b(?:cable|cables|conductor|conductores)\b', texto))
+    solicita_union_electrica = bool(re.search(
+        r'\b(?:conectar|conecta|unir|une|empalmar|empalma|juntar|junta)\b', texto,
+    ))
+    if menciona_caja_electrica and menciona_cable and solicita_union_electrica:
+        conectores = [
+            producto
+            for producto in Producto.objects.filter(activo=True, stock__gt=0).order_by('nombre')
+            if any(termino in _texto_normalizado(producto.nombre) for termino in (
+                'conector', 'bornera', 'regleta', 'terminal',
+            ))
+            and any(termino in _texto_normalizado(
+                f'{producto.nombre} {producto.categoria} {producto.descripcion}'
+            ) for termino in ('electr', 'cable', 'conductor'))
+        ]
+        return respuesta_identificacion(
+            'conector eléctrico, también llamado bornera o regleta de conexión',
+            'conector cable electrico',
+            'Une conductores dentro de una caja eléctrica de forma ordenada. La alternativa exacta depende '
+            'del número de cables, su sección y del tipo de caja.',
+            'confirma la sección del cable y que la conexión se realice sin tensión; si el circuito está energizado o es fijo, solicita apoyo de un electricista competente',
+            productos=conectores[:6],
+        )
+
+    menciona_porton_automatico = bool(re.search(
+        r'\bporton\b.{0,25}\b(?:automatico|electrico)\b|'
+        r'\b(?:automatico|electrico)\b.{0,25}\bporton\b',
+        texto,
+    ))
+    solicita_abrir_porton = bool(re.search(
+        r'\b(?:abrir|abre|apertura|accionar|activar|controlar)\b', texto,
+    ))
+    if menciona_porton_automatico and solicita_abrir_porton:
+        controles_porton = [
+            producto
+            for producto in Producto.objects.filter(activo=True, stock__gt=0).order_by('nombre')
+            if 'porton' in _texto_normalizado(producto.nombre)
+            and any(termino in _texto_normalizado(producto.nombre) for termino in (
+                'control remoto', 'control porton',
+            ))
+        ]
+        return respuesta_identificacion(
+            'control remoto para portón automático',
+            'control remoto porton automatico',
+            'Envía una señal al receptor compatible para abrir o cerrar el portón a distancia.',
+            'confirma la frecuencia, la codificación y la compatibilidad con el motor o receptor instalado',
+            productos=controles_porton[:6],
+        )
+
+    # Jardinería también forma parte del catálogo. Estas consultas suelen
+    # describir la función y no el nombre técnico del producto.
+    menciona_planta = bool(re.search(
+        r'\b(?:planta|plantas|tallo|tallos|enredadera|enredaderas)\b', texto,
+    ))
+    solicita_soporte_planta = bool(re.search(
+        r'\b(?:sostener|sujetar|guiar|afirmar|apoyar|mantener)\b', texto,
+    ))
+    if menciona_planta and solicita_soporte_planta:
+        productos_jardin = list(
+            Producto.objects.filter(activo=True, stock__gt=0).order_by('nombre')
+        )
+        tutores = [
+            producto for producto in productos_jardin
+            if any(termino in _texto_normalizado(producto.nombre) for termino in (
+                'tutor', 'estaca', 'bambu',
+            ))
+        ]
+        amarras = [
+            producto for producto in productos_jardin
+            if any(termino in _texto_normalizado(producto.nombre) for termino in (
+                'amarra', 'cinta jardin', 'cinta para plantas',
+            ))
+        ]
+        candidatos = []
+        for producto in tutores + amarras:
+            if producto.id not in {item.id for item in candidatos}:
+                candidatos.append(producto)
+        return respuesta_identificacion(
+            'tutor para plantas',
+            'tutor plantas',
+            'Se instala junto al tallo para mantenerlo erguido y guiar su crecimiento. '
+            'Puede complementarse con amarras flexibles de jardín para sujetarlo sin apretarlo.',
+            'verifica la altura que alcanzará la planta y usa una amarra suave, dejando espacio para que el tallo crezca',
+            productos=candidatos[:6],
+        )
+
+    menciona_monomando = bool(re.search(r'\b(?:monomando|llave de ducha|griferia de ducha)\b', texto))
+    menciona_ducha_manual = bool(re.search(
+        r'\b(?:ducha telefono|telefono de ducha|mango de ducha|regadera)\b', texto,
+    ))
+    describe_union = bool(re.search(
+        r'\b(?:va|une|conecta|sale)\b.{0,55}\b(?:desde|entre|hasta|al|del)\b', texto,
+    ))
+    if not (menciona_monomando and menciona_ducha_manual and describe_union):
+        return None
+    return respuesta_identificacion(
+        'flexible de ducha, también conocido como manguera para ducha teléfono',
+        'flexible ducha',
+        'Conecta el monomando con el mango de ducha y permite moverlo durante el uso.',
+        'verifica el largo y el tipo de rosca de tu instalación',
+    )
+
+
 def _mensaje_para_continuar_guia(mensaje, historial):
     """Aclara a Gemini que una respuesta breve completa la guía vigente."""
     texto = _texto_normalizado(mensaje)
@@ -5224,6 +5457,10 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
         frase in texto for frase in (
         'que tipo de maestro necesito', 'que maestro necesito',
         'que tipo de profesional necesito', 'que profesional necesito',
+        'que maestro trabaja con estos productos',
+        'que maestra trabaja con estos productos',
+        'que profesional trabaja con estos productos',
+        'que especialista trabaja con estos productos',
         'quien puede hacer este proyecto', 'quien realiza este trabajo',
         'que maestro realiza este trabajo', 'que maestro hace este trabajo',
         'que maestro realiza este proyecto', 'que maestro hace este proyecto',
@@ -5233,7 +5470,12 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
         'neceisto un maestro para este proyecto',
         'busco un maestro para este trabajo', 'busco un maestro para este proyecto',
         )
-    )
+    ) or bool(re.search(
+        r'\b(?:que|cual|quien)\b.{0,35}'
+        r'\b(?:maestr[oa]|profesional|especialista|tecnico|tecnica)\b.{0,35}'
+        r'\b(?:trabaja|instala|repara|realiza|usa|maneja)\b',
+        texto,
+    ))
     if consulta_maestro_proyecto:
         productos = list(Producto.objects.filter(
             pk__in=list(dict.fromkeys(productos_contexto))[:8],
@@ -5244,6 +5486,17 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             for producto in productos
         ))
         reglas = (
+            # Una red o artefacto a gas no debe presentarse como gasfitería
+            # general. La intervención requiere un instalador autorizado SEC.
+            (
+                (
+                    'gas licuado', 'gas natural', 'cocina a gas', 'calefont',
+                    'valvula de corte para gas', 'valvula corte gas',
+                    'regulador gas', 'tubo cobre para gas', 'cobre para gas',
+                    'instalacion de gas', 'red de gas',
+                ),
+                'Instalaciones de gas · SEC gas',
+            ),
             ((
                 'ladrillo', 'mortero', 'radier', 'malla acma',
                 'refractario', 'base estabilizada',
@@ -5251,7 +5504,17 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             (('techo', 'techumbre', 'zinc', 'teja', 'cumbrera', 'policarbonato'), 'Techumbre'),
             (('pino', 'madera', 'tablero', 'melamina'), 'Carpintería'),
             (('pintura', 'latex', 'esmalte', 'barniz'), 'Pintura'),
-            (('sanitario', 'lavamanos', 'ducha', 'griferia', 'tuberia'), 'Gasfitería'),
+            # Las consultas pueden venir desde tarjetas de gas (válvulas,
+            # cobre o flexibles) sin mencionar ducha o lavaplatos. Todos estos
+            # componentes corresponden al oficio de gasfitería.
+            (
+                (
+                    'gasfiteria', 'gas', 'valvula', 'cobre', 'flexible',
+                    'sanitario', 'lavamanos', 'ducha', 'griferia', 'tuberia',
+                    'sifon', 'desague', 'ppr', 'pvc sanitario',
+                ),
+                'Gasfitería',
+            ),
             (('cable', 'enchufe', 'interruptor', 'luminaria'), 'Electricidad'),
             (('ceramica', 'porcelanato', 'fragüe'), 'Cerámica y revestimientos'),
         )
@@ -5280,6 +5543,11 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
                 f'{complemento} Antes de contratar, confirma experiencia en el tipo de '
                 'material y trabajo mostrado.'
             )
+            if principal == 'Instalaciones de gas · SEC gas':
+                mensaje_respuesta += (
+                    ' Esta intervención debe realizarla un instalador autorizado '
+                    'SEC en gas.'
+                )
             # Una techumbre no puede asignarse a un oficio distinto solo para
             # llenar la respuesta. Se muestran perfiles actuales de apoyo
             # únicamente cuando sus especialidades se desprenden de los
@@ -5314,7 +5582,12 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
                         'apoyo y no sustituyen al techumbrista.'
                     )
             sugerencias = [
-                *(f'Buscar maestro de {especialidad}' for especialidad in especialidades),
+                *(
+                    'Buscar instalador SEC de gas'
+                    if especialidad == 'Instalaciones de gas · SEC gas'
+                    else f'Buscar maestro de {especialidad}'
+                    for especialidad in especialidades
+                ),
                 '¿Qué debo consultar antes de contratarlo?',
             ][:3]
         else:
@@ -5416,10 +5689,13 @@ def _resolver_consulta_fuera_contexto_sfi(mensaje, historial=None, productos_con
         r'techo\w*|techumbre\w*|cubierta\w*|piso\w*|muro\w*|pared\w*|'
         r'puerta\w*|ventana\w*|reja\w*|cerco\w*|porton\w*|escalera\w*|'
         r'mueble\w*|mesa\w*|silla\w*|closet\w*|armario\w*|repisa\w*|'
-        r'cocina\w*|bano\w*|lavamanos\w*|sanitari\w*|ducha\w*|grifer\w*|'
+        r'cocina\w*|bano\w*|lavamanos\w*|lavaplatos\w*|fregadero\w*|sifon\w*|sanitari\w*|ducha\w*|grifer\w*|'
         r'caneria\w*|tuberia\w*|desague\w*|gotera\w*|filtracion\w*|humedad\w*|'
         r'electric\w*|enchufe\w*|interruptor\w*|cable\w*|ampolleta\w*|luz|luces|'
+        r'dispositivo\w*|equipo\w*|electronico\w*|alargador\w*|zapatilla\w*|multitoma\w*|'
         r'jardin\w*|riego\w*|manguera\w*|pala\w*|picota\w*|carretilla\w*|'
+        r'planta\w*|tutor\w*|maceter\w*|compost\w*|fertiliz\w*|abono\w*|semilla\w*|'
+        r'poda\w*|rastrill\w*|huerto\w*|hojas?\w*|'
         r'piscina\w*|quincho\w*|pergola\w*|bodega\w*|cobertizo\w*|terraza\w*|'
         r'candado\w*|cerradura\w*|bisagra\w*|cadena\w*|seguridad\w*)\b'
     )
@@ -5429,6 +5705,28 @@ def _resolver_consulta_fuera_contexto_sfi(mensaje, historial=None, productos_con
     # el vocabulario anterior. Una coincidencia real mantiene la consulta dentro
     # del alcance sin inventar productos ni depender solamente de palabras clave.
     if _buscar_productos(mensaje, limite=1):
+        return None
+
+    # Muchas consultas válidas no mencionan el nombre comercial: describen la
+    # función o ubicación de una pieza ("la pieza que une dos tubos", "lo que
+    # sella una junta"). En esos casos dejamos que Gemini identifique el
+    # componente y que la búsqueda posterior lo contraste con el catálogo.
+    # Exigimos tanto una pregunta funcional como vocabulario de componente para
+    # no convertir solicitudes ajenas, como recetas o poemas, en proyectos.
+    consulta_funcional = bool(re.search(
+        r'\b(?:como se llama|que se llama|para que sirve|que sirve|cual es|'
+        r'necesito algo|que va|que une|que conecta|que evita|que tapa|'
+        r'que sella|que sostiene|que fija)\b',
+        texto,
+    ))
+    componente_ferretero = bool(re.search(
+        r'\b(?:pieza|parte|repuesto|accesorio|componente|conexion|union|'
+        r'junta|sello|sellado|adaptador|soporte|fitting|acople|valvula|'
+        r'flexible|manguera|tubo|cable|conductor|desague|drenaje|'
+        r'filtracion|fuga|olor|humedad|anclaje|bisagra|riel|rueda)\b',
+        texto,
+    ))
+    if consulta_funcional and componente_ferretero:
         return None
 
     return {
@@ -5452,6 +5750,12 @@ def procesar_consulta(
     mensaje, historial, productos_contexto=None, modo_consulta='auto',
     estimacion_contexto=None,
 ):
+    # Las descripciones de piezas conocidas deben resolverse antes del filtro
+    # general de alcance: frases como "lo que va bajo el lavaplatos" pueden no
+    # contener una palabra exacta del catálogo, pero siguen siendo ferretería.
+    identificacion_pieza = _resolver_identificacion_pieza(mensaje)
+    if identificacion_pieza:
+        return identificacion_pieza
     fuera_contexto = _resolver_consulta_fuera_contexto_sfi(
         mensaje, historial, productos_contexto,
     )
@@ -5494,7 +5798,13 @@ def procesar_consulta(
         r'\b(?:ese|esa|aquel|aquella|el producto|la opcion)\b',
         texto_actual,
     ))
-    if referencia_singular and len(contexto_ids) > 1:
+    referencia_posicional = bool(re.search(
+        r'\b(?:primer[oa]?|segund[oa]|tercer[oa]?|cuart[oa]|quint[oa]|'
+        r'sext[oa]|septim[oa]|octav[oa]|noven[oa]|decim[oa]|'
+        r'[1-9][0-9]*(?:er|ro|ra|do|da|to|ta)?)\b',
+        texto_actual,
+    ))
+    if referencia_singular and len(contexto_ids) > 1 and not referencia_posicional:
         return {
             'tipo': 'aclaracion',
             'mensaje': (
