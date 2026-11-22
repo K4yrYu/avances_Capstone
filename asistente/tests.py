@@ -3957,7 +3957,14 @@ class PlanificadorGenericoProyectosTests(TestCase):
             precio=4990,
             stock=12,
             categoria='Adhesivos',
-            especificaciones={'Uso': 'Interior', 'Aplicación': 'Espátula'},
+            especificaciones={
+                'Uso': 'Interior',
+                'Aplicación': 'Espátula',
+                'Fuente técnica': 'https://fabricante.example/ficha.pdf',
+                'fuente_referencia': 'https://catalogo.example/producto',
+                'Imagen': 'https://imagenes.example/producto.webp',
+                'url_imagen': 'https://imagenes.example/producto-2.webp',
+            },
             activo=True,
         )
 
@@ -3989,6 +3996,11 @@ class PlanificadorGenericoProyectosTests(TestCase):
             self.assertIn('FICHA TÉCNICA', resultado['mensaje'])
             self.assertIn('Categoría: Adhesivos', resultado['mensaje'])
             self.assertIn('Aplicación: Espátula', resultado['mensaje'])
+            self.assertNotIn('fabricante.example', resultado['mensaje'])
+            self.assertNotIn('catalogo.example', resultado['mensaje'])
+            self.assertNotIn('imagenes.example', resultado['mensaje'])
+            self.assertNotIn('Fuente técnica:', resultado['mensaje'])
+            self.assertNotIn('url_imagen:', resultado['mensaje'])
             self.assertIn('ORIENTACIÓN DEL ASISTENTE', resultado['mensaje'])
             self.assertEqual(resultado['productos'], [])
 

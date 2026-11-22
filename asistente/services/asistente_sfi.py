@@ -3752,7 +3752,13 @@ def _respuesta_uso_producto(productos):
             if valor in (None, '', [], {}):
                 continue
             clave_normalizada = _texto_normalizado(clave)
-            if clave_normalizada in claves_internas:
+            es_metadato_interno = any(
+                termino in clave_normalizada
+                for termino in (
+                    'fuente', 'imagen', 'image', 'url', 'enlace', 'link',
+                )
+            )
+            if clave_normalizada in claves_internas or es_metadato_interno:
                 continue
             valor_normalizado = _texto_normalizado(valor)
             if any(marca in valor_normalizado for marca in (

@@ -32,6 +32,7 @@ class Producto(models.Model):
         ('Pinturas', 'Pinturas'),
         ('Gasfitería', 'Gasfitería'),
         ('Adhesivos', 'Adhesivos'),
+        ('Cerámicas', 'Cerámicas'),
         ('Iluminación', 'Iluminación'),
         ('Ferretería', 'Ferretería'),
         ('Seguridad', 'Seguridad'),
