@@ -2,12 +2,12 @@ import re
 import unicodedata
 from decimal import Decimal, ROUND_CEILING
 
-from django.db.models import Case, IntegerField, Value, When
+from django.db.models import Case, IntegerField, Q, Value, When
 
 from maestros.chile import COMUNAS_CHOICES
 from maestros.services import buscar_maestros
 from productos.models import Producto
-from productos.services import calcular_recomendaciones_pintura
+from productos.services import calcular_producto_pintura, calcular_recomendaciones_pintura
 from .gemini import GeminiNoDisponible, interpretar_con_gemini
 from .recomendacion_colores import (
     color_publico,
@@ -89,6 +89,108 @@ def _texto_normalizado(valor):
         lambda coincidencia: correcciones_accion[coincidencia.group(0)],
         texto,
     )
+
+
+def _aplicar_contexto_calculo_pintura(datos, mensaje, historial):
+    """Enruta cálculos de pintura explícitos sin afectar otros proyectos."""
+    texto_actual = _texto_normalizado(mensaje)
+    usuarios = ' '.join(
+        str(item.get('content') or '')
+        for item in historial
+        if item.get('role') == 'user'
+    )
+    texto_usuario = _texto_normalizado(f'{usuarios} {mensaje}')
+    ultimo_asistente = next((
+        _texto_normalizado(item.get('content'))
+        for item in reversed(historial)
+        if item.get('role') == 'assistant'
+    ), '')
+
+    menciona_pintura = bool(re.search(
+        r'\b(?:pintura|pintar|latex|esmalte|barniz)\b', texto_actual,
+    ))
+    pide_cantidad = bool(re.search(
+        r'\b(?:cuanto|cuanta|cuantos|cuantas|litros?|envases?|tarros?|'
+        r'cantidad|necesito|comprar|rinde|rendimiento)\b', texto_actual,
+    ))
+    informa_superficie = bool(re.search(
+        r'\b\d+(?:[.,]\d+)?\s*(?:m2|m²|metros? cuadrados?)\b|'
+        r'\b\d+(?:[.,]\d+)?\s*(?:x|por)\s*\d+(?:[.,]\d+)?\s*'
+        r'(?:m|mts?|metros?)\b',
+        texto_actual,
+    ))
+    seguimiento_pintura = (
+        'pintura' in ultimo_asistente
+        and not re.search(
+            r'\b(?:quincho|techo|techumbre|ceramica|piso flotante|mueble|'
+            r'cobertizo|bodega|radier)\b',
+            texto_actual,
+        )
+    )
+    pide_similar = bool(re.search(
+        r'\b(?:alguna|alguno|otra|otro|tono|color)\b.{0,20}\b'
+        r'(?:parecid[oa]|similar|cercan[oa])\b|\b(?:parecid[oa]|similar)\b',
+        texto_actual,
+    ))
+    es_calculo = (
+        (menciona_pintura and (pide_cantidad or informa_superficie))
+        or (seguimiento_pintura and (informa_superficie or pide_similar))
+        or datos.get('intencion') == 'calcular_pintura'
+    )
+    if not es_calculo:
+        return datos
+
+    datos['intencion'] = 'calcular_pintura'
+
+    superficies = re.findall(
+        r'\b(\d+(?:[.,]\d+)?)\s*(?:m2|m²|metros? cuadrados?)\b',
+        texto_usuario,
+    )
+    if superficies:
+        datos['superficie'] = float(superficies[-1].replace(',', '.'))
+    else:
+        ancho_cm, largo_cm = _dimensiones_rectangulares_cm(texto_usuario)
+        if ancho_cm and largo_cm:
+            datos['superficie'] = round((ancho_cm * largo_cm) / 10000, 3)
+
+    if not datos.get('ambiente'):
+        if re.search(r'\b(?:piscina|estanque)\b', texto_usuario):
+            datos['ambiente'] = 'especial'
+        elif re.search(r'\b(?:exterior|fachada|afuera)\b', texto_usuario):
+            datos['ambiente'] = 'exterior'
+        elif re.search(
+            r'\b(?:interior|habitacion|pieza|dormitorio|living|comedor|pasillo)\b',
+            texto_usuario,
+        ):
+            datos['ambiente'] = 'interior'
+
+    if not datos.get('tipo_superficie'):
+        superficies_conocidas = (
+            ('piscina_estanque', r'\b(?:piscina|estanque)\b'),
+            ('yeso_carton', r'\b(?:yeso carton|volcanita)\b'),
+            ('hormigon', r'\b(?:hormigon|cemento|concreto)\b'),
+            ('ladrillo', r'\bladrillos?\b'),
+            ('madera', r'\bmadera\b'),
+            ('metal', r'\b(?:metal|fierro|acero)\b'),
+        )
+        for codigo, patron in superficies_conocidas:
+            if re.search(patron, texto_usuario):
+                datos['tipo_superficie'] = codigo
+                break
+
+    if not datos.get('estado_superficie'):
+        if re.search(r'\b(?:nueva|nuevo|sin pintar)\b', texto_usuario):
+            datos['estado_superficie'] = 'nueva'
+        elif re.search(r'\b(?:humedad|humeda|humedo|moho)\b', texto_usuario):
+            datos['estado_superficie'] = 'humedad'
+        elif re.search(r'\b(?:deteriorada|deteriorado|grietas?|descascarad[oa])\b', texto_usuario):
+            datos['estado_superficie'] = 'deteriorada'
+        elif re.search(r'\b(?:buen estado|pintada|pintado|esta bien)\b', texto_usuario):
+            datos['estado_superficie'] = 'pintada_buen_estado'
+
+    if pide_similar:
+        datos['_permitir_color_alternativo'] = True
+    return datos
 
 
 def _usuario_delega_eleccion(texto):
@@ -3050,6 +3152,72 @@ def _resolver_recomendacion_color(datos):
     }
 
 
+def _orientacion_complementos_pintura(datos, calculo):
+    """Resume preparación y herramientas reales sin sumarlas al presupuesto."""
+    preparaciones = [
+        str(item).strip() for item in (calculo.get('preparacion') or [])
+        if str(item).strip()
+    ]
+    advertencia = str(calculo.get('advertencia') or '').strip()
+
+    herramientas_solicitadas = [
+        ('rodillo', 'Aplicar pintura uniformemente en superficies amplias.'),
+        ('brocha', 'Trabajar bordes, esquinas, encuentros y zonas de detalle.'),
+        ('bandeja', 'Cargar y descargar el rodillo de forma controlada.'),
+    ]
+    tipo_superficie = str(datos.get('tipo_superficie') or '')
+    estado = str(datos.get('estado_superficie') or '')
+    if estado in {'pintada_buen_estado', 'deteriorada', 'humedad'}:
+        if tipo_superficie == 'madera':
+            herramientas_solicitadas.append((
+                'lija para madera',
+                'Suavizar la madera o retirar pintura suelta sin dañar la base.',
+            ))
+        elif tipo_superficie in {'hormigon', 'ladrillo', 'yeso_carton'}:
+            herramientas_solicitadas.append((
+                'lija madera y muro',
+                'Regularizar reparaciones y retirar material superficial suelto.',
+            ))
+    if estado in {'deteriorada', 'humedad'} and tipo_superficie in {
+        'hormigon', 'ladrillo', 'yeso_carton',
+    }:
+        herramientas_solicitadas.append((
+            'espatula',
+            'Retirar material suelto y aplicar reparaciones compatibles.',
+        ))
+
+    herramientas = []
+    usadas = set()
+    base = Producto.objects.filter(activo=True, stock__gt=0)
+    for termino, uso in herramientas_solicitadas:
+        candidatas = list(base.filter(
+            nombre__icontains=termino,
+        ).order_by('precio', 'nombre', 'pk')[:6])
+        producto = next((
+            candidata for candidata in candidatas if candidata.pk not in usadas
+        ), None)
+        if not producto:
+            continue
+        usadas.add(producto.pk)
+        herramientas.append(f'• {producto.nombre}: {uso}')
+
+    secciones = []
+    if preparaciones or advertencia:
+        secciones.extend(['PREPARACIÓN SEGÚN LA FICHA'])
+        secciones.extend(f'• {preparacion}' for preparacion in preparaciones)
+        if advertencia:
+            secciones.append(f'• {advertencia}')
+    if herramientas:
+        if secciones:
+            secciones.append('')
+        secciones.extend([
+            'HERRAMIENTAS OPCIONALES DISPONIBLES EN SFI',
+            *herramientas,
+            'Estas herramientas no están incluidas en el presupuesto de pintura.',
+        ])
+    return secciones
+
+
 def _resolver_calculo(datos):
     faltantes = []
     if not datos.get('superficie'):
@@ -3067,11 +3235,16 @@ def _resolver_calculo(datos):
             detalle = ', '.join(faltantes[:-1]) + ' y ' + faltantes[-1]
         return {
             'tipo': 'aclaracion',
-            'mensaje': f'Para calcularlo con precisión necesito saber {detalle}.',
+            'mensaje': (
+                f'Para calcularlo con precisión necesito saber {detalle}.'
+                '\n\nRESPONDE TODO EN UN MENSAJE\n'
+                'Ejemplo de respuesta válida:\n'
+                '“Son 20 m², la pared es de madera y está seca y en buen estado”.'
+            ),
             'productos': [],
             'sugerencias': [
-                'Es interior, muro de hormigón y está nuevo',
-                'Es exterior, muro de ladrillo y está deteriorado',
+                'Son 20 m², es madera y está seca y en buen estado',
+                'Son 35 m², es hormigón interior y está nuevo',
             ],
         }
 
@@ -3088,6 +3261,23 @@ def _resolver_calculo(datos):
         capas=capas,
         desperdicio=desperdicio,
     )
+    color_sin_coincidencia = ''
+    if (
+        not recomendaciones
+        and datos.get('color')
+        and datos.get('_permitir_color_alternativo')
+    ):
+        color_sin_coincidencia = str(datos['color']).strip()
+        recomendaciones = calcular_recomendaciones_pintura(
+            superficie=datos['superficie'],
+            ambiente=datos['ambiente'],
+            tipo_superficie=datos['tipo_superficie'],
+            estado_superficie=datos['estado_superficie'],
+            terminacion=datos.get('terminacion') or 'cualquiera',
+            color='',
+            capas=capas,
+            desperdicio=desperdicio,
+        )
     if not recomendaciones:
         return {
             'tipo': 'sin_resultados',
@@ -3139,6 +3329,9 @@ def _resolver_calculo(datos):
             'color_hex': calculo['color_hex'],
             'cantidad_envases': calculo['cantidad_envases'],
             'litros_necesarios': calculo['litros_necesarios'],
+            'contenido_litros': calculo['contenido_litros'],
+            'litros_comprados': calculo['litros_comprados'],
+            'sobrante_estimado': calculo['sobrante_estimado'],
             'presupuesto_total': calculo['presupuesto_total'],
             'stock_suficiente': calculo['stock_suficiente'],
             'terminacion': calculo['terminacion_display'],
@@ -3156,18 +3349,33 @@ def _resolver_calculo(datos):
             },
         })
     mejor = productos[0]
+    orientacion_complementos = _orientacion_complementos_pintura(datos, mejor)
+    mensaje_color = (
+        f' No encontré el tono exacto “{color_sin_coincidencia}”; estas opciones son '
+        'alternativas compatibles de otros colores.'
+        if color_sin_coincidencia else ''
+    )
     return {
         'tipo': 'calculo_pintura',
         'mensaje': (
-            f'Para {datos["superficie"]} m² necesitas aproximadamente '
-            f'{mejor["litros_necesarios"]} litros. La primera alternativa requiere '
-            f'{mejor["cantidad_envases"]} envase(s) y tiene un presupuesto de '
+            f'Para {_formatear_decimal(datos["superficie"])} m² necesitas aproximadamente '
+            f'{_formatear_decimal(mejor["litros_necesarios"])} litros. Como '
+            f'{mejor["nombre"]} se vende en envases de '
+            f'{_formatear_decimal(mejor["contenido_litros"])} L, la primera alternativa '
+            f'requiere {mejor["cantidad_envases"]} envase(s), equivalentes a '
+            f'{_formatear_decimal(mejor["litros_comprados"])} L en total, y tiene un presupuesto de '
             f'{_formatear_clp(mejor["presupuesto_total"])} CLP.'
-            f'{mensaje_presupuesto} Si prefieres que un profesional realice el trabajo, '
-            'también puedo buscar un maestro pintor.'
+            f'{mensaje_color}'
+            f'{mensaje_presupuesto}'
+            + ('\n\n' + '\n'.join(orientacion_complementos)
+               if orientacion_complementos else '')
+            + ('\n\nLa estimación debe comprobarse con la ficha y las condiciones reales de '
+               'la superficie. Si prefieres que un profesional ejecute el trabajo, '
+               'puedo buscar opcionalmente un maestro pintor según su disponibilidad.')
         ),
         'productos': productos,
         'sugerencias': [
+            '¿Qué herramientas necesito para pintar?',
             'Buscar maestro pintor',
             'Buscar otra terminación',
             'Ver pinturas de otro color',
@@ -3427,6 +3635,17 @@ def resolver_interpretacion(datos):
 def _texto_normalizado_pregunta_uso(texto):
     """Normaliza errores frecuentes sin alterar el nombre del producto."""
     texto = _texto_normalizado(texto)
+    # En consultas escritas rápido es frecuente que el demostrativo, el
+    # pronombre y el verbo lleguen unidos: «esamesirve» o «estemesirve».
+    # La corrección se limita a esta expresión funcional y no modifica nombres.
+    texto = re.sub(
+        r'\b(esa|ese|esta|este)me(sirve|sirven|sirbe|sirben)\b',
+        lambda coincidencia: (
+            f'{coincidencia.group(1)} me '
+            f'{"sirven" if coincidencia.group(2) in {"sirven", "sirben"} else "sirve"}'
+        ),
+        texto,
+    )
     correcciones = {
         'pa': 'para',
         'pra': 'para',
@@ -3458,6 +3677,7 @@ def _pregunta_uso_producto(texto):
         r'\b(?:para que sirve(?:n)?|cual es su funcion|cuales son sus funciones|'
         r'que funcion cumple(?:n)?|para que se usa(?:n)?|para que se utiliza(?:n)?|'
         r'como se usa(?:n)?|como se utiliza(?:n)?|cual es el uso|que uso tiene(?:n)?|para que se ocupa(?:n)?|'
+        r'(?:este|esta|ese|esa)?\s*me sirve(?:n)?|me funcionaria(?:n)?|'
         r'que es|que hace(?:n)?)\b',
         texto,
     ))
@@ -3470,10 +3690,130 @@ def _consulta_sin_pregunta_de_uso(mensaje):
         r'\b(?:para que sirve(?:n)?|cual es su funcion|cuales son sus funciones|'
         r'que funcion cumple(?:n)?|para que se usa(?:n)?|para que se utiliza(?:n)?|'
         r'como se usa(?:n)?|como se utiliza(?:n)?|cual es el uso|que uso tiene(?:n)?|para que se ocupa(?:n)?|'
+        r'(?:este|esta|ese|esa)?\s*me sirve(?:n)?|me funcionaria(?:n)?|'
         r'que es|que hace(?:n)?)\b',
         ' ', texto,
     )
     return ' '.join(texto.split(' ?¿.,;:'))
+
+
+def _respuesta_pintura_para_contexto(producto, historial):
+    """Evalúa una pintura concreta usando el proyecto conservado en el chat."""
+    if producto.tipo_calculo != 'pintura':
+        return None
+
+    datos = _aplicar_contexto_calculo_pintura(
+        {
+            'intencion': 'calcular_pintura',
+            'superficie': 0,
+            'ambiente': '',
+            'tipo_superficie': '',
+            'estado_superficie': '',
+        },
+        '',
+        historial,
+    )
+    if not all(datos.get(clave) for clave in (
+        'superficie', 'ambiente', 'tipo_superficie', 'estado_superficie',
+    )):
+        return None
+
+    calculo = calcular_producto_pintura(
+        producto,
+        superficie=datos['superficie'],
+        ambiente=datos['ambiente'],
+        tipo_superficie=datos['tipo_superficie'],
+        estado_superficie=datos['estado_superficie'],
+    )
+    if not calculo:
+        return {
+            'tipo': 'compatibilidad_pintura',
+            'mensaje': (
+                f'{producto.nombre} no tiene una ficha verificada compatible con '
+                f'{_formatear_decimal(datos["superficie"])} m² de '
+                f'{datos["tipo_superficie"]} en ambiente {datos["ambiente"]}. '
+                'Prefiero no recomendarla para esa superficie sin comprobar antes '
+                'la ficha del fabricante.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': ['Ver pinturas compatibles', 'Buscar otro color'],
+        }
+
+    herramientas = []
+    usadas = set()
+    for termino_nombre, uso in (
+        ('rodillo', 'Aplicar la pintura de manera uniforme en las zonas amplias.'),
+        ('brocha', 'Pintar bordes, esquinas y encuentros donde no llega el rodillo.'),
+        ('bandeja', 'Cargar y descargar el rodillo de forma controlada.'),
+    ):
+        candidatas = list(Producto.objects.filter(
+            activo=True,
+            nombre__icontains=termino_nombre,
+        ).exclude(pk__in=usadas).order_by('precio', 'pk')[:8])
+        herramienta = next((
+            candidata for candidata in candidatas
+            if _texto_normalizado(candidata.nombre).startswith(termino_nombre)
+        ), candidatas[0] if candidatas else None)
+        if herramienta:
+            usadas.add(herramienta.pk)
+            herramientas.append((herramienta, uso))
+
+    lineas_herramientas = [
+        f'• {herramienta.nombre}: {uso}'
+        for herramienta, uso in herramientas
+    ] or [
+        '• Rodillo compatible: para las zonas amplias.',
+        '• Brocha compatible: para bordes, esquinas y detalles.',
+        '• Bandeja de pintura: para cargar el rodillo de forma uniforme.',
+    ]
+
+    producto_publico = _producto_publico(producto)
+    producto_publico.update({
+        'cantidad_envases': calculo['cantidad_envases'],
+        'litros_necesarios': calculo['litros_necesarios'],
+        'contenido_litros': calculo['contenido_litros'],
+        'litros_comprados': calculo['litros_comprados'],
+        'presupuesto_total': calculo['presupuesto_total'],
+        'stock_suficiente': calculo['stock_suficiente'],
+        'calculo_carrito': {
+            'producto': producto.pk,
+            'superficie': datos['superficie'],
+            'ambiente': datos['ambiente'],
+            'tipo_superficie': datos['tipo_superficie'],
+            'estado_superficie': datos['estado_superficie'],
+            'terminacion': producto.terminacion,
+        },
+    })
+    return {
+        'tipo': 'compatibilidad_pintura',
+        'mensaje': '\n'.join([
+            'SÍ, ES COMPATIBLE CON TU PROYECTO',
+            '',
+            f'{producto.nombre} está indicada para {datos["tipo_superficie"]} en '
+            f'ambiente {datos["ambiente"]}, según su ficha verificada.',
+            '',
+            'CANTIDAD ESTIMADA',
+            f'Para {_formatear_decimal(datos["superficie"])} m² necesitas '
+            f'aproximadamente {_formatear_decimal(calculo["litros_necesarios"])} L. '
+            f'Debes comprar {calculo["cantidad_envases"]} envase(s) de '
+            f'{_formatear_decimal(calculo["contenido_litros"])} L, equivalentes a '
+            f'{_formatear_decimal(calculo["litros_comprados"])} L en total.',
+            '',
+            'HERRAMIENTAS QUE PODRÍAS NECESITAR',
+            *lineas_herramientas,
+            '',
+            'Esta es una estimación. Confirma la preparación, el rendimiento y las '
+            'condiciones reales de la superficie antes de comprar o aplicar.',
+        ]),
+        'productos': [producto_publico],
+        'maestros': [],
+        'sugerencias': [
+            '¿Cómo preparo la superficie?',
+            'Ver las herramientas recomendadas',
+            'Buscar otra pintura compatible',
+        ],
+    }
 
 
 def _producto_mencionado_para_uso(consulta, productos):
@@ -3574,6 +3914,20 @@ def _productos_mencionados_en_seguimiento(mensaje, productos):
         indice = int(coincidencia.group(1)) - 1
         if indice < len(productos):
             seleccionados.append(productos[indice])
+
+    # Si el cliente escribió el nombre completo de una o varias fichas, esa
+    # referencia es más precisa que las coincidencias parciales de marca o
+    # familia (por ejemplo, varias pinturas Sipa Esmalte al Agua).
+    nombres_expresos = [
+        producto for producto in productos
+        if _texto_normalizado(producto.nombre) in texto
+    ]
+    if nombres_expresos:
+        ids_expresos = set()
+        return [
+            producto for producto in nombres_expresos
+            if not (producto.pk in ids_expresos or ids_expresos.add(producto.pk))
+        ]
 
     palabras_genericas = {
         'para', 'madera', 'metal', 'interior', 'exterior', 'producto',
@@ -3895,6 +4249,12 @@ def _explicar_productos_mostrados(mensaje, historial, productos_contexto):
             ]
             if len(coincidencias) == 1:
                 productos = coincidencias
+        if len(productos) == 1:
+            respuesta_pintura = _respuesta_pintura_para_contexto(
+                productos[0], historial,
+            )
+            if respuesta_pintura:
+                return respuesta_pintura
         respuesta_uso = _respuesta_uso_producto(productos)
         if respuesta_uso:
             return respuesta_uso
@@ -4886,6 +5246,81 @@ def _resolver_identificacion_pieza(mensaje):
             'sugerencias': ['¿Para qué sirve?', '¿Cómo verifico la compatibilidad?'],
         }
 
+    # En Chile y otros países de Latinoamérica es habitual describir una pieza
+    # sin conocer su nombre técnico: "el coso del agua", "la canilla", "la
+    # manguerita de abajo" o "lo que conecta la pileta". Antes de depender de
+    # Gemini, traducimos las expresiones inequívocas y pedimos una aclaración
+    # breve cuando todavía pueden corresponder a alimentación o desagüe.
+    contexto_cocina = bool(re.search(
+        r'\b(?:cocina|lavaplatos|fregadero|pileta|tarja)\b', texto,
+    ))
+    menciona_agua = bool(re.search(
+        r'\b(?:agua|gotea|goteo|fuga|filtra|mojado|mojada)\b', texto,
+    ))
+    termino_vago = bool(re.search(
+        r'\b(?:coso|cosito|cosita|cosa|cuestion|chunche|aparato|pieza|cosilla)\b',
+        texto,
+    ))
+    pide_conexion_ambigua = bool(re.search(
+        r'\b(?:lo que|la cosa|el coso|la cuestion)\b.{0,35}'
+        r'\b(?:conecta|conectar|va debajo|esta debajo|lleva el agua)\b',
+        texto,
+    ))
+
+    if contexto_cocina:
+        menciona_griferia = bool(re.search(
+            r'\b(?:griferia|grifo|canilla|mezcladora|monomando|llave del agua|'
+            r'llave de agua|abre el agua|abrir el agua|sale el agua)\b', texto,
+        ))
+        menciona_flexible = bool(re.search(
+            r'\b(?:flexible|latiguillo|manguera|manguerita)\b', texto,
+        ))
+        menciona_sifon = bool(re.search(
+            r'\b(?:sifon|desague|drenaje|tubo de abajo|tubo por donde se va|'
+            r'por donde se va el agua)\b', texto,
+        ))
+
+        if menciona_griferia:
+            return respuesta_identificacion(
+                'llave o grifería de cocina',
+                'griferia cocina lavaplatos',
+                'Abre, cierra y regula la salida de agua sobre el lavaplatos.',
+                'confirma el tipo de montaje, la cantidad de perforaciones y las conexiones de agua fría y caliente',
+            )
+        if menciona_flexible and (menciona_agua or re.search(r'\b(?:bajo|debajo|conecta)\b', texto)):
+            return respuesta_identificacion(
+                'flexible de agua para grifería',
+                'flexible agua griferia',
+                'Conecta la grifería con la llave de paso o la alimentación de agua.',
+                'confirma el largo, el diámetro y si ambos extremos son hilo interno o externo',
+            )
+        if menciona_sifon:
+            return respuesta_identificacion(
+                'sifón o conjunto de desagüe de lavaplatos',
+                'sifon lavaplatos desague',
+                'Conduce el agua usada al desagüe y el sifón ayuda a impedir el retorno de malos olores.',
+                'confirma el diámetro, el espacio bajo el lavaplatos y la posición de la descarga',
+            )
+        if (termino_vago and menciona_agua) or pide_conexion_ambigua:
+            return {
+                'tipo': 'aclaracion_pieza_cocina',
+                'mensaje': (
+                    'Entiendo que buscas una pieza relacionada con el agua de la cocina, '
+                    'pero puede ser una de estas tres:\n\n'
+                    '• Llave, grifo, canilla o grifería: es la pieza por donde sale el agua.\n'
+                    '• Flexible o manguerita: conecta la grifería con la alimentación de agua bajo el lavaplatos.\n'
+                    '• Sifón o desagüe: es el tubo por donde se elimina el agua usada.\n\n'
+                    'Indica cuál se parece más a lo que necesitas y cuéntame si gotea, está roto o quieres reemplazarlo.'
+                ),
+                'productos': [],
+                'maestros': [],
+                'sugerencias': [
+                    'Es la llave por donde sale el agua',
+                    'Es la manguerita bajo el lavaplatos',
+                    'Es el tubo del desagüe',
+                ],
+            }
+
     menciona_lavaplatos = bool(re.search(r'\b(?:lavaplatos|fregadero)\b', texto))
     evita_olores = bool(re.search(
         r'\b(?:malos? olores?|olores?|olor|evita(?:r)? que suba(?:n)?)\b', texto,
@@ -5244,7 +5679,21 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             for producto in materiales
         ))
         consultas = []
-        if any(termino in contexto for termino in (
+        es_contexto_pintura = any(
+            _texto_normalizado(producto.categoria) == 'pinturas'
+            or _texto_normalizado(producto.tipo_calculo) == 'pintura'
+            for producto in materiales
+        )
+        if es_contexto_pintura:
+            # La ficha de una pintura puede mencionar madera, hormigón u otras
+            # superficies. Esos términos describen el soporte y no deben
+            # activar herramientas de carpintería u obra gruesa.
+            consultas.extend([
+                'rodillo pintura',
+                'brocha pintura',
+                'bandeja para pintura',
+            ])
+        elif any(termino in contexto for termino in (
             'pasta muro', 'pasta de retape', 'retape', 'masilla',
             'pasta para juntas', 'yeso carton', 'yeso-carton',
         )):
@@ -5277,18 +5726,11 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             'techo', 'techumbre', 'zinc', 'teja', 'policarbonato', 'cubierta',
         )):
             consultas.extend(['cinta metrica', 'taladro percutor'])
-        if any(termino in contexto for termino in ('madera', 'pino', 'tablero', 'melamina')):
-            consultas.extend(['cinta metrica', 'taladro percutor', 'sierra circular'])
-        if (
-            not any(termino in contexto for termino in (
-                'pasta muro', 'pasta de retape', 'retape', 'masilla',
-                'pasta para juntas', 'yeso carton', 'yeso-carton',
-            ))
-            and any(termino in contexto for termino in ('pintura', 'latex', 'esmalte', 'barniz'))
-        ):
-            consultas.extend(['rodillo', 'brocha'])
-        if any(termino in contexto for termino in ('radier', 'hormigon', 'mortero', 'tierra')):
-            consultas.extend(['cinta metrica', 'pala'])
+        if not es_contexto_pintura:
+            if any(termino in contexto for termino in ('madera', 'pino', 'tablero', 'melamina')):
+                consultas.extend(['cinta metrica', 'taladro percutor', 'sierra circular'])
+            if any(termino in contexto for termino in ('radier', 'hormigon', 'mortero', 'tierra')):
+                consultas.extend(['cinta metrica', 'pala'])
         if not consultas:
             consultas = ['cinta metrica', 'taladro percutor']
         consultas = list(dict.fromkeys(consultas))
@@ -5299,8 +5741,9 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             'cinta metrica': 'Medir y marcar las dimensiones antes de cortar o montar.',
             'taladro percutor': 'Perforar y colocar las fijaciones del proyecto.',
             'sierra circular': 'Cortar madera o tableros a las medidas necesarias.',
-            'rodillo': 'Aplicar barniz o pintura uniformemente en superficies amplias.',
-            'brocha': 'Aplicar barniz o pintura en bordes, uniones y zonas de detalle.',
+            'rodillo pintura': 'Aplicar la pintura uniformemente en superficies amplias.',
+            'brocha pintura': 'Aplicar pintura en bordes, esquinas y zonas de detalle.',
+            'bandeja para pintura': 'Cargar y distribuir la pintura sobre el rodillo de forma controlada.',
             'espatula acero': 'Extender, presionar y nivelar la pasta en grietas e imperfecciones.',
             'lija muro': 'Emparejar suavemente la superficie una vez que la pasta esté seca.',
             'pala': 'Mover y mezclar materiales para preparar la base del proyecto.',
@@ -5358,6 +5801,11 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
             # pero las búsquedas libres pueden no resolver la tilde de
             # "cerámica" de forma uniforme entre MySQL y Python.
             'mazo de goma para ceramica': 'SFI-HER-CER-MAZ-16',
+            # Estas consultas generales priorizan pinturas por relevancia.
+            # Los SKU aseguran que el seguimiento devuelva herramientas.
+            'rodillo pintura': 'TEST-HER-ROD-23',
+            'brocha pintura': 'TEST-HER-BRO-2',
+            'bandeja para pintura': 'SFI-PIN-BAN-25',
         }
         for consulta in consultas:
             herramienta = Producto.objects.filter(
@@ -5654,6 +6102,248 @@ def _resolver_accion_seguimiento(mensaje, productos_contexto):
     return None
 
 
+def _resolver_caneria_por_servicio(mensaje):
+    """Interpreta el servicio solicitado antes de reutilizar tarjetas anteriores."""
+    texto = _texto_normalizado(mensaje)
+    pide_canalizacion = bool(re.search(
+        r'\b(?:caneria|tuberia|tubo|cano|ducto|conduit|canalizacion)\b', texto,
+    ))
+    if not pide_canalizacion:
+        return None
+
+    es_electrica = bool(re.search(
+        r'\b(?:electrica|electrico|electricidad|cables?|conductores?)\b', texto,
+    ))
+    es_agua_potable = bool(re.search(
+        r'\b(?:agua potable|aguas limpias|agua limpia|agua fria|agua caliente|'
+        r'red de agua|alimentacion de agua)\b', texto,
+    ))
+    es_sanitaria = bool(re.search(
+        r'\b(?:aguas servidas|agua servida|aguas residuales|agua residual|'
+        r'aguas grises|agua gris|aguas negras|agua negra|alcantarillado|'
+        r'alcantarilla|desague|sanitaria|sanitario|descarga)\b', texto,
+    ))
+    es_septica = bool(re.search(
+        r'\b(?:aguas septicas|agua septica|sistema septico|fosa septica|'
+        r'pozo septico|drenaje septico)\b', texto,
+    ))
+    es_gas = bool(re.search(r'\b(?:gas|gas natural|gas licuado)\b', texto))
+    if not any((es_electrica, es_agua_potable, es_sanitaria, es_septica, es_gas)):
+        if re.search(r'\bagua(?:s)?\b', texto):
+            return {
+                'tipo': 'aclaracion',
+                'mensaje': (
+                    '¿La cañería es para alimentar agua limpia o potable, o para '
+                    'evacuar aguas servidas por un desagüe? Son redes diferentes y '
+                    'no corresponde recomendar el mismo material para ambas.'
+                ),
+                'productos': [],
+                'maestros': [],
+                'sugerencias': [
+                    'Es para agua potable',
+                    'Es para desagüe o aguas servidas',
+                    'Es para una fosa séptica',
+                ],
+            }
+        return None
+
+    base = Producto.objects.filter(activo=True, stock__gt=0)
+    if es_electrica:
+        candidatos = base.filter(nombre__icontains='conduit')
+        candidatos = [
+            producto for producto in candidatos.order_by('precio', 'nombre', 'pk')
+            if 'electrico' in _texto_normalizado(producto.nombre)
+        ]
+        rol = 'Canalización eléctrica'
+        explicacion = (
+            'El conduit canaliza y protege los conductores; una cañería de agua o gas '
+            'y una llave Stillson no cumplen esa función. El diámetro de 20 o 25 mm '
+            'depende de la cantidad y sección de los conductores, del trazado y de si '
+            'la instalación será embutida o visible.'
+        )
+        profesional = 'un instalador eléctrico autorizado'
+        sugerencias = [
+            '¿Qué diámetro necesito?',
+            '¿Qué accesorios necesita el conduit?',
+            'Buscar un instalador eléctrico',
+        ]
+    elif es_agua_potable:
+        candidatos = list(base.filter(
+            Q(nombre__icontains='Tubo PPR agua potable')
+            | Q(nombre__icontains='Tubo cobre tipo L')
+        ).order_by('precio', 'nombre', 'pk'))
+        rol = 'Conducción de agua potable'
+        explicacion = (
+            'Para agua limpia o potable encontré alternativas PPR y cobre tipo L. '
+            'No son automáticamente intercambiables: el material y diámetro dependen '
+            'de si transportará agua fría o caliente, la presión, el trazado y si la '
+            'instalación será visible o embutida. El conduit eléctrico y el PVC sanitario '
+            'no deben utilizarse para conducir agua potable.'
+        )
+        profesional = 'un gasfíter o instalador sanitario competente'
+        sugerencias = [
+            'Es para agua fría',
+            'Es para agua fría y caliente',
+            'Buscar un maestro de Gasfitería',
+        ]
+    elif es_septica:
+        candidatos = list(base.filter(
+            nombre__icontains='Tubo PVC sanitario',
+        ).order_by('precio', 'nombre', 'pk'))
+        rol = 'Conducción hacia sistema séptico'
+        explicacion = (
+            'Para conducir aguas residuales hacia una fosa o sistema séptico se utiliza '
+            'tubería sanitaria compatible. El diámetro, la pendiente, la ventilación '
+            'y el tratamiento final dependen del diseño sanitario y del terreno. Esta '
+            'tubería no reemplaza una red de agua potable, un conduit eléctrico ni el '
+            'diseño profesional del sistema séptico.'
+        )
+        profesional = 'un gasfíter o proyectista sanitario competente'
+        sugerencias = [
+            'Es una descarga domiciliaria',
+            'Necesito identificar el diámetro',
+            'Buscar un maestro de Gasfitería',
+        ]
+    elif es_sanitaria:
+        candidatos = list(base.filter(
+            nombre__icontains='Tubo PVC sanitario',
+        ).order_by('precio', 'nombre', 'pk'))
+        rol = 'Descarga sanitaria'
+        explicacion = (
+            'Para aguas servidas o desagüe se utiliza tubería sanitaria compatible. '
+            'El diámetro depende del artefacto conectado, el caudal, la pendiente y el '
+            'trazado. Esta tubería no reemplaza una red de agua potable ni un conduit eléctrico.'
+        )
+        profesional = 'un gasfíter o instalador sanitario competente'
+        sugerencias = [
+            'Es para un lavaplatos o lavamanos',
+            'Es para un sanitario',
+            'Buscar un maestro de Gasfitería',
+        ]
+    else:
+        candidatos = list(base.filter(
+            nombre__icontains='Tubo cobre rígido para gas',
+        ).order_by('precio', 'nombre', 'pk'))
+        rol = 'Conducción de gas'
+        explicacion = (
+            'Las redes de gas requieren materiales certificados y un diseño autorizado. '
+            'No deben ejecutarse con PPR, PVC sanitario ni conduit eléctrico, y no corresponde '
+            'definir el diámetro sin revisar el artefacto, tipo de gas y recorrido.'
+        )
+        profesional = 'un instalador de gas autorizado por la SEC'
+        sugerencias = [
+            'Buscar un instalador de gas autorizado',
+            'Ver válvulas certificadas para gas',
+        ]
+
+    unicos = []
+    nombres_vistos = set()
+    for producto in candidatos:
+        nombre = _texto_normalizado(producto.nombre)
+        if nombre in nombres_vistos:
+            continue
+        nombres_vistos.add(nombre)
+        unicos.append(producto)
+
+    productos = []
+    for producto in unicos[:6]:
+        item = _producto_publico(producto)
+        item.update({
+            'rol': rol,
+            'carrito_cantidad': 1,
+            'es_opcional': False,
+        })
+        productos.append(item)
+
+    if not productos:
+        return {
+            'tipo': 'sin_resultados',
+            'mensaje': (
+                f'Identifiqué que buscas una cañería para {rol.casefold()}, pero actualmente '
+                'no encontré una alternativa compatible con stock en SFI. El material y '
+                f'diámetro deben confirmarse con {profesional}.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': sugerencias,
+        }
+
+    return {
+        'tipo': 'productos',
+        'mensaje': (
+            f'Encontré {len(productos)} alternativa(s) para {rol.casefold()} con stock en SFI. '
+            f'{explicacion} Antes de comprar o ejecutar el trabajo, confirma el '
+            f'dimensionamiento y la instalación con {profesional}.'
+        ),
+        'productos': productos,
+        'maestros': [],
+        'sugerencias': sugerencias,
+    }
+
+
+def _es_nueva_consulta_pintura(mensaje):
+    """Distingue una búsqueda de pintura de una referencia a tarjetas previas."""
+    texto = _texto_normalizado(mensaje)
+    familia = bool(re.search(
+        r'\b(?:pintura|pinturas|pintar|latex|esmalte|barniz|anticorrosivo)\b',
+        texto,
+    ))
+    if not familia:
+        return False
+    # "Ese esmalte me sirve" sigue siendo una consulta sobre el producto visible.
+    if re.search(
+        r'\b(?:este|esta|ese|esa|aquel|aquella|el primero|la primera|'
+        r'el segundo|la segunda)\b', texto,
+    ):
+        return False
+    nueva_necesidad = bool(re.search(
+        r'\b(?:que tipo|cual|cuales|recomiend\w*|busco|necesito|quiero|'
+        r'sirve|sirven|apta|apto|compatible)\b', texto,
+    ))
+    criterio_nuevo = bool(re.search(
+        r'\b(?:madera|metal|fierro|acero|hormigon|concreto|cemento|ladrillo|'
+        r'yeso|volcanita|interior|exterior|fachada|piscina|techo|muro|pared)\b',
+        texto,
+    ))
+    return nueva_necesidad or criterio_nuevo
+
+
+def _resolver_calculo_pintura_local(mensaje, historial):
+    """Resuelve cálculos claros de pintura sin depender de Gemini.
+
+    Se limita a una solicitud explícita nueva o a la respuesta inmediata del
+    cuestionario de pintura. No interviene en proyectos que solo mencionen
+    pintura como uno de sus materiales.
+    """
+    historial = historial or []
+    nueva_consulta = _es_nueva_consulta_pintura(mensaje)
+    ultimo_asistente = next((
+        _texto_normalizado(item.get('content'))
+        for item in reversed(historial)
+        if item.get('role') == 'assistant'
+    ), '')
+    usuarios_recientes = ' '.join(
+        _texto_normalizado(item.get('content'))
+        for item in historial[-6:]
+        if item.get('role') == 'user'
+    )
+    responde_cuestionario = bool(
+        'para calcularlo con precision necesito saber' in ultimo_asistente
+        and re.search(
+            r'\b(?:pintura|pintar|latex|esmalte|barniz|anticorrosivo)\b',
+            usuarios_recientes,
+        )
+    )
+    if not nueva_consulta and not responde_cuestionario:
+        return None
+
+    datos = {'intencion': 'calcular_pintura'} if responde_cuestionario else {}
+    datos = _aplicar_contexto_calculo_pintura(datos, mensaje, historial)
+    if datos.get('intencion') != 'calcular_pintura':
+        return None
+    return resolver_interpretacion(datos)
+
+
 def _resolver_consulta_fuera_contexto_sfi(mensaje, historial=None, productos_contexto=None):
     """Detiene solicitudes iniciales ajenas al dominio ferretero de SFI.
 
@@ -5750,6 +6440,13 @@ def procesar_consulta(
     mensaje, historial, productos_contexto=None, modo_consulta='auto',
     estimacion_contexto=None,
 ):
+    caneria_por_servicio = _resolver_caneria_por_servicio(mensaje)
+    if caneria_por_servicio:
+        return caneria_por_servicio
+    nueva_consulta_pintura = _es_nueva_consulta_pintura(mensaje)
+    calculo_pintura_local = _resolver_calculo_pintura_local(mensaje, historial)
+    if calculo_pintura_local:
+        return calculo_pintura_local
     # Las descripciones de piezas conocidas deben resolverse antes del filtro
     # general de alcance: frases como "lo que va bajo el lavaplatos" pueden no
     # contener una palabra exacta del catálogo, pero siguen siendo ferretería.
@@ -5854,11 +6551,13 @@ def procesar_consulta(
         '¿Por qué elegiste estos materiales?'
         if flujo_natural == 'explicacion' else mensaje
     )
-    explicacion_contextual = _explicar_productos_mostrados(
-        mensaje_explicacion,
-        historial,
-        productos_contexto or [],
-    )
+    explicacion_contextual = None
+    if not nueva_consulta_pintura:
+        explicacion_contextual = _explicar_productos_mostrados(
+            mensaje_explicacion,
+            historial,
+            productos_contexto or [],
+        )
     if explicacion_contextual:
         return explicacion_contextual
     explicacion_faltantes = _explicar_faltantes_del_proyecto(
@@ -5868,12 +6567,24 @@ def procesar_consulta(
     )
     if explicacion_faltantes:
         return explicacion_faltantes
-    cuestionario_pendiente = _mantener_cuestionario_antes_de_recomendar(
-        mensaje, historial,
-    )
+    cuestionario_pendiente = None
+    if not nueva_consulta_pintura:
+        cuestionario_pendiente = _mantener_cuestionario_antes_de_recomendar(
+            mensaje, historial,
+        )
     if cuestionario_pendiente:
         return cuestionario_pendiente
     mensaje_para_ia = _mensaje_para_continuar_guia(mensaje, historial)
+    historial_interpretacion = historial
+    productos_interpretacion = productos_contexto or []
+    if nueva_consulta_pintura:
+        mensaje_para_ia = (
+            'INICIA UNA NUEVA CONSULTA DE PINTURA. No expliques ni reutilices los '
+            'productos de la consulta anterior. Interpreta la superficie, ambiente, '
+            f'estado, color y cantidad solicitados en este mensaje: {mensaje}'
+        )
+        historial_interpretacion = []
+        productos_interpretacion = []
     contextos_iniciales = {
         'producto': (
             'El cliente inició la consulta desde Buscar un producto. '
@@ -5901,7 +6612,7 @@ def procesar_consulta(
         )
     try:
         interpretacion = interpretar_con_gemini(
-            mensaje_para_ia, historial, productos_contexto or [],
+            mensaje_para_ia, historial_interpretacion, productos_interpretacion,
         )
     except GeminiNoDisponible as exc:
         raise AsistenteNoDisponible(str(exc)) from exc
@@ -5909,6 +6620,9 @@ def procesar_consulta(
         interpretacion,
         mensaje,
         historial,
+    )
+    interpretacion = _aplicar_contexto_calculo_pintura(
+        interpretacion, mensaje, historial_interpretacion,
     )
     if _plan_estandar_incompleto(interpretacion):
         proyecto = str(interpretacion.get('proyecto') or mensaje).strip()

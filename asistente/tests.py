@@ -13,6 +13,7 @@ from usuarios.models import Usuario
 from .services import procesar_configuracion_foto, procesar_consulta, resolver_interpretacion
 from .services.asistente_sfi import (
     _evaluar_alcance_proyecto,
+    _explicar_productos_mostrados,
     _normalizar_preferencias_extraidas,
     _resolver_accion_seguimiento,
     _resolver_consulta_fuera_contexto_sfi,
@@ -468,6 +469,189 @@ class AsistenteSfiTests(TestCase):
             or 'sifon' in producto['nombre'].casefold()
             for producto in resultado['productos']
         ))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_coso_del_agua_de_la_cocina_pide_aclarar_la_pieza(self, interpretar):
+        resultado = procesar_consulta(
+            'Necesito arreglar el coso del agua de la cocina, no sé cómo se llama',
+            [],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'aclaracion_pieza_cocina')
+        self.assertIn('grifería', resultado['mensaje'])
+        self.assertIn('Flexible', resultado['mensaje'])
+        self.assertIn('Sifón', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_canilla_de_la_cocina_se_identifica_como_griferia(self, interpretar):
+        resultado = procesar_consulta(
+            'La canilla de la cocina gotea, ¿cómo se llama esa pieza?',
+            [],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'identificacion_pieza')
+        self.assertIn('grifería de cocina', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_manguerita_bajo_lavaplatos_se_identifica_como_flexible(self, interpretar):
+        resultado = procesar_consulta(
+            'La manguerita que está debajo del lavaplatos pierde agua',
+            [],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'identificacion_pieza')
+        self.assertIn('flexible de agua', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_canalizacion_electrica_desplaza_contexto_de_llave_stillson(self, interpretar):
+        stillson = Producto.objects.create(
+            nombre='Llave Stillson para cañería 14 pulgadas prueba',
+            descripcion='Herramienta para sujetar tuberías metálicas.',
+            precio=15990, stock=10, categoria='Herramientas', activo=True,
+        )
+        Producto.objects.create(
+            nombre='Conduit PVC eléctrico prueba 32 mm x 3 m',
+            descripcion='Canalización para proteger conductores eléctricos.',
+            uso_recomendado='Canalización eléctrica definida por instalador autorizado.',
+            precio=4990, stock=20, categoria='Electricidad', activo=True,
+        )
+
+        resultado = procesar_consulta(
+            '¿Qué tipo de cañería me sirve para instalación eléctrica?',
+            [{'role': 'assistant', 'content': 'Mostré una llave Stillson.'}],
+            [stillson.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'productos')
+        self.assertTrue(resultado['productos'])
+        self.assertTrue(all(
+            'conduit' in producto['nombre'].casefold()
+            for producto in resultado['productos']
+        ))
+        self.assertNotIn('Llave Stillson', ' '.join(
+            producto['nombre'] for producto in resultado['productos']
+        ))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_agua_limpia_inicia_busqueda_nueva_aunque_haya_conduit_en_contexto(self, interpretar):
+        conduit = Producto.objects.create(
+            nombre='Conduit PVC eléctrico contexto prueba 40 mm x 3 m',
+            descripcion='Canalización eléctrica.', precio=3990, stock=12,
+            categoria='Electricidad', activo=True,
+        )
+        Producto.objects.create(
+            nombre='Tubo PPR agua potable prueba 32 mm x 6 m',
+            descripcion='Tubería para red de agua potable.',
+            uso_recomendado='Conducir agua potable en una red termofusionada.',
+            precio=8990, stock=15, categoria='Gasfitería', activo=True,
+        )
+
+        resultado = procesar_consulta(
+            '¿Qué tipo de cañería me sirve para instalación de aguas limpias?',
+            [{'role': 'assistant', 'content': 'Mostré conduit eléctrico.'}],
+            [conduit.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'productos')
+        self.assertTrue(resultado['productos'])
+        self.assertTrue(all(
+            'agua potable' in producto['nombre'].casefold()
+            or 'cobre tipo l' in producto['nombre'].casefold()
+            for producto in resultado['productos']
+        ))
+        self.assertFalse(any(
+            'conduit' in producto['nombre'].casefold()
+            for producto in resultado['productos']
+        ))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_agua_septica_inicia_busqueda_sanitaria_nueva(self, interpretar):
+        conduit = Producto.objects.create(
+            nombre='Conduit PVC eléctrico contexto séptico prueba',
+            descripcion='Canalización eléctrica.', precio=3990, stock=12,
+            categoria='Electricidad', activo=True,
+        )
+        Producto.objects.create(
+            nombre='Tubo PVC sanitario prueba séptica 110 mm x 6 m',
+            descripcion='Tubería para descarga sanitaria.', precio=12990,
+            stock=20, categoria='Gasfitería', activo=True,
+        )
+
+        resultado = procesar_consulta(
+            '¿Qué tipo de cañería me sirve para instalación de aguas sépticas?',
+            [{'role': 'assistant', 'content': 'Mostré conduit eléctrico.'}],
+            [conduit.id],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'productos')
+        self.assertTrue(resultado['productos'])
+        self.assertTrue(all(
+            'sanitario' in producto['nombre'].casefold()
+            for producto in resultado['productos']
+        ))
+        self.assertIn('séptico', resultado['mensaje'].casefold())
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_caneria_para_agua_ambigua_pide_aclarar_red(self, interpretar):
+        resultado = procesar_consulta('¿Qué cañería sirve para agua?', [])
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertIn('agua limpia o potable', resultado['mensaje'])
+        self.assertIn('aguas servidas', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_aguas_grises_y_negras_se_interpretan_como_red_sanitaria(self, interpretar):
+        for consulta in (
+            '¿Qué tubería sirve para aguas grises?',
+            '¿Qué tubo sirve para aguas negras?',
+            '¿Qué tubería sirve para alcantarilla?',
+        ):
+            with self.subTest(consulta=consulta):
+                resultado = procesar_consulta(consulta, [])
+                self.assertEqual(resultado['tipo'], 'productos')
+                self.assertTrue(resultado['productos'])
+                self.assertTrue(all(
+                    'sanitario' in producto['nombre'].casefold()
+                    for producto in resultado['productos']
+                ))
+        interpretar.assert_not_called()
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_consulta_nueva_pintura_no_explica_productos_anteriores(self, interpretar):
+        conduit = Producto.objects.create(
+            nombre='Conduit contexto antes de pintura prueba',
+            descripcion='Canalización eléctrica.', precio=3990, stock=12,
+            categoria='Electricidad', activo=True,
+        )
+        interpretar.return_value = {
+            'intencion': 'calcular_pintura',
+            'superficie': 0,
+            'ambiente': 'exterior',
+            'tipo_superficie': 'madera',
+            'estado_superficie': '',
+            'terminacion': 'cualquiera',
+            'color': '',
+            'capas': 0,
+            'desperdicio': -1,
+        }
+
+        resultado = procesar_consulta(
+            '¿Qué pintura me sirve para madera exterior?',
+            [{'role': 'assistant', 'content': 'Mostré conduit eléctrico.'}],
+            [conduit.id],
+        )
+
+        interpretar.assert_called_once()
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertIn('estado actual', resultado['mensaje'])
+        self.assertNotIn('Conduit', resultado['mensaje'])
 
     def test_identifica_valvula_de_corte_de_gas_y_excluye_productos_ajenos(self):
         resultado = procesar_consulta('Como se llama la pieza para cortar el gas', [])
@@ -926,8 +1110,266 @@ class AsistenteSfiTests(TestCase):
         self.assertEqual(producto['id'], self.pintura.id)
         self.assertEqual(producto['litros_necesarios'], 11)
         self.assertEqual(producto['cantidad_envases'], 3)
+        self.assertEqual(producto['contenido_litros'], 4)
+        self.assertEqual(producto['litros_comprados'], 12)
+        self.assertIn('equivalentes a 12 L', resultado['mensaje'])
         self.assertEqual(producto['presupuesto_total'], 60000)
         self.assertEqual(producto['calculo_carrito']['terminacion'], 'mate')
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_aclaracion_pintura_entrega_ejemplo_y_respuestas_completas(self, interpretar):
+        resultado = procesar_consulta(
+            '¿Qué tanta pintura necesito para pintar mi pieza?',
+            [],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertIn('Ejemplo de respuesta válida', resultado['mensaje'])
+        self.assertTrue(all('m²' in sugerencia for sugerencia in resultado['sugerencias']))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_respuesta_al_cuestionario_de_pintura_tampoco_depende_de_gemini(self, interpretar):
+        historial = [
+            {
+                'role': 'user',
+                'content': '¿Cuánta pintura necesito para pintar mi pieza?',
+            },
+            {
+                'role': 'assistant',
+                'content': (
+                    'Para calcularlo con precisión necesito saber los metros cuadrados '
+                    'que pintarás, el material de la superficie y el estado actual.'
+                ),
+            },
+        ]
+
+        resultado = procesar_consulta(
+            'Son 20 m², la pared es de madera y está seca y en buen estado.',
+            historial,
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'calculo_pintura')
+        self.assertTrue(resultado['productos'])
+        self.assertTrue(all(
+            producto.get('cantidad_envases')
+            for producto in resultado['productos']
+        ))
+
+    def test_calculo_pintura_relaciona_preparacion_y_herramientas_sin_sumarlas(self):
+        for nombre in (
+            'Rodillo pintura muros 23 cm prueba',
+            'Brocha multipropósito 2 pulgadas prueba',
+            'Bandeja para pintura 25 cm prueba',
+            'Lija madera y muro grano 120 prueba',
+        ):
+            Producto.objects.create(
+                nombre=nombre,
+                descripcion='Herramienta opcional para pintura.',
+                precio=3990,
+                stock=10,
+                categoria='Herramientas',
+                activo=True,
+            )
+
+        resultado = resolver_interpretacion({
+            'intencion': 'calcular_pintura',
+            'superficie': 20,
+            'ambiente': 'interior',
+            'tipo_superficie': 'hormigon',
+            'estado_superficie': 'pintada_buen_estado',
+            'terminacion': 'cualquiera',
+            'color': '',
+            'capas': 0,
+            'desperdicio': -1,
+            'presupuesto': 0,
+        })
+
+        self.assertEqual(resultado['tipo'], 'calculo_pintura')
+        self.assertIn('PREPARACIÓN SEGÚN LA FICHA', resultado['mensaje'])
+        self.assertIn('HERRAMIENTAS OPCIONALES DISPONIBLES EN SFI', resultado['mensaje'])
+        self.assertIn('Rodillo pintura', resultado['mensaje'])
+        self.assertIn('Brocha multipropósito', resultado['mensaje'])
+        self.assertIn('no están incluidas en el presupuesto', resultado['mensaje'])
+        self.assertIn('maestro pintor', resultado['mensaje'])
+        self.assertTrue(all(
+            producto.get('cantidad_envases')
+            for producto in resultado['productos']
+        ))
+
+    def test_seguimiento_de_pintura_no_mezcla_herramientas_de_otros_proyectos(self):
+        herramientas = (
+            ('Rodillo pintura muros 23 cm', 'TEST-HER-ROD-23'),
+            ('Brocha multipropósito 2 pulgadas', 'TEST-HER-BRO-2'),
+            ('Bandeja para pintura 25 cm', 'SFI-PIN-BAN-25'),
+        )
+        for nombre, sku in herramientas:
+            Producto.objects.create(
+                nombre=nombre,
+                sku=sku,
+                descripcion='Herramienta para aplicar pintura.',
+                precio=3990,
+                stock=10,
+                categoria='Herramientas',
+                activo=True,
+            )
+
+        resultado = _resolver_accion_seguimiento(
+            '¿Qué herramientas necesito para pintar?',
+            [self.pintura.pk],
+        )
+
+        nombres = ' '.join(
+            producto['nombre'].casefold()
+            for producto in resultado['productos']
+        )
+        self.assertIn('rodillo', nombres)
+        self.assertIn('brocha', nombres)
+        self.assertIn('bandeja', nombres)
+        self.assertNotIn('taladro', nombres)
+        self.assertNotIn('sierra', nombres)
+        self.assertNotIn('pala', nombres)
+
+    def test_pintura_concreta_conserva_area_y_superficie_del_contexto(self):
+        historial = [
+            {
+                'role': 'user',
+                'content': '¿Cuánta pintura necesito para pintar mi pieza?',
+            },
+            {
+                'role': 'assistant',
+                'content': 'Indica superficie, material y estado actual.',
+            },
+            {
+                'role': 'user',
+                'content': 'Son 50 m², es hormigón interior y está nuevo.',
+            },
+        ]
+
+        resultado = _explicar_productos_mostrados(
+            f'{self.pintura.nombre}, ¿este me sirve?',
+            historial,
+            [self.pintura.pk],
+        )
+
+        self.assertEqual(resultado['tipo'], 'compatibilidad_pintura')
+        self.assertEqual(len(resultado['productos']), 1)
+        self.assertEqual(resultado['productos'][0]['id'], self.pintura.pk)
+        self.assertEqual(resultado['productos'][0]['cantidad_envases'], 3)
+        self.assertIn('Para 50 m²', resultado['mensaje'])
+        self.assertIn('HERRAMIENTAS QUE PODRÍAS NECESITAR', resultado['mensaje'])
+        self.assertNotIn('maestro pintor', resultado['mensaje'].lower())
+
+    def test_pintura_concreta_reconoce_esa_me_sirve_escrito_junto(self):
+        historial = [
+            {
+                'role': 'user',
+                'content': 'Quiero pintura para mi pieza.',
+            },
+            {
+                'role': 'user',
+                'content': 'Son 50 m², es hormigón interior y está nuevo.',
+            },
+        ]
+
+        resultado = _explicar_productos_mostrados(
+            f'{self.pintura.nombre} ya y esamesirve?',
+            historial,
+            [self.pintura.pk],
+        )
+
+        self.assertEqual(resultado['tipo'], 'compatibilidad_pintura')
+        self.assertEqual(resultado['productos'][0]['id'], self.pintura.pk)
+        self.assertIn('SÍ, ES COMPATIBLE', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_consulta_por_area_fuerza_calculo_pintura_sin_convertirse_en_proyecto(
+        self, interpretar,
+    ):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'proyecto': 'Pintar muro',
+            'superficie': 0,
+            'ambiente': '',
+            'tipo_superficie': '',
+            'estado_superficie': '',
+            'terminacion': 'cualquiera',
+            'color': '',
+            'capas': 0,
+            'desperdicio': -1,
+        }
+
+        resultado = procesar_consulta(
+            '¿Cuánta pintura necesito para 14 m² de muro interior de hormigón nuevo?',
+            [],
+        )
+
+        self.assertEqual(resultado['tipo'], 'calculo_pintura')
+        self.assertEqual(
+            resultado['productos'][0]['calculo_carrito']['superficie'], 14,
+        )
+        self.assertGreater(resultado['productos'][0]['litros_necesarios'], 0)
+        self.assertGreater(resultado['productos'][0]['cantidad_envases'], 0)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_calculo_pintura_conserva_datos_entregados_en_varios_mensajes(
+        self, interpretar,
+    ):
+        interpretar.return_value = {
+            'intencion': 'planificar_proyecto',
+            'superficie': 0,
+            'ambiente': '',
+            'tipo_superficie': '',
+            'estado_superficie': '',
+            'terminacion': 'cualquiera',
+            'color': '',
+            'capas': 0,
+            'desperdicio': -1,
+        }
+        historial = [
+            {'role': 'user', 'content': 'Quiero calcular pintura para un muro interior'},
+            {'role': 'assistant', 'content': '¿Qué superficie pintarás y cuál es su estado?'},
+            {'role': 'user', 'content': 'Es de hormigón'},
+            {'role': 'assistant', 'content': '¿Cuántos metros cuadrados de pintura necesitas?'},
+        ]
+
+        resultado = procesar_consulta('Son 14 m² y el muro está nuevo', historial)
+
+        self.assertEqual(resultado['tipo'], 'calculo_pintura')
+        self.assertEqual(
+            resultado['productos'][0]['calculo_carrito']['superficie'], 14,
+        )
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_color_sin_coincidencia_permite_pedir_una_alternativa_parecida(
+        self, interpretar,
+    ):
+        interpretar.return_value = {
+            'intencion': 'calcular_pintura',
+            'superficie': 14,
+            'ambiente': 'interior',
+            'tipo_superficie': 'hormigon',
+            'estado_superficie': 'nueva',
+            'terminacion': 'cualquiera',
+            'color': 'Verde menta',
+            'capas': 0,
+            'desperdicio': -1,
+        }
+        historial = [
+            {'role': 'user', 'content': 'Quiero verde menta para pintar 14 m²'},
+            {
+                'role': 'assistant',
+                'content': 'No encontré una pintura verificada con ese color.',
+            },
+        ]
+
+        resultado = procesar_consulta('¿O alguna parecida?', historial)
+
+        self.assertEqual(resultado['tipo'], 'calculo_pintura')
+        self.assertEqual(resultado['productos'][0]['id'], self.pintura.id)
+        self.assertIn('alternativas compatibles', resultado['mensaje'])
+        self.assertIn('Verde menta', resultado['mensaje'])
 
     def test_busqueda_solo_devuelve_productos_reales(self):
         resultado = resolver_interpretacion({
