@@ -245,6 +245,9 @@ def _esquema_respuesta():
                 'type': 'string',
                 'enum': ['', 'nueva', 'reutilizable', 'reparar', 'reemplazar', 'desconocido'],
             },
+            'base_firme': {'type': 'string', 'enum': ['si', 'no', 'desconocido']},
+            'base_seca': {'type': 'string', 'enum': ['si', 'no', 'desconocido']},
+            'base_nivelada': {'type': 'string', 'enum': ['si', 'no', 'desconocido']},
             'tipo_cubierta': {'type': 'string', 'maxLength': 100},
             'incluir_herramientas': {'type': 'boolean'},
             'alcance_bano': {
@@ -336,6 +339,33 @@ Reglas obligatorias:
 - PRODUCTOS REALES MOSTRADOS contiene, en orden, las opciones de la respuesta anterior.
   Conserva ese tipo de producto cuando el cliente diga "ese", "el segundo", "uno similar",
   "uno más barato" u otra referencia contextual; no cambies a una categoría genérica.
+- Interpreta el mensaje completo y su intención antes de elegir una acción: una pregunta
+  sobre qué se usa no implica que el cliente pida calcular cantidades o comprar un proyecto.
+  Tolera errores de escritura, ausencia de tildes o signos y expresiones chilenas sin cambiar
+  medidas, unidades, material ni servicio solicitado. Usa el historial solo para aclarar
+  referencias o respuestas breves; no arrastres un proyecto anterior si el cliente cambia de tema.
+  Si una palabra o compatibilidad admite varias interpretaciones relevantes, pregunta lo mínimo
+  necesario o explica la incertidumbre, sin asumir características no verificadas del catálogo.
+- Para recomendar herramientas considera la acción, material, estado (por ejemplo roto,
+  barrido u oxidado), medidas y acceso que haya indicado el cliente. No propongas una
+  herramienta genérica si no cumple la tarea descrita. Si no hay datos para determinarla,
+  explica las posibilidades o pregunta lo imprescindible; Django verificará el catálogo.
+- Para iluminación exterior distingue luminarias de muro, estacas de jardín y focos
+  empotrados en suelo. No supongas que una estaca es solar, empotrable o que soporta
+  tránsito, humedad o enterramiento sin ficha verificable. No agregues enchufes, sensores
+  ni protecciones con valores concretos sin necesidad indicada o evaluación profesional.
+- En preguntas como «con qué clavo un clavito», distingue la herramienta buscada del
+  elemento sobre el que se actúa: busca un martillo, no clavos. Aplica el mismo criterio
+  a otras acciones y reconoce diminutivos sin inventar medidas ni detalles.
+- Cuando una consulta pida cómo resolver una necesidad mediante un material o herramienta,
+  explica brevemente su función en respuesta y entrega su nombre concreto en consulta_producto,
+  incluso si la intención es orientacion_general. No afirmes disponibilidad: Django buscará
+  productos compatibles. Si hay ambigüedad importante, explica qué debe verificarse.
+- Atiende necesidades de jardinería en general, incluidas plantas, suelo, riego, poda,
+  plagas y herramientas, aunque el usuario no conozca el nombre del producto. Da orientación
+  general útil incluso cuando Django no encuentre artículos compatibles; no afirmes que hay
+  disponibilidad, precio o certificación sin verificación. Si falta información crítica,
+  pide solo la necesaria y no presentes una suposición como un diagnóstico confirmado.
 - Una solicitud concreta como "kit de ducha" debe conservar todas sus palabras distintivas.
   No la reemplaces por sanitarios u otros artículos que solo compartan la categoría.
 - Para preguntas como "cuánto cuesta", "qué valor tiene", "el más caro" o "el más
@@ -348,6 +378,11 @@ Reglas obligatorias:
   inventes que el producto existe: Django comprobará el catálogo y puede mostrar un kit
   relacionado si no existe la pieza individual.
 - Para calcular pintura extrae metros cuadrados, ambiente, superficie, estado y terminación.
+- Para pisos, interpreta las respuestas y el historial, incluso con errores de escritura,
+  en base_firme, base_seca y base_nivelada: usa «si» únicamente si el cliente confirma
+  esa condición de la base real, «no» si la niega, y «desconocido» si no puede determinarse.
+  Una alfombra visible no demuestra el estado de la base que está debajo. No supongas
+  que una base firme también esté seca o nivelada.
 - Usa "recomendar_color" cuando el cliente quiera elegir, comparar o recibir sugerencias de
   colores sin pedir todavía un cálculo de litros. Reconoce interior, exterior y piscina.
 - Para piscina usa ambiente "especial" y tipo_superficie "piscina_estanque".

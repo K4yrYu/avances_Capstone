@@ -244,6 +244,58 @@ class CatalogoGeminiReducidoTests(TestCase):
 
 
 class PisoFlotanteTests(TestCase):
+    def test_estado_con_errores_ortograficos_no_repite_nivelacion(self):
+        resultado = _resolver_proyecto({
+            'proyecto': 'Instalación de piso flotante',
+            '_contexto_usuario': 'dormitorio 6 x 2 hormigon firme sin gumedad sena y nivellada y sin humedad',
+            'superficie': 12,
+            'base_firme': 'si', 'base_seca': 'si', 'base_nivelada': 'si',
+        })
+        self.assertNotEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertNotIn('Solo falta confirmar si está nivelada', resultado['mensaje'])
+
+    def test_estado_desconocido_no_se_interpreta_como_confirmado(self):
+        resultado = _resolver_proyecto({
+            'proyecto': 'Instalación de piso flotante',
+            '_contexto_usuario': 'dormitorio hormigon firme seco nivelado',
+            'superficie': 12,
+            'base_firme': 'si', 'base_seca': 'si', 'base_nivelada': 'desconocido',
+        })
+        self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn('nivelada', resultado['mensaje'])
+    def test_alfombra_firme_no_confirma_estado_de_base_oculta(self):
+        resultado = _resolver_proyecto({
+            'proyecto': 'Instalación de piso flotante',
+            '_contexto_usuario': 'dormitorio 3 x 2 alfombra y firme sin humedad',
+            'superficie': 6,
+        })
+        self.assertEqual(resultado['tipo'], 'orientacion')
+        self.assertIn('6 m²', resultado['mensaje'])
+        self.assertIn('base oculta', resultado['mensaje'])
+        self.assertNotIn('Solo falta confirmar si está nivelada', resultado['mensaje'])
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_no_se_pide_orientacion_sin_repetir_cuestionario(self, interpretar):
+        interpretar.return_value = {'respuesta': 'Puedes revisar la superficie antes de elegir materiales.'}
+        resultado = procesar_consulta('no lo sé', [
+            {'role': 'user', 'content': 'quiero cambiar el piso flotante'},
+            {'role': 'assistant', 'content': 'ANTES DE RECOMENDAR PRODUCTOS: indica la base'},
+        ])
+        self.assertEqual(resultado['tipo'], 'orientacion')
+        self.assertIn('revisar la superficie', resultado['mensaje'])
+        interpretar.assert_called_once()
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_alfombra_y_base_desconocida_da_guia_sin_repetir_preguntas(self, interpretar):
+        interpretar.return_value = {'respuesta': 'La alfombra es visible; no sabemos qué base hay debajo.'}
+        historial = [
+            {'role': 'user', 'content': 'como se instala el piso flotante'},
+            {'role': 'user', 'content': 'dormitorio 3 x 2 alfombra'},
+            {'role': 'assistant', 'content': 'Instalación de piso flotante laminado: indica la base actual'},
+        ]
+        resultado = procesar_consulta('no lo se', historial)
+        self.assertEqual(resultado['tipo'], 'orientacion')
+        self.assertIn('alfombra', resultado['mensaje'].casefold())
+        self.assertIn('no sabemos', resultado['mensaje'].casefold())
+        self.assertNotIn('RESPONDE TODO EN UN MENSAJE', resultado['mensaje'])
     def test_solicita_habitacion_medidas_base_y_estado(self):
         resultado = _resolver_proyecto({
             'proyecto': 'Instalación de piso flotante',
@@ -568,6 +620,263 @@ class AsistenteSfiTests(TestCase):
             'conduit' in producto['nombre'].casefold()
             for producto in resultado['productos']
         ))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_canerias_en_plural_para_aguas_limpias_no_muestra_tubo_de_gas(self, interpretar):
+        Producto.objects.create(
+            nombre='Tubo PPR agua potable prueba plural', descripcion='Para agua potable.',
+            precio=8000, stock=5, categoria='Gasfitería', activo=True,
+        )
+        gas = Producto.objects.create(
+            nombre='Tubo cobre rígido para gas prueba plural', descripcion='Para gas.',
+            precio=9000, stock=5, categoria='Gasfitería', activo=True,
+        )
+        resultado = procesar_consulta('que cañerias se usan para instalar aguas limpias', [])
+        self.assertEqual(resultado['tipo'], 'productos')
+        self.assertTrue(resultado['productos'])
+        self.assertNotIn(gas.pk, [producto['id'] for producto in resultado['productos']])
+        interpretar.assert_not_called()
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_canerias_con_error_de_escritura_conserva_servicio_de_agua(self, interpretar):
+        agua = Producto.objects.create(
+            nombre='Tubo PPR agua potable prueba escritura', descripcion='Para agua potable.',
+            precio=8000, stock=5, categoria='Gasfitería', activo=True,
+        )
+        resultado = procesar_consulta('que cainerias necesito para aguas limpias', [])
+        self.assertEqual(resultado['tipo'], 'productos')
+        self.assertIn(agua.pk, [producto['id'] for producto in resultado['productos']])
+        interpretar.assert_not_called()
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_canerias_lavaplatos_ambiguas_explica_ambas_conexiones(self, interpretar):
+        resultado = procesar_consulta('que cañerias van al lavapaltos', [])
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertIn('alimentación', resultado['mensaje'])
+        self.assertIn('desagüe', resultado['mensaje'])
+        self.assertEqual(resultado['productos'], [])
+        interpretar.assert_not_called()
+
+    @patch('asistente.services.asistente_sfi._buscar_productos', return_value=[])
+    def test_pregunta_sin_palabras_clave_no_se_descarta_antes_de_gemini(self, buscar):
+        from .services.asistente_sfi import _resolver_consulta_fuera_contexto_sfi
+
+        self.assertIsNone(_resolver_consulta_fuera_contexto_sfi(
+            'las hojas de mi arbusto están amarillas', [], [],
+        ))
+
+    def test_tope_de_puerta_no_incluye_otros_herrajes(self):
+        from .services.asistente_sfi import _buscar_productos, resolver_interpretacion
+
+        tope = Producto.objects.create(
+            nombre='Tope de puerta recto prueba', descripcion='Tope para puerta.',
+            uso_recomendado='Evitar que la puerta golpee la pared.',
+            precio=4990, stock=10, categoria='Ferretería', activo=True,
+        )
+        bisagra = Producto.objects.create(
+            nombre='Bisagra puerta prueba', descripcion='Bisagra de puerta.',
+            precio=3000, stock=10, categoria='Ferretería', activo=True,
+        )
+        resultados = _buscar_productos('tope de puerta')
+        self.assertIn(tope.pk, [producto.pk for producto in resultados])
+        self.assertNotIn(bisagra.pk, [producto.pk for producto in resultados])
+        respuesta = resolver_interpretacion({
+            'intencion': 'buscar_producto', 'consulta_producto': 'tope de puerta',
+        })
+        self.assertIn('PARA QUÉ SIRVE CADA PRODUCTO', respuesta['mensaje'])
+
+    def test_busqueda_explica_cada_producto_mostrado(self):
+        from .services.asistente_sfi import resolver_interpretacion
+
+        productos = [Producto.objects.create(
+            nombre=f'Broca prueba explicación {indice}',
+            descripcion='', uso_recomendado=f'Permite perforar material {indice}.',
+            precio=1000 + indice, stock=10, categoria='Herramientas', activo=True,
+        ) for indice in (1, 2)]
+        resultado = resolver_interpretacion({
+            'intencion': 'buscar_producto', 'consulta_producto': 'broca prueba explicación',
+            '_productos_contexto_ids': [p.pk for p in productos],
+        })
+        for producto in productos:
+            self.assertIn(producto.nombre, resultado['mensaje'])
+            self.assertIn(producto.uso_recomendado, resultado['mensaje'])
+
+    def test_material_y_herramienta_se_buscan_por_separado(self):
+        from .services.asistente_sfi import resolver_interpretacion
+        pasta = Producto.objects.create(
+            nombre='Pasta muro prueba conjunta', descripcion='Para muros.',
+            uso_recomendado='Alisar muros.', precio=3000, stock=5,
+            categoria='Adhesivos', activo=True,
+        )
+        espatula = Producto.objects.create(
+            nombre='Espátula prueba conjunta', descripcion='Para aplicar pasta.',
+            uso_recomendado='Aplicar pasta.', precio=2000, stock=5,
+            categoria='Herramientas', activo=True,
+        )
+        resultado = resolver_interpretacion({
+            'intencion': 'buscar_producto', 'consulta_producto': 'pasta muro y espátula',
+        })
+        ids = {p['id'] for p in resultado['productos']}
+        self.assertIn(pasta.pk, ids)
+        self.assertIn(espatula.pk, ids)
+
+    def test_pieza_ambigua_cocina_gas_pide_aclarar(self):
+        resultado = procesar_consulta('como se llama el objeto que se conecta al gas de la cocina', [])
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertIn('flexible', resultado['mensaje'])
+        self.assertIn('llave', resultado['mensaje'])
+        self.assertEqual(resultado['productos'], [])
+
+    def test_portalamparas_techo_busca_sobrepuesto_sin_soquete_colgante(self):
+        from .services.asistente_sfi import _buscar_productos
+        techo = Producto.objects.create(
+            nombre='Portalámpara E27 sobrepuesto prueba', descripcion='Para cielo.',
+            precio=2000, stock=5, categoria='Iluminación', activo=True,
+        )
+        colgante = Producto.objects.create(
+            nombre='Soquete E27 colgante prueba', descripcion='Para lámpara colgante.',
+            precio=1000, stock=5, categoria='Iluminación', activo=True,
+        )
+        ids = [p.pk for p in _buscar_productos('portalámparas de techo')]
+        self.assertIn(techo.pk, ids)
+        self.assertNotIn(colgante.pk, ids)
+
+    def test_flexible_gas_no_devuelve_flexible_agua(self):
+        from .services.asistente_sfi import _buscar_productos
+        gas = Producto.objects.create(
+            nombre='Flexible para gas prueba 1/2 pulgada', descripcion='Para gas.',
+            precio=5000, stock=5, categoria='Gasfitería', activo=True,
+        )
+        agua = Producto.objects.create(
+            nombre='Flexible agua prueba 1/2 pulgada', descripcion='Para agua.',
+            precio=3000, stock=5, categoria='Gasfitería', activo=True,
+        )
+        ids = [p.pk for p in _buscar_productos('flexible para gas 1/2 pulgada', limite=20)]
+        self.assertIn(gas.pk, ids)
+        self.assertNotIn(agua.pk, ids)
+
+    def test_tornillo_cabeza_danada_no_ofrece_destornillador_comun(self):
+        from .services.asistente_sfi import _resolver_situacion_cotidiana
+
+        resultado = _resolver_situacion_cotidiana(
+            '¿Qué herramienta se usa para sacar un tornillo con la cabeza dañada?'
+        )
+        self.assertIn('extractor de tornillos', resultado['mensaje'])
+        self.assertTrue(all(
+            'extractor' in producto['nombre'].casefold()
+            for producto in resultado['productos']
+        ))
+
+    def test_cortar_arbol_no_recomienda_sierra_circular_de_tableros(self):
+        sierra = Producto.objects.create(
+            nombre='Sierra circular para tableros prueba', descripcion='Cortes en tableros.',
+            precio=50000, stock=5, categoria='Herramientas', activo=True,
+        )
+        resultado = procesar_consulta('ue herramienta me sirve para cortar un arbol', [])
+        self.assertIn('motosierra', resultado['mensaje'].casefold())
+        self.assertNotIn(sierra.pk, [producto['id'] for producto in resultado['productos']])
+        self.assertNotEqual(resultado['tipo'], 'uso_producto')
+
+    def test_tarea_directa_no_impone_herramienta_ignorando_condiciones(self):
+        from .services.asistente_sfi import _resolver_situacion_cotidiana
+
+        for pregunta in (
+            'quiero sacar un tornillo oxidado en un lugar estrecho',
+            'necesito clavar un clavo en hormigón',
+        ):
+            with self.subTest(pregunta=pregunta):
+                self.assertIsNone(_resolver_situacion_cotidiana(pregunta))
+
+    def test_orientacion_general_busca_componente_y_descarta_cinta_aisladora(self):
+        from .services.asistente_sfi import resolver_interpretacion
+
+        conector = Producto.objects.create(
+            nombre='Conector eléctrico para cables prueba', descripcion='Une conductores.',
+            uso_recomendado='Unir conductores compatibles.', precio=2000, stock=5,
+            categoria='Electricidad', activo=True,
+        )
+        cinta = Producto.objects.create(
+            nombre='Cinta aisladora cable eléctrico prueba', descripcion='Aislar cables.',
+            precio=1000, stock=5, categoria='Electricidad', activo=True,
+        )
+        resultado = resolver_interpretacion({
+            'intencion': 'orientacion_general',
+            'consulta_producto': 'conector cable eléctrico',
+            'respuesta': 'Se puede usar un conector adecuado para los conductores.',
+        })
+        ids = [producto['id'] for producto in resultado['productos']]
+        self.assertIn(conector.pk, ids)
+        self.assertNotIn(cinta.pk, ids)
+        self.assertIn('conector adecuado', resultado['mensaje'])
+
+    def test_con_que_clavo_un_clavito_busca_martillo_no_clavos(self):
+        martillo = Producto.objects.create(
+            nombre='Martillo pequeño de prueba', descripcion='Herramienta para clavar.',
+            precio=5000, stock=10, categoria='Herramientas', activo=True,
+        )
+        resultado = procesar_consulta('con que clavo un clavito', [])
+        self.assertIn(martillo.pk, [producto['id'] for producto in resultado['productos']])
+        self.assertTrue(all('martillo' in producto['nombre'].casefold()
+                            for producto in resultado['productos']))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_pregunta_abierta_por_funcion_llega_a_gemini(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'buscar_producto', 'consulta_producto': 'tope de puerta',
+            'respuesta': 'Un tope evita que la puerta golpee el muro.',
+        }
+        resultado = procesar_consulta('qué sirve para evitar que golpee el muro', [])
+        interpretar.assert_called()
+        self.assertIn(resultado['tipo'], ('productos', 'sin_resultados'))
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_alerta_gas_tiene_prioridad_sobre_interpretacion(self, interpretar):
+        resultado = procesar_consulta('huele a gas en la cocina', [])
+        self.assertEqual(resultado['tipo'], 'orientacion_seguridad')
+        interpretar.assert_not_called()
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_chuzo_con_error_en_utiliza_explica_barreta_sin_accesorios(self, interpretar):
+        interpretar.return_value = {'respuesta': 'Se usa para hacer palanca y aflojar suelo.'}
+        barreta = Producto.objects.create(
+            nombre='Barreta de acero prueba chuzo', descripcion='Herramienta manual.',
+            uso_recomendado='Hacer palanca y aflojar suelo compacto.', precio=9000,
+            stock=10, categoria='Herramientas', activo=True,
+        )
+        bisagra = Producto.objects.create(
+            nombre='Bisagra de acero prueba chuzo', descripcion='Herraje de puerta.',
+            precio=3000, stock=10, categoria='Ferretería', activo=True,
+        )
+        from .services.asistente_sfi import _buscar_productos
+        encontrados = _buscar_productos('chuzo', limite=20)
+        self.assertIn(barreta.pk, [p.pk for p in encontrados])
+        self.assertNotIn(bisagra.pk, [p.pk for p in encontrados])
+        resultado = procesar_consulta('el chuzo para que se utlilza', [])
+        self.assertEqual(resultado['tipo'], 'uso_producto')
+        self.assertIn('barreta', resultado['mensaje'].casefold())
+        self.assertNotIn('bisagra', resultado['mensaje'].casefold())
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_canalizacion_sin_stock_conserva_orientacion_de_gemini(self, interpretar):
+        from .services.asistente_sfi import _resolver_caneria_por_servicio
+
+        Producto.objects.filter(nombre__icontains='conduit').update(stock=0)
+        interpretar.return_value = {
+            'respuesta': 'Se usa una canalización eléctrica compatible con los conductores.'
+        }
+        resultado = _resolver_caneria_por_servicio('cañería para cables eléctricos')
+        self.assertEqual(resultado['tipo'], 'sin_resultados')
+        self.assertIn('no encontré', resultado['mensaje'])
+        self.assertIn('canalización eléctrica compatible', resultado['mensaje'])
+        self.assertEqual(resultado['productos'], [])
+        interpretar.assert_called_once()
+
+    def test_esta_mal_no_repite_producto_anterior(self):
+        resultado = procesar_consulta(
+            'esta mal', [{'role': 'assistant', 'content': 'Una recomendación.'}], [123],
+        )
+        self.assertEqual(resultado['tipo'], 'aclaracion')
+        self.assertEqual(resultado['productos'], [])
 
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_agua_septica_inicia_busqueda_sanitaria_nueva(self, interpretar):
@@ -5772,6 +6081,65 @@ class PlanificadorGenericoProyectosTests(TestCase):
         self.assertNotIn('enchufe exterior', nombres)
         self.assertIn('electricista autorizado', resultado['mensaje'])
 
+    def test_iluminacion_suelo_no_presenta_enchufe_ni_promete_conduit_enterrado(self):
+        Producto.objects.create(
+            nombre='Enchufe exterior estanco prueba suelo', descripcion='Toma de corriente.',
+            precio=8000, stock=5, categoria='Electricidad', activo=True,
+        )
+        Producto.objects.create(
+            nombre='Conduit PVC eléctrico 20 mm prueba suelo', descripcion='Canalización.',
+            precio=2000, stock=5, categoria='Electricidad', activo=True,
+        )
+        resultado = _resolver_proyecto({
+            'proyecto': 'Instalación de iluminación exterior en suelo',
+            'tareas_proyecto': [
+                {'nombre': 'Instalación de luminarias', 'busquedas': ['enchufe exterior estanco']},
+                {'nombre': 'Canalización', 'busquedas': ['conduit PVC eléctrico 20 mm'],
+                 'usos_materiales': [{'busqueda': 'conduit PVC eléctrico 20 mm',
+                                      'uso': 'Protege el cableado subterráneo.'}]},
+            ],
+            'herramientas_proyecto': [], 'especialidades_proyecto': [],
+        })
+        self.assertNotIn('enchufe exterior', ' '.join(
+            p['nombre'].casefold() for p in resultado['productos']))
+        self.assertNotIn('Protege el cableado subterráneo', resultado['mensaje'])
+
+    def test_luz_suelo_y_caja_derivacion_encuentran_catalogo_sin_asumir_empotrado(self):
+        estaca = Producto.objects.create(
+            nombre='Estaca LED jardín exterior prueba', descripcion='Iluminación de jardín.',
+            precio=8000, stock=5, categoria='Iluminación', activo=True,
+        )
+        caja = Producto.objects.create(
+            nombre='Caja estanca eléctrica prueba', descripcion='Caja para conexiones.',
+            precio=4000, stock=5, categoria='Electricidad', activo=True,
+        )
+        resultado = _resolver_proyecto({
+            'proyecto': 'Iluminación exterior de suelo',
+            'tareas_proyecto': [
+                {'nombre': 'Luminarias', 'busquedas': ['luces de suelo exterior']},
+                {'nombre': 'Conexiones', 'busquedas': ['caja derivacion estanca']},
+            ], 'herramientas_proyecto': [], 'especialidades_proyecto': [],
+        })
+        nombres = ' '.join(p['nombre'].casefold() for p in resultado['productos'])
+        self.assertIn('estaca led', nombres)
+        self.assertIn('caja estanca', nombres)
+        self.assertIn('No es una luminaria empotrada', resultado['mensaje'])
+
+    def test_foco_empotrado_no_se_sustituye_por_estaca(self):
+        Producto.objects.create(
+            nombre='Estaca LED jardín exterior prueba empotrado',
+            descripcion='Iluminación de jardín con estaca.',
+            precio=8000, stock=5, categoria='Iluminación', activo=True,
+        )
+        resultado = _resolver_proyecto({
+            'proyecto': 'Iluminación exterior de suelo empotrada',
+            'tareas_proyecto': [{'nombre': 'Luminarias',
+                                 'busquedas': ['foco embutido de suelo exterior']}],
+            'herramientas_proyecto': [], 'especialidades_proyecto': [],
+        })
+        self.assertFalse(any('estaca led' in p['nombre'].casefold()
+                             for p in resultado['productos']))
+
     @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
     def test_techumbre_recomienda_cubierta_si_usuario_delega_eleccion(self, interpretar):
         interpretar.return_value = {
@@ -6761,6 +7129,34 @@ class PlanificadorGenericoProyectosTests(TestCase):
 
 
 class TechumbreEstandarPorMaterialTests(TestCase):
+    def test_respuesta_arciilla_continua_techumbre_de_arcilla(self):
+        teja = Producto.objects.create(
+            nombre='Teja colonial de arcilla prueba', descripcion='Cubierta de arcilla.',
+            precio=1500, stock=10, categoria='Construcción', activo=True,
+        )
+        resultado = procesar_consulta('arciilla', [{
+            'role': 'assistant',
+            'content': '¿Qué tipo de teja prefieres: asfáltica, de arcilla u otra?',
+        }])
+        self.assertNotEqual(resultado['tipo'], 'aclaracion_proyecto')
+        self.assertIn(teja.pk, [p['id'] for p in resultado['productos']])
+        self.assertFalse(any('asfáltica' in p['nombre'].casefold() for p in resultado['productos']))
+
+    def test_respuesta_breve_conserva_contexto_en_distintos_proyectos(self):
+        from .services.asistente_sfi import _mensaje_para_continuar_guia
+
+        for pregunta, respuesta in (
+            ('ANTES DE RECOMENDAR PRODUCTOS: ¿Qué material tendrá el piso?', 'madera'),
+            ('ANTES DE RECOMENDAR PRODUCTOS: ¿Qué tipo de pintura prefieres?', 'látex'),
+            ('¿Qué tipo de teja prefieres: asfáltica o de arcilla?', 'arcilla'),
+        ):
+            with self.subTest(respuesta=respuesta):
+                resultado = _mensaje_para_continuar_guia(
+                    respuesta, [{'role': 'assistant', 'content': pregunta}],
+                )
+                self.assertIn('Conserva los datos ya entregados', resultado)
+                self.assertIn(respuesta, resultado)
+
     def _resolver(self, material, **extras):
         datos = {
             'proyecto': f'Techumbre estandar de {material}',
@@ -6804,6 +7200,14 @@ class TechumbreEstandarPorMaterialTests(TestCase):
         self.assertIn('iko cambridge', nombres)
         self.assertIn('membrana impermeable', nombres)
         self.assertIn('clavo terrano', nombres)
+
+    def test_teja_generica_solicita_tipo_sin_repetir_material(self):
+        for material in ('teja', 'tejas'):
+            with self.subTest(material=material):
+                resultado = self._resolver(material)
+                self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
+                self.assertIn('tipo de teja', resultado['mensaje'])
+                self.assertNotIn('material principal de la cubierta', resultado['mensaje'])
 
     def test_estructura_madera_relaciona_carpinteria_como_apoyo(self):
         resultado = self._resolver(

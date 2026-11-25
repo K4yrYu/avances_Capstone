@@ -83,6 +83,13 @@ def _texto_normalizado(valor):
         'preico': 'precio',
         'cantdiad': 'cantidad',
         'eligue': 'elige',
+        'necesrto': 'necesito',
+        'nesesito': 'necesito',
+        'necesrta': 'necesita',
+        'instalcion': 'instalacion',
+        'instalacionnes': 'instalaciones',
+        'cainerias': 'canerias',
+        'lavapaltos': 'lavaplatos',
     }
     return re.sub(
         r'\b(?:' + '|'.join(map(re.escape, correcciones_accion)) + r')\b',
@@ -1514,11 +1521,43 @@ def _resolver_piso_flotante(datos):
     else:
         base = ''
 
-    base_firme = any(termino in contexto for termino in ('firme', 'buen estado', 'solida'))
-    base_seca = any(termino in contexto for termino in (
-        'seca', 'seco', 'sin humedad', 'libre de humedad',
-    ))
-    base_nivelada = any(termino in contexto for termino in ('nivelada', 'nivelado', 'sin desnivel'))
+    if 'alfombra' in contexto and not base:
+        detalles = []
+        if habitacion:
+            detalles.append(f'Habitación: {habitacion.replace("_", " y ")}.')
+        if superficie > 0:
+            detalles.append(f'Superficie informada: {superficie_texto} m².')
+        return {
+            'tipo': 'orientacion',
+            'mensaje': (
+                'Entiendo que actualmente hay alfombra. ' + ' '.join(detalles) + '\n\n'
+                'La alfombra es el revestimiento visible; aún no sabemos qué base hay '
+                'debajo. Aunque se vea firme o sin humedad, esas observaciones no '
+                'confirman el estado de la base oculta.\n\n'
+                'Normalmente se retiran la alfombra y su bajoalfombra para revisar '
+                'si la base está firme, seca y nivelada antes de instalar la manta '
+                'y el piso. Confirma los requisitos del fabricante y, si no puedes '
+                'revisarla con seguridad, solicita ayuda de un instalador. Las '
+                'cantidades y la compatibilidad quedan pendientes de verificar.'
+            ),
+            'productos': [], 'maestros': [],
+            'sugerencias': ['Qué materiales se usan para piso flotante', 'Buscar maestro de pisos'],
+        }
+
+    def condicion_base(campo, patron_positivo, patron_negativo):
+        valor = datos.get(campo)
+        if valor in ('si', 'no', 'desconocido'):
+            return valor == 'si'
+        # Compatibilidad con interpretaciones anteriores sin campos estructurados.
+        # Una negación explícita prevalece sobre palabras positivas del historial.
+        return not re.search(patron_negativo, contexto) and bool(re.search(patron_positivo, contexto))
+
+    base_firme = condicion_base('base_firme', r'\b(?:firme|buen estado|solida)\b',
+                                 r'\b(?:no|poco)\s+(?:esta\s+)?firme\b')
+    base_seca = condicion_base('base_seca', r'\b(?:seca|seco|sin humedad|libre de humedad)\b',
+                               r'\b(?:con humedad|humeda|humedo|no esta seca)\b')
+    base_nivelada = condicion_base('base_nivelada', r'\b(?:nivelada|nivelado|sin desnivel)\b',
+                                   r'\b(?:no esta nivelad[oa]|no nivelad[oa]|desnivelad[oa])\b')
 
     faltantes = []
     if not habitacion:
@@ -2652,6 +2691,19 @@ def _resolver_seguimiento_reparacion_mueble_adhesivo(mensaje, historial=None):
 
 
 def _buscar_productos(consulta, limite=6):
+    texto_portalampara = _texto_normalizado(consulta)
+    if (re.search(r'\b(?:portalamparas?|soquetes?)\b', texto_portalampara)
+            and re.search(r'\b(?:techo|cielo)\b', texto_portalampara)):
+        # Mostrar solo fichas que identifican una base fija/sobrepuesta;
+        # un portalámpara colgante no se presenta como equivalente de techo.
+        candidatos = []
+        for producto in Producto.objects.filter(activo=True, stock__gt=0):
+            nombre = _texto_normalizado(producto.nombre)
+            if (re.search(r'\b(?:portalampara|soquete)\w*\b', nombre)
+                    and re.search(r'\b(?:sobrepuest[oa]|base recta|plafon|cielo|techo)\b', nombre)):
+                candidatos.append(producto)
+        candidatos.sort(key=lambda producto: (producto.precio, producto.pk))
+        return candidatos[:max(1, min(int(limite), 60))]
     palabras_omitidas = {
         'para', 'con', 'una', 'uno', 'unos', 'unas', 'por', 'del', 'las', 'los',
         'que', 'quiero', 'necesito', 'busco', 'producto', 'productos',
@@ -2660,7 +2712,7 @@ def _buscar_productos(consulta, limite=6):
         'baratos', 'baratas', 'economico', 'economica', 'precio', 'precios',
         'cuanto', 'cuantos', 'cuesta', 'cuestan', 'vale', 'valen', 'valor',
         'valores', 'tiene', 'tienen', 'sale', 'salen', 'costo', 'costos',
-        'bajo', 'hasta', 'menos', 'maximo', 'maxima', 'tope', 'luca', 'lucas',
+        'bajo', 'hasta', 'menos', 'maximo', 'maxima', 'luca', 'lucas',
         'mil', 'pesos', 'clp', 'quiero', 'necesito',
         # Conectores propios de una pregunta por función. Se descartan para
         # que la búsqueda se concentre en la necesidad real: "qué sirve para
@@ -2686,6 +2738,18 @@ def _buscar_productos(consulta, limite=6):
             break
     if not palabras_originales:
         return []
+
+    # «Tope» puede indicar un límite de precio o un producto físico. En este
+    # último caso es la palabra principal y no debe perderse frente a «puerta».
+    es_tope_producto = 'tope' in palabras_originales and not re.search(
+        r'\btope\s+(?:de\s+)?\$?\s*\d', _texto_normalizado(consulta),
+    )
+    es_conector_electrico = (
+        any(palabra.startswith(('conector', 'bornera')) for palabra in palabras_originales)
+        and any(palabra.startswith(('electric', 'cable', 'conductor'))
+                for palabra in palabras_originales)
+    )
+    solicita_gas = bool(re.search(r'\bgas\b', _texto_normalizado(consulta)))
 
     # "Corta tubos PVC" es una intención específica: una sierra circular no
     # es una alternativa equivalente para ese material. El catálogo puede
@@ -2754,6 +2818,14 @@ def _buscar_productos(consulta, limite=6):
         )
         texto_identidad = f'{nombre} {identificacion}'
         texto_filtrado = f'{texto_identidad} {detalle}'
+        if solicita_gas and not re.search(r'\bgas\b', nombre):
+            continue
+        if es_tope_producto and not re.search(r'\btopes?\b', texto_identidad):
+            continue
+        if es_conector_electrico and not re.search(
+            r'\b(?:conector\w*|bornera\w*|terminal\w*|regleta\w*)\b', nombre,
+        ):
+            continue
         if es_corte_tubo_pvc and 'cortatubo' not in texto_filtrado:
             continue
         if anclas_requeridas and not all(
@@ -3474,6 +3546,13 @@ def _resolver_busqueda_maestro(datos):
 
 def resolver_interpretacion(datos):
     intencion = datos.get('intencion')
+    if intencion == 'orientacion_general' and str(datos.get('consulta_producto') or '').strip():
+        # Gemini aporta orientación; la disponibilidad siempre la resuelve Django.
+        busqueda = resolver_interpretacion({**datos, 'intencion': 'buscar_producto'})
+        orientacion = str(datos.get('respuesta') or '').strip()
+        if orientacion:
+            busqueda['mensaje'] = orientacion + '\n\n' + busqueda['mensaje']
+        return busqueda
     if intencion == 'buscar_maestro':
         return _resolver_busqueda_maestro(datos)
     if intencion == 'recomendar_color':
@@ -3492,6 +3571,39 @@ def resolver_interpretacion(datos):
             }
         consulta = str(datos.get('consulta_producto') or '').strip()
         ids_contexto = datos.get('_productos_contexto_ids') or []
+        partes = re.split(r'\s+y\s+', consulta, flags=re.IGNORECASE)
+        herramientas = ('espatula', 'llana', 'brocha', 'rodillo', 'martillo',
+                        'taladro', 'sierra', 'alicate', 'destornillador')
+        # Solo dividir si Gemini identificó explícitamente una herramienta y
+        # otro componente: no separar nombres de kits o productos compuestos.
+        if (not ids_contexto and len(partes) == 2
+                and any(re.search(rf'\b{herramienta}\w*\b', _texto_normalizado(parte))
+                        for parte in partes for herramienta in herramientas)
+                and not any(re.search(r'\b(?:kit|juego|set)\b', _texto_normalizado(parte))
+                            for parte in partes)):
+            resultados, faltantes, ids = [], [], set()
+            for parte in partes:
+                candidatos = [p for p in _buscar_productos(parte, limite=6) if p.stock > 0]
+                if not candidatos:
+                    faltantes.append(parte.strip())
+                for producto in candidatos:
+                    if producto.pk not in ids:
+                        ids.add(producto.pk)
+                        resultados.append(producto)
+            lineas = [
+                f'• {p.nombre}: {p.uso_recomendado or p.descripcion or "Uso pendiente de confirmar en la ficha."}'
+                for p in resultados
+            ]
+            texto = ('Encontré estas opciones disponibles en SFI:\n' + '\n'.join(lineas)
+                     if lineas else 'No encontré productos disponibles para esta solicitud.')
+            if faltantes:
+                texto += '\n\nNo encontré una opción con stock para: ' + ', '.join(faltantes) + '.'
+            return {
+                'tipo': 'productos' if resultados else 'sin_resultados',
+                'mensaje': texto,
+                'productos': [_producto_publico(p) for p in resultados],
+                'maestros': [], 'sugerencias': [],
+            }
         if ids_contexto:
             encontrados = {
                 producto.pk: producto
@@ -3613,6 +3725,14 @@ def resolver_interpretacion(datos):
                 'Los artículos adicionales aparecen separados como complementos; no son '
                 'adhesivos equivalentes y solo corresponden si la reparación los requiere.'
             )
+        if productos:
+            explicaciones = []
+            for producto in productos:
+                uso = ' '.join(str(producto.uso_recomendado or producto.descripcion or '').split())
+                if not uso:
+                    uso = 'La ficha no indica su uso; confirma sus características antes de comprar.'
+                explicaciones.append(f'• {producto.nombre}: {uso}')
+            mensaje += '\n\nPARA QUÉ SIRVE CADA PRODUCTO\n' + '\n'.join(explicaciones)
         sugerencias_productos = (
             ['¿Para qué sirve?', '¿Cómo se utiliza?', '¿Cuál es el más económico?']
             if len(productos_publicos) == 1
@@ -3663,6 +3783,9 @@ def _texto_normalizado_pregunta_uso(texto):
         'funsion': 'funcion',
         'funccion': 'funcion',
         'utilisa': 'utiliza',
+        'utlilza': 'utiliza',
+        'utilza': 'utiliza',
+        'utliza': 'utiliza',
         'utilisan': 'utilizan',
     }
     for origen, destino in correcciones.items():
@@ -4966,8 +5089,81 @@ def _resolver_seguimiento_gotera_techo(mensaje, historial):
 
 def _resolver_situacion_cotidiana(mensaje):
     """Orienta expresiones comunes sin invadir los cálculos de proyectos."""
+    texto = _texto_normalizado(mensaje)
+    if (re.search(r'\b(?:cortar|talar|derribar|corte|tala)\b', texto)
+            and re.search(r'\b(?:arbol|arboles)\b', texto)):
+        # La sierra circular para tableros no es una herramienta de tala.
+        candidatos = [
+            producto for producto in Producto.objects.filter(activo=True, stock__gt=0)
+            if re.search(r'\bmotosierra\w*\b', _texto_normalizado(producto.nombre))
+        ]
+        candidatos.sort(key=lambda producto: (producto.precio, producto.pk))
+        return {
+            'tipo': 'productos' if candidatos else 'sin_resultados',
+            'mensaje': (
+                'Para cortar un árbol puede utilizarse una motosierra apropiada, '
+                'pero la elección depende del tamaño y de las condiciones del lugar. '
+                'Una sierra circular para tableros no es adecuada para talarlo. '
+                'La tala implica riesgo de caída del árbol y de ramas; solicita una '
+                'evaluación de personal capacitado, especialmente cerca de personas, '
+                'construcciones o cables.\n\n'
+                + ('Encontré estas motosierras con stock en SFI.' if candidatos else
+                   'No encontré motosierras con stock en SFI.')
+            ),
+            'productos': [_producto_publico(producto) for producto in candidatos],
+            'maestros': [], 'sugerencias': [],
+        }
+    if re.fullmatch(
+        r'(?:con que|que herramienta)\s+(?:clavo|clavar|clavo yo)\s+'
+        r'(?:un|una|el|la)\s+clav(?:o|ito|ito chico)[? .!]*', texto,
+    ):
+        candidatos = [
+            producto for producto in _buscar_productos('martillo', limite=20)
+            if producto.stock > 0
+            and re.search(r'\bmartillos?\b', _texto_normalizado(producto.nombre))
+        ]
+        return {
+            'tipo': 'productos' if candidatos else 'sin_resultados',
+            'mensaje': (
+                'Para clavar un clavo pequeño normalmente puedes usar un martillo '
+                'adecuado al tamaño del clavo y la superficie. '
+                + ('Estas son las opciones disponibles en SFI.' if candidatos else
+                   'No encontré martillos con stock en SFI.')
+            ),
+            'productos': [_producto_publico(producto) for producto in candidatos],
+            'maestros': [], 'sugerencias': [],
+        }
+    if (re.search(r'\btornillos?\b', texto)
+            and re.search(r'\b(?:danad[oa]|barrid[oa]|rodad[oa]|pasad[oa]|'
+                          r'desgastad[oa]|gastad[oa]|estropead[oa])\b', texto)):
+        # No permitir que la regla genérica para tornillos ignore el daño.
+        candidatos = [
+            producto for producto in _buscar_productos('extractor tornillos', limite=20)
+            if producto.stock > 0
+            and re.search(r'\bextractor\w*\b', _texto_normalizado(producto.nombre))
+            and re.search(r'\btornill\w*\b', _texto_normalizado(producto.nombre))
+        ]
+        productos = [_producto_publico(producto) for producto in candidatos]
+        return {
+            'tipo': 'productos' if productos else 'sin_resultados',
+            'mensaje': (
+                'Para una cabeza de tornillo dañada puede servir un extractor de tornillos, '
+                'según el daño y la medida. Un destornillador común podría no sujetarla. '
+                'Confirma el tamaño y el estado de la cabeza antes de elegir la herramienta.\n\n'
+                + ('Encontré estas opciones en SFI.' if productos else
+                   'No encontré un extractor de tornillos con stock en el catálogo de SFI.')
+            ),
+            'productos': productos, 'maestros': [], 'sugerencias': [],
+        }
     situacion = detectar_situacion_cotidiana(mensaje)
     if not situacion:
+        return None
+
+    # Las reglas de producto directo solo identifican una acción genérica y
+    # no comprueban todas las condiciones de la tarea (material, daño, acceso,
+    # medida). Dejamos que Gemini interprete la consulta completa y que la
+    # búsqueda posterior contraste sus candidatos con el catálogo real.
+    if situacion['tipo'] == 'producto_directo':
         return None
 
     if situacion['tipo'] == 'riesgo':
@@ -5214,6 +5410,23 @@ def _resolver_identificacion_pieza(mensaje):
     pero las tarjetas continúan saliendo exclusivamente del catálogo SFI.
     """
     texto = _texto_normalizado(mensaje)
+
+    if (re.search(r'\bgas\b', texto) and re.search(r'\bcocina\b', texto)
+            and re.search(r'\b(?:objeto|pieza|cosa|coso)\b', texto)
+            and re.search(r'\b(?:conecta|conectar|conectado)\b', texto)
+            and not re.search(r'\b(?:flexible|manguera|valvula|llave|regulador)\b', texto)):
+        return {
+            'tipo': 'aclaracion',
+            'mensaje': (
+                'Podría tratarse del flexible de gas, de la llave de corte o del '
+                'regulador, según la pieza que busques. ¿Necesitas la conexión '
+                'flexible de la cocina, la llave que corta el gas o el regulador? '
+                'La compatibilidad y la instalación deben ser verificadas por un '
+                'instalador de gas autorizado SEC.'
+            ),
+            'productos': [], 'maestros': [],
+            'sugerencias': ['Flexible de gas', 'Llave de corte de gas', 'Regulador de gas'],
+        }
 
     def respuesta_identificacion(nombre, consulta, funcion, verificacion, productos=None):
         productos_publicos = []
@@ -5511,6 +5724,7 @@ def _mensaje_para_continuar_guia(mensaje, historial):
         'sigamos con tu proyecto',
         'indica cual de estas opciones',
         'responde todo en un mensaje',
+        'que tipo de teja prefieres',
     ))
     if not es_guia_pendiente:
         return mensaje
@@ -5518,6 +5732,9 @@ def _mensaje_para_continuar_guia(mensaje, historial):
     return (
         'CONTINÚA EL PROYECTO Y LA PREGUNTA PENDIENTE DEL HISTORIAL. '
         'No interpretes esta respuesta como una búsqueda ni como un proyecto nuevo. '
+        'Conserva los datos ya entregados y no vuelvas a preguntar lo que el cliente '
+        'respondió. Si la respuesta identifica una categoría pero falta una variante '
+        'que cambia la compatibilidad, pregunta solo por esa variante; no la inventes. '
         f'Respuesta breve del cliente: {mensaje}'
     )
 
@@ -6106,7 +6323,7 @@ def _resolver_caneria_por_servicio(mensaje):
     """Interpreta el servicio solicitado antes de reutilizar tarjetas anteriores."""
     texto = _texto_normalizado(mensaje)
     pide_canalizacion = bool(re.search(
-        r'\b(?:caneria|tuberia|tubo|cano|ducto|conduit|canalizacion)\b', texto,
+        r'\b(?:canerias?|tuberias?|tubos?|canos?|ductos?|conduits?|canalizaciones?|canalizacion)\b', texto,
     ))
     if not pide_canalizacion:
         return None
@@ -6129,6 +6346,20 @@ def _resolver_caneria_por_servicio(mensaje):
     ))
     es_gas = bool(re.search(r'\b(?:gas|gas natural|gas licuado)\b', texto))
     if not any((es_electrica, es_agua_potable, es_sanitaria, es_septica, es_gas)):
+        if re.search(r'\b(?:lavaplatos|fregadero)\b', texto):
+            return {
+                'tipo': 'aclaracion',
+                'mensaje': (
+                    'En un lavaplatos hay dos conexiones distintas: la alimentación '
+                    'lleva agua potable a la grifería, mientras el desagüe y el sifón '
+                    'evacuan el agua usada y ayudan a evitar malos olores. '
+                    '¿Buscas la cañería de alimentación, la de desagüe o ambas? '
+                    'Así podré mostrarte productos del catálogo que correspondan.'
+                ),
+                'productos': [],
+                'maestros': [],
+                'sugerencias': ['Alimentación de agua potable', 'Desagüe del lavaplatos', 'Ambas conexiones'],
+            }
         if re.search(r'\bagua(?:s)?\b', texto):
             return {
                 'tipo': 'aclaracion',
@@ -6256,12 +6487,27 @@ def _resolver_caneria_por_servicio(mensaje):
         productos.append(item)
 
     if not productos:
+        orientacion = ''
+        try:
+            respuesta_ia = interpretar_con_gemini(
+                'Orienta brevemente sobre esta necesidad sin afirmar que SFI tiene '
+                'productos disponibles ni inventar precios, stock o compatibilidades. '
+                'Menciona el tipo de componente que se usa y qué debe verificarse: '
+                + mensaje,
+                [],
+                [],
+            )
+            orientacion = ' '.join(str((respuesta_ia or {}).get('respuesta') or '').split())[:520]
+        except GeminiNoDisponible:
+            pass
         return {
             'tipo': 'sin_resultados',
             'mensaje': (
                 f'Identifiqué que buscas una cañería para {rol.casefold()}, pero actualmente '
                 'no encontré una alternativa compatible con stock en SFI. El material y '
                 f'diámetro deben confirmarse con {profesional}.'
+                + (f'\n\nORIENTACIÓN GENERAL\n{orientacion}' if orientacion else
+                   '\n\nNo pude obtener orientación adicional de la IA en este momento.')
             ),
             'productos': [],
             'maestros': [],
@@ -6419,27 +6665,115 @@ def _resolver_consulta_fuera_contexto_sfi(mensaje, historial=None, productos_con
     if consulta_funcional and componente_ferretero:
         return None
 
-    return {
-        'tipo': 'fuera_contexto',
-        'mensaje': (
-            'Lo sentimos, esta consulta está fuera del ámbito del asistente SFI. '
-            'Puedo ayudarte con productos de ferretería, herramientas, materiales, '
-            'construcción, mantenimiento, reparaciones y proyectos relacionados.'
-        ),
-        'productos': [],
-        'maestros': [],
-        'sugerencias': [
-            'Quiero buscar un producto',
-            'Necesito ayuda con una reparación',
-            'Quiero preparar un proyecto',
-        ],
-    }
+    # La ausencia de palabras clave no demuestra que una consulta sea ajena:
+    # el cliente puede describir una necesidad de jardinería o una pieza sin
+    # conocer su nombre. Gemini interpreta el alcance con el mensaje completo.
+    return None
 
 
 def procesar_consulta(
     mensaje, historial, productos_contexto=None, modo_consulta='auto',
     estimacion_contexto=None,
 ):
+    # Los avisos de riesgo preceden cualquier identificación o búsqueda.
+    riesgo = detectar_situacion_cotidiana(mensaje)
+    if riesgo and riesgo.get('tipo') == 'riesgo':
+        return _resolver_situacion_cotidiana(mensaje)
+    ultimo_asistente = next((
+        _texto_normalizado(item.get('content')) for item in reversed(historial or [])
+        if item.get('role') == 'assistant'
+    ), '')
+    respuesta_conexion = _texto_normalizado(mensaje).strip(' ¿?.,!')
+    if (re.fullmatch(r'(?:no (?:lo )?se|no tengo idea|no estoy segur[oa]|lo desconozco)', respuesta_conexion)
+            and any(marca in ultimo_asistente for marca in (
+                'antes de recomendar productos', 'sigamos con tu proyecto',
+                'necesito estos datos', 'que tipo de teja prefieres',
+            ))):
+        solicitud = (
+            'El cliente no conoce el dato solicitado. Continúa el mismo proyecto usando '
+            'el historial, sin repetir el cuestionario. Explica brevemente qué sí puede '
+            'considerar y cómo identificar el dato; no lo inventes ni presupongas que '
+            'el material, soporte o instalación son compatibles. No afirmes disponibilidad, '
+            'stock o precios. Para gas, electricidad o estructura indica revisión profesional. '
+            'Si falta un dato crítico mantén la recomendación como orientación general.'
+        )
+        try:
+            orientacion = interpretar_con_gemini(solicitud, historial, productos_contexto or [])
+        except GeminiNoDisponible:
+            orientacion = None
+        respuesta = str((orientacion or {}).get('respuesta') or '').strip()
+        return {
+            'tipo': 'orientacion',
+            'mensaje': respuesta or (
+                'Entiendo que no conoces ese dato. Por ahora no puedo determinarlo ni '
+                'confirmar la compatibilidad; consulta la ficha del producto o a un '
+                'profesional antes de ejecutar el trabajo.'
+            ),
+            'productos': [], 'maestros': [], 'sugerencias': [],
+        }
+    usuarios_previos = ' '.join(
+        str(item.get('content') or '') for item in (historial or [])
+        if item.get('role') == 'user'
+    )
+    contexto_previo = _texto_normalizado(usuarios_previos)
+    if (('piso flotante' in ultimo_asistente or 'piso laminado' in ultimo_asistente)
+            and 'alfombra' in contexto_previo
+            and re.fullmatch(r'(?:no (?:lo )?se|no tengo idea|no conozco la base)', respuesta_conexion)):
+        return {
+            'tipo': 'orientacion',
+            'mensaje': (
+                'No hay problema. La alfombra es el revestimiento que ves; todavía '
+                'no sabemos qué base tiene debajo ni si está seca, firme y nivelada.\n\n'
+                'Para orientarte: normalmente se retira la alfombra y su bajoalfombra '
+                'y se revisa la base antes de colocar la manta y el piso flotante. '
+                'No conviene asumir que la alfombra sirve como base: confirma siempre '
+                'los requisitos del fabricante del piso. Si observas humedad o daños, '
+                'deben revisarse antes de instalar.\n\n'
+                'Las cantidades y la compatibilidad '
+                'quedan pendientes de verificar; un instalador puede ayudarte a '
+                'identificar la base si no puedes hacerlo con seguridad.'
+            ),
+            'productos': [], 'maestros': [],
+            'sugerencias': ['Qué materiales se usan para piso flotante', 'Buscar maestro de pisos'],
+        }
+    if ('que tipo de teja prefieres' in ultimo_asistente
+            and respuesta_conexion in ('arcilla', 'arciilla', 'de arcilla', 'de arciilla', 'terracota', 'colonial')):
+        return _resolver_proyecto({
+            'proyecto': 'Techumbre estándar de teja de arcilla',
+            'tipo_cubierta': 'teja de arcilla',
+            '_proyecto_estandar': True,
+        })
+    if 'buscas la caneria de alimentacion, la de desague o ambas' in ultimo_asistente:
+        if respuesta_conexion in ('alimentacion de agua potable', 'alimentacion', 'agua potable'):
+            return _resolver_caneria_por_servicio('cañería para agua potable')
+        if respuesta_conexion in ('desague del lavaplatos', 'desague'):
+            return _resolver_caneria_por_servicio('cañería para desagüe sanitario')
+        if respuesta_conexion in ('ambas conexiones', 'ambas', 'las dos'):
+            alimentacion = _resolver_caneria_por_servicio('cañería para agua potable')
+            desague = _resolver_caneria_por_servicio('cañería para desagüe sanitario')
+            productos = alimentacion['productos'] + desague['productos']
+            return {
+                'tipo': 'productos' if productos else 'sin_resultados',
+                'mensaje': (
+                    'La alimentación conduce agua potable a la grifería; el desagüe '
+                    'evacua el agua usada. Revisa también un sifón compatible con el '
+                    'lavaplatos. Los diámetros y conexiones deben confirmarse en la instalación. '
+                    + ('Estas son las cañerías relacionadas disponibles en SFI.' if productos else
+                       'No encontré cañerías para estas conexiones con stock en SFI.')
+                ),
+                'productos': productos, 'maestros': [], 'sugerencias': [],
+            }
+    if (historial or productos_contexto) and re.fullmatch(
+        r'(?:eso |esto )?(?:esta mal|es incorrecto|no es correcto)[.!? ]*',
+        _texto_normalizado(mensaje).strip(),
+    ):
+        return {
+            'tipo': 'aclaracion',
+            'mensaje': 'Gracias por indicarlo. ¿Qué parte de la recomendación es incorrecta? La revisaré antes de volver a recomendar productos.',
+            'productos': [],
+            'maestros': [],
+            'sugerencias': [],
+        }
     caneria_por_servicio = _resolver_caneria_por_servicio(mensaje)
     if caneria_por_servicio:
         return caneria_por_servicio
@@ -6461,9 +6795,8 @@ def procesar_consulta(
     gotera_directa = _resolver_gotera_con_cubierta_identificada(mensaje, historial)
     if gotera_directa:
         return gotera_directa
-    busqueda_por_funcion = _resolver_busqueda_por_funcion(mensaje)
-    if busqueda_por_funcion:
-        return busqueda_por_funcion
+    # Una pregunta abierta por función necesita interpretación completa: buscar
+    # literalmente su descripción puede devolver coincidencias sin relación.
     # Una aclaración iniciada por el propio asistente debe resolverse antes de
     # reclasificar el mensaje breve como un problema cotidiano distinto.
     aclaracion_adhesivo = _aclarar_reparacion_mueble_con_adhesivo(mensaje, historial)

@@ -18,6 +18,30 @@ MAX_MAESTROS = 5
 # adicionales antes de decidir que el componente no está disponible.
 _EQUIVALENCIAS_FUNCIONALES_CATALOGO = (
     (
+        ('caja', 'derivacion', 'estanca'),
+        ('caja estanca electrica',),
+    ),
+    (
+        ('luces', 'suelo', 'exterior'),
+        ('estaca LED jardin exterior',),
+    ),
+    (
+        ('luminaria', 'suelo', 'exterior'),
+        ('estaca LED jardin exterior',),
+    ),
+    (
+        ('luz', 'jardin', 'exterior'),
+        ('estaca LED jardin exterior',),
+    ),
+    (
+        ('luminaria', 'muro', 'exterior'),
+        ('aplique LED exterior',),
+    ),
+    (
+        ('foco', 'exterior'),
+        ('reflector LED exterior',),
+    ),
+    (
         ('madera', 'dimensionada'),
         ('pino dimensionado 2 x 4 pulgadas', 'pino dimensionado 2 x 6 pulgadas'),
     ),
@@ -2280,6 +2304,8 @@ def resolver_proyecto_generico(
         for consulta in tarea["busquedas"]:
             texto_plan.append(consulta)
             consultas_catalogo = _consultas_catalogo_equivalentes(consulta)
+            if re.search(r'\b(?:embutid[oa]|empotrad[oa])\b', _normalizar(consulta)):
+                consultas_catalogo = [consulta]
             candidatos = []
             coincidencias_catalogo = {}
             for consulta_catalogo in consultas_catalogo:
@@ -2294,6 +2320,31 @@ def resolver_proyecto_generico(
                         candidatos.append(candidato)
                         coincidencias_catalogo[candidato.pk] = []
                     coincidencias_catalogo[candidato.pk].append(consulta_catalogo)
+            es_iluminacion = any(termino in contexto_inicial for termino in (
+                'iluminacion', 'luminaria', 'foco', 'luces exterior',
+            ))
+            consulta_normalizada = _normalizar(consulta)
+            if es_iluminacion and not any(
+                termino in (contexto_usuario + ' ' + contexto_proyecto)
+                for termino in ('enchufe', 'tomacorriente')
+            ):
+                if re.search(r'\b(?:enchufe|tomacorriente)\w*\b', consulta_normalizada):
+                    continue
+                candidatos = [c for c in candidatos if not re.search(
+                    r'\b(?:enchufe|tomacorriente)\w*\b', _normalizar(c.nombre),
+                )]
+            if es_iluminacion and re.search(r'\bsolar\w*\b', consulta_normalizada):
+                candidatos = [c for c in candidatos if re.search(
+                    r'\bsolar\w*\b', _normalizar(
+                        ' '.join((c.nombre or '', c.descripcion or '', c.uso_recomendado or ''))
+                    ),
+                )]
+            if es_iluminacion and re.search(r'\b(?:embutid[oa]|empotrad[oa])\b', consulta_normalizada):
+                candidatos = [c for c in candidatos if re.search(
+                    r'\b(?:embutid[oa]|empotrad[oa])\b', _normalizar(
+                        ' '.join((c.nombre or '', c.descripcion or '', c.uso_recomendado or ''))
+                    ),
+                )]
             if es_contexto_gas:
                 candidatos = [
                     candidato for candidato in candidatos
@@ -2336,6 +2387,13 @@ def resolver_proyecto_generico(
                 and _normalizar(consulta) in _normalizar(candidato.nombre)
                 for candidato in candidatos
             ):
+                continue
+            if (es_iluminacion and any(
+                candidato.pk in productos_usados
+                and any(_coincidencia_suficiente(candidato, q)
+                        for q in coincidencias_catalogo[candidato.pk])
+                for candidato in candidatos
+            )):
                 continue
             disponibles = [
                 candidato for candidato in candidatos
@@ -2418,6 +2476,25 @@ def resolver_proyecto_generico(
                 _texto_seguro(producto.uso_recomendado, 180)
                 or f"Se incluye como apoyo para la etapa «{tarea['nombre']}».",
             )
+            if (es_iluminacion and 'conduit' in _normalizar(producto.nombre)
+                    and re.search(r'\b(?:subterrane\w*|enterrad\w*)\b', _normalizar(uso_material))):
+                uso_material = (
+                    'Canalizar conductores en una instalación compatible; el uso '
+                    'enterrado debe confirmarse en la ficha del fabricante y por '
+                    'un instalador eléctrico autorizado.'
+                )
+            if (es_iluminacion and 'caja estanca' in _normalizar(producto.nombre)
+                    and re.search(r'\b(?:suelo|subterrane\w*|enterrad\w*)\b', _normalizar(uso_material))):
+                uso_material = (
+                    'Proteger conexiones frente a humedad y polvo según la ficha; '
+                    'la aptitud para instalación enterrada debe verificarse.'
+                )
+            if (es_iluminacion and 'estaca' in _normalizar(producto.nombre)):
+                uso_material = (
+                    'Iluminar senderos o zonas de jardín como alternativa de estaca; '
+                    'confirma alimentación, grado de protección y ubicación. '
+                    'No es una luminaria empotrada al ras del suelo.'
+                )
             es_herramienta_opcional = (
                 "herramienta" in _normalizar(tarea["nombre"])
                 or "herramienta" in _normalizar(producto.categoria)
@@ -2981,6 +3058,8 @@ def _familia_cubierta_estandar(texto):
         return "zinc"
     if "teja asfaltica" in contexto or "tejas asfalticas" in contexto:
         return "teja_asfaltica"
+    if re.search(r"\b(?:arcilla|arciilla|terracota|colonial)\b", contexto):
+        return "teja_arcilla"
     return ""
 
 
@@ -3004,6 +3083,19 @@ def _tareas_techumbre_estandar(familia):
         ],
         "bases_calculo": ["referencial", "referencial"],
     }
+    if familia == "teja_arcilla":
+        return [
+            {
+                "nombre": "Cubierta de teja de arcilla",
+                "busquedas": ["teja colonial de arcilla"],
+                "usos_materiales": [{
+                    "busqueda": "teja colonial de arcilla",
+                    "uso": "Cubrir la techumbre con tejas compatibles con la base y pendiente definidas para el proyecto.",
+                }],
+                "bases_calculo": ["referencial"],
+            },
+            drenaje,
+        ]
     if familia == "policarbonato":
         return [
             {
@@ -3203,6 +3295,19 @@ def resolver_proyecto_techumbre(
             claves_faltantes.add(clave)
 
     familia_estandar = _familia_cubierta_estandar(texto) if modo_estandar else ""
+    if modo_estandar and not familia_estandar and re.search(r"\btejas?\b", texto):
+        return {
+            "tipo": "aclaracion_proyecto",
+            "mensaje": (
+                "PROYECTO\nTechumbre estándar de tejas\n\n"
+                "¿Qué tipo de teja prefieres: asfáltica, de arcilla u otra? "
+                "Las fijaciones y la base varían según el tipo. Si no lo sabes, "
+                "indícalo y te orientaré con las opciones disponibles."
+            ),
+            "productos": [],
+            "maestros": [],
+            "sugerencias": ["Teja asfáltica", "Teja de arcilla", "No lo sé"],
+        }
     if modo_estandar and not familia_estandar:
         return {
             "tipo": "aclaracion_proyecto",

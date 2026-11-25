@@ -257,6 +257,7 @@ ANCLAS_SEMANTICAS: dict[str, tuple[str, ...]] = {
     'flexometro': ('cinta',),
     'wincha': ('cinta',),
     'huincha': ('cinta',),
+    'chuzo': ('barreta',),
     'metro': ('cinta',),
     'medir': ('cinta',),
     'perforadora': ('taladro',),
