@@ -1466,6 +1466,31 @@ class AsistenteSfiTests(TestCase):
             for producto in resultado['productos']
         ))
 
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_pintura_reconoce_superficie_seca_firme_y_nivelada(self, interpretar):
+        historial = [
+            {
+                'role': 'user',
+                'content': 'Necesito pintar una habitación de 10 m².',
+            },
+            {
+                'role': 'assistant',
+                'content': (
+                    'Para calcularlo con precisión necesito saber el material de la '
+                    'superficie y el estado actual de la superficie.'
+                ),
+            },
+        ]
+
+        resultado = procesar_consulta(
+            'Es de madera, está seca y nivelada.',
+            historial,
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'calculo_pintura')
+        self.assertTrue(resultado['productos'])
+
     def test_calculo_pintura_relaciona_preparacion_y_herramientas_sin_sumarlas(self):
         for nombre in (
             'Rodillo pintura muros 23 cm prueba',
@@ -1539,6 +1564,249 @@ class AsistenteSfiTests(TestCase):
         self.assertNotIn('taladro', nombres)
         self.assertNotIn('sierra', nombres)
         self.assertNotIn('pala', nombres)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_seguimiento_herramientas_pintura_no_repite_el_calculo(self, interpretar):
+        herramientas = (
+            ('Rodillo pintura muros 23 cm', 'TEST-HER-ROD-23'),
+            ('Brocha multiproposito 2 pulgadas', 'TEST-HER-BRO-2'),
+            ('Bandeja para pintura 25 cm', 'SFI-PIN-BAN-25'),
+        )
+        for nombre, sku in herramientas:
+            Producto.objects.create(
+                nombre=nombre,
+                sku=sku,
+                descripcion='Herramienta para aplicar pintura.',
+                precio=3990,
+                stock=10,
+                categoria='Herramientas',
+                activo=True,
+            )
+        historial = [
+            {'role': 'user', 'content': 'Necesito pintar una habitacion de 10 m2.'},
+            {
+                'role': 'assistant',
+                'content': 'Para 10 m2 necesitas aproximadamente 4 litros y 2 envases.',
+            },
+        ]
+
+        resultado = procesar_consulta(
+            'Que herramientas necesito para pintar?',
+            historial,
+            productos_contexto=[self.pintura.pk],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'seguimiento_herramientas')
+        nombres = ' '.join(item['nombre'].casefold() for item in resultado['productos'])
+        self.assertIn('rodillo', nombres)
+        self.assertIn('brocha', nombres)
+        self.assertIn('bandeja', nombres)
+        self.assertNotIn('aproximadamente 4 litros', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_seguimiento_maestro_pintor_no_repite_el_calculo(self, interpretar):
+        historial = [
+            {'role': 'user', 'content': 'Necesito pintar una habitacion de 10 m2.'},
+            {
+                'role': 'assistant',
+                'content': 'Para 10 m2 necesitas aproximadamente 4 litros y 2 envases.',
+            },
+        ]
+
+        resultado = procesar_consulta(
+            'Buscar maestro pintor',
+            historial,
+            productos_contexto=[self.pintura.pk],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'aclaracion_maestro')
+        self.assertIn('Pintura', resultado['mensaje'])
+        self.assertNotIn('aproximadamente 4 litros', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_elegir_color_mostrado_recalcula_envases_y_presupuesto(self, interpretar):
+        color = Producto.objects.create(
+            nombre='Sipa Esmalte al Agua Satinado Silky Mint 1 galon',
+            descripcion='Esmalte al agua para muros interiores.',
+            precio=32490,
+            stock=20,
+            categoria='Pinturas',
+            marca='Sipa',
+            color='Silky Mint',
+            ambiente_uso='interior',
+            superficies_compatibles=['hormigon'],
+            tipo_pintura='esmalte_agua',
+            terminacion='satinado',
+            unidad_venta='envase',
+            contenido=Decimal('3.785'),
+            unidad_contenido='l',
+            tipo_calculo='pintura',
+            rendimiento=Decimal('10.000'),
+            unidad_rendimiento='m2_l',
+            capas_recomendadas=2,
+            porcentaje_desperdicio=Decimal('10.00'),
+            informacion_tecnica_verificada=True,
+            activo=True,
+        )
+        historial = [
+            {'role': 'user', 'content': 'Necesito pintar una pieza de 20 m2.'},
+            {'role': 'user', 'content': 'Es de hormigon, esta seca y en buen estado.'},
+            {
+                'role': 'assistant',
+                'content': 'Mostre pinturas de otros colores compatibles con interior.',
+            },
+        ]
+
+        resultado = procesar_consulta(
+            'Elijo Silky Mint',
+            historial,
+            productos_contexto=[color.pk],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'compatibilidad_pintura')
+        self.assertEqual(resultado['productos'][0]['id'], color.pk)
+        self.assertGreater(resultado['productos'][0]['cantidad_envases'], 0)
+        self.assertGreater(resultado['productos'][0]['presupuesto_total'], 0)
+        self.assertIn('CÁLCULO ACTUALIZADO', resultado['mensaje'])
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_interes_por_color_con_nombre_completo_recalcula(self, interpretar):
+        color = Producto.objects.create(
+            nombre='Sipa Esmalte al Agua Satinado Silky Mint 1 galon',
+            descripcion='Esmalte al agua para interior.',
+            precio=32490,
+            stock=20,
+            categoria='Pinturas',
+            marca='Sipa',
+            color='Silky Mint',
+            ambiente_uso='interior',
+            superficies_compatibles=['hormigon'],
+            tipo_pintura='esmalte_agua',
+            terminacion='satinado',
+            unidad_venta='envase',
+            contenido=Decimal('3.785'),
+            unidad_contenido='l',
+            tipo_calculo='pintura',
+            rendimiento=Decimal('10.000'),
+            unidad_rendimiento='m2_l',
+            capas_recomendadas=2,
+            porcentaje_desperdicio=Decimal('10.00'),
+            informacion_tecnica_verificada=True,
+            activo=True,
+        )
+        historial = [
+            {'role': 'user', 'content': 'Quiero pintar 20 m2 de hormigon interior.'},
+            {'role': 'user', 'content': 'La superficie esta seca y en buen estado.'},
+            {'role': 'assistant', 'content': 'Mostre otros colores compatibles.'},
+        ]
+
+        resultado = procesar_consulta(
+            f'{color.nombre} me interesa ese color',
+            historial,
+            productos_contexto=[color.pk],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'compatibilidad_pintura')
+        self.assertEqual(resultado['productos'][0]['id'], color.pk)
+        self.assertGreater(resultado['productos'][0]['cantidad_envases'], 0)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_interes_por_fragmento_unico_del_color_recalcula(self, interpretar):
+        blue = Producto.objects.create(
+            nombre='Sipa Esmalte al Agua Satinado Blue Chill 1 galon',
+            descripcion='Esmalte al agua para interior.',
+            precio=32490,
+            stock=20,
+            categoria='Pinturas',
+            marca='Sipa',
+            color='Blue Chill',
+            ambiente_uso='interior',
+            superficies_compatibles=['hormigon'],
+            tipo_pintura='esmalte_agua',
+            terminacion='satinado',
+            unidad_venta='envase',
+            contenido=Decimal('3.785'),
+            unidad_contenido='l',
+            tipo_calculo='pintura',
+            rendimiento=Decimal('10.000'),
+            unidad_rendimiento='m2_l',
+            capas_recomendadas=2,
+            porcentaje_desperdicio=Decimal('10.00'),
+            informacion_tecnica_verificada=True,
+            activo=True,
+        )
+        lemon = Producto.objects.create(
+            nombre='Sipa Esmalte al Agua Satinado Lemon Chiffon 1 galon',
+            descripcion='Esmalte al agua para interior.',
+            precio=32490,
+            stock=20,
+            categoria='Pinturas',
+            marca='Sipa',
+            color='Lemon Chiffon',
+            ambiente_uso='interior',
+            superficies_compatibles=['hormigon'],
+            tipo_pintura='esmalte_agua',
+            terminacion='satinado',
+            unidad_venta='envase',
+            contenido=Decimal('3.785'),
+            unidad_contenido='l',
+            tipo_calculo='pintura',
+            rendimiento=Decimal('10.000'),
+            unidad_rendimiento='m2_l',
+            capas_recomendadas=2,
+            porcentaje_desperdicio=Decimal('10.00'),
+            informacion_tecnica_verificada=True,
+            activo=True,
+        )
+        historial = [
+            {'role': 'user', 'content': 'Quiero pintar 20 m2 de hormigon interior.'},
+            {'role': 'user', 'content': 'La superficie esta seca y en buen estado.'},
+            {'role': 'assistant', 'content': 'Mostre otros colores compatibles.'},
+        ]
+
+        resultado = procesar_consulta(
+            'Me interesa el satinado lemon',
+            historial,
+            productos_contexto=[blue.pk, lemon.pk],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'compatibilidad_pintura')
+        self.assertEqual(resultado['productos'][0]['id'], lemon.pk)
+        self.assertGreater(resultado['productos'][0]['cantidad_envases'], 0)
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_volver_al_resumen_recupera_calculo_de_pintura(self, interpretar):
+        historial = [
+            {'role': 'user', 'content': 'Quiero pintar una habitacion.'},
+            {
+                'role': 'assistant',
+                'content': (
+                    'Para 20 m2 necesitas aproximadamente 8 litros. '
+                    'La primera alternativa requiere 3 envases.'
+                ),
+            },
+            {'role': 'user', 'content': 'Que herramientas necesito para pintar?'},
+            {
+                'role': 'assistant',
+                'content': 'HERRAMIENTAS PARA ESTE PROYECTO\nRodillo, brocha y bandeja.',
+            },
+        ]
+
+        resultado = procesar_consulta(
+            'Volver al resumen del proyecto',
+            historial,
+            productos_contexto=[self.taladro.pk],
+        )
+
+        interpretar.assert_not_called()
+        self.assertEqual(resultado['tipo'], 'resumen_proyecto')
+        self.assertIn('20 m2', resultado['mensaje'])
+        self.assertIn('8 litros', resultado['mensaje'])
 
     def test_pintura_concreta_conserva_area_y_superficie_del_contexto(self):
         historial = [
@@ -7227,3 +7495,68 @@ class TechumbreEstandarPorMaterialTests(TestCase):
         self.assertEqual(resultado['tipo'], 'aclaracion_proyecto')
         self.assertEqual(resultado['productos'], [])
         self.assertIn('policarbonato, zinc o teja asfaltica', resultado['mensaje'])
+
+
+class CompatibilidadColoresSuperficieTests(TestCase):
+    def setUp(self):
+        Producto.objects.filter(categoria='Pinturas').update(activo=False)
+        self.blanco = self.crear_pintura('Blanco madera prueba', 'Blanco', ['madera'])
+        self.naranja = self.crear_pintura('Orange Foam prueba', 'Orange Foam', ['hormigon', 'estuco', 'pasta_muro'])
+
+    def crear_pintura(self, nombre, color, superficies):
+        return Producto.objects.create(
+            nombre=nombre, descripcion='Ficha de prueba', precio=16000, stock=30,
+            categoria='Pinturas', color=color, color_hex='#FFFFFF' if color == 'Blanco' else '#FFAA55',
+            ambiente_uso='interior', superficies_compatibles=superficies,
+            tipo_pintura='esmalte_agua', terminacion='mate',
+            propiedades_pintura=['base_agua'], preparaciones_recomendadas=['limpieza'],
+            repintado_min_horas=Decimal('3'), unidad_venta='envase',
+            contenido=Decimal('3.8'), unidad_contenido='l', tipo_calculo='pintura',
+            rendimiento=Decimal('10'), unidad_rendimiento='m2_l', capas_recomendadas=2,
+            informacion_tecnica_verificada=True,
+        )
+
+    def test_madera_no_ofrece_colores_de_hormigon(self):
+        resultado = resolver_interpretacion({'intencion': 'recomendar_color',
+            'ambiente': 'interior', 'tipo_superficie': 'madera'})
+        self.assertEqual([p['id'] for p in resultado['productos']], [self.blanco.pk])
+        self.assertIn('No encontré otros colores', resultado['mensaje'])
+
+    def test_hormigon_ofrece_orange_foam(self):
+        resultado = resolver_interpretacion({'intencion': 'recomendar_color',
+            'ambiente': 'interior', 'tipo_superficie': 'hormigon'})
+        self.assertEqual([p['id'] for p in resultado['productos']], [self.naranja.pk])
+
+    def test_color_incompatible_no_tiene_resultados(self):
+        resultado = resolver_interpretacion({'intencion': 'recomendar_color',
+            'ambiente': 'interior', 'tipo_superficie': 'madera', 'color': 'Orange Foam'})
+        self.assertEqual(resultado['tipo'], 'sin_resultados')
+        self.assertEqual(resultado['productos'], [])
+        self.assertIn('madera', resultado['mensaje'])
+
+    def test_recupera_superficie_del_historial(self):
+        from .services.asistente_sfi import _aplicar_contexto_calculo_pintura
+        historial = [
+            {'role': 'user', 'content': 'Quiero pintar una habitacion'},
+            {'role': 'user', 'content': 'Son 20 m², es madera y está seca y en buen estado'},
+            {'role': 'user', 'content': 'Buscar maestro de Pintura'},
+            {'role': 'assistant', 'content': 'Encontré un maestro pintor disponible.'},
+        ]
+        datos = _aplicar_contexto_calculo_pintura(
+            {'intencion': 'recomendar_color'}, 'hay mas colores de pintura?', historial)
+        self.assertEqual(datos['intencion'], 'recomendar_color')
+        self.assertEqual(datos['tipo_superficie'], 'madera')
+        self.assertEqual(datos['superficie'], 20)
+        self.assertEqual(datos['estado_superficie'], 'pintada_buen_estado')
+        resultado = resolver_interpretacion(datos)
+        self.assertEqual([p['id'] for p in resultado['productos']], [self.blanco.pk])
+
+    def test_seleccion_conserva_datos_del_proyecto(self):
+        from .services.asistente_sfi import _resolver_seleccion_color_pintura
+        historial = [{'role': 'user', 'content': 'Quiero pintar una habitacion de 20 m2 de hormigon en buen estado'}]
+        resultado = _resolver_seleccion_color_pintura('Elijo Orange Foam', historial, [self.naranja.pk])
+        self.assertEqual(resultado['tipo'], 'compatibilidad_pintura')
+        calculo = resultado['productos'][0]['calculo_carrito']
+        self.assertEqual(calculo['superficie'], 20)
+        self.assertEqual(calculo['tipo_superficie'], 'hormigon')
+        self.assertEqual(calculo['estado_superficie'], 'pintada_buen_estado')

@@ -98,6 +98,33 @@ def _texto_normalizado(valor):
     )
 
 
+def _estado_superficie_pintura_desde_texto(texto):
+    """Normaliza descripciones cotidianas del estado de una superficie."""
+    texto = _texto_normalizado(texto)
+    if re.search(r'\b(?:nueva|nuevo|sin pintar)\b', texto):
+        return 'nueva'
+    if re.search(r'\b(?:humedad|humeda|humedo|moho|manchas?)\b', texto):
+        return 'humedad'
+    if re.search(
+        r'\b(?:deteriorada|deteriorado|grietas?|descascarad[oa]|mal estado)\b',
+        texto,
+    ):
+        return 'deteriorada'
+    if re.search(r'\b(?:bueno|buena|buen estado|pintada|pintado|esta bien)\b', texto):
+        return 'pintada_buen_estado'
+    no_esta_seca = bool(re.search(
+        r'\b(?:no|aun no|todavia no)\s+(?:esta\s+)?seca\b',
+        texto,
+    ))
+    if (
+        not no_esta_seca
+        and re.search(r'\bseca\b', texto)
+        and re.search(r'\b(?:firme|nivelada|lisa|sin grietas)\b', texto)
+    ):
+        return 'pintada_buen_estado'
+    return ''
+
+
 def _aplicar_contexto_calculo_pintura(datos, mensaje, historial):
     """Enruta cálculos de pintura explícitos sin afectar otros proyectos."""
     texto_actual = _texto_normalizado(mensaje)
@@ -144,10 +171,12 @@ def _aplicar_contexto_calculo_pintura(datos, mensaje, historial):
         or (seguimiento_pintura and (informa_superficie or pide_similar))
         or datos.get('intencion') == 'calcular_pintura'
     )
-    if not es_calculo:
+    es_recomendacion_color = datos.get('intencion') == 'recomendar_color'
+    if not es_calculo and not es_recomendacion_color:
         return datos
 
-    datos['intencion'] = 'calcular_pintura'
+    if not es_recomendacion_color:
+        datos['intencion'] = 'calcular_pintura'
 
     superficies = re.findall(
         r'\b(\d+(?:[.,]\d+)?)\s*(?:m2|m²|metros? cuadrados?)\b',
@@ -174,7 +203,12 @@ def _aplicar_contexto_calculo_pintura(datos, mensaje, historial):
     if not datos.get('tipo_superficie'):
         superficies_conocidas = (
             ('piscina_estanque', r'\b(?:piscina|estanque)\b'),
-            ('yeso_carton', r'\b(?:yeso carton|volcanita)\b'),
+            ('yeso_carton', r'\b(?:yeso[- ]carton|volcanita)\b'),
+            ('pasta_muro', r'\bpasta muro\b'),
+            ('estuco', r'\bestuco\b'),
+            ('fibrocemento', r'\bfibrocemento\b'),
+            ('yeso', r'\byeso\b'),
+            ('metal_galvanizado', r'\b(?:metal|acero|fierro) galvanizado\b'),
             ('hormigon', r'\b(?:hormigon|cemento|concreto)\b'),
             ('ladrillo', r'\bladrillos?\b'),
             ('madera', r'\bmadera\b'),
@@ -186,14 +220,9 @@ def _aplicar_contexto_calculo_pintura(datos, mensaje, historial):
                 break
 
     if not datos.get('estado_superficie'):
-        if re.search(r'\b(?:nueva|nuevo|sin pintar)\b', texto_usuario):
-            datos['estado_superficie'] = 'nueva'
-        elif re.search(r'\b(?:humedad|humeda|humedo|moho)\b', texto_usuario):
-            datos['estado_superficie'] = 'humedad'
-        elif re.search(r'\b(?:deteriorada|deteriorado|grietas?|descascarad[oa])\b', texto_usuario):
-            datos['estado_superficie'] = 'deteriorada'
-        elif re.search(r'\b(?:buen estado|pintada|pintado|esta bien)\b', texto_usuario):
-            datos['estado_superficie'] = 'pintada_buen_estado'
+        estado_superficie = _estado_superficie_pintura_desde_texto(texto_usuario)
+        if estado_superficie:
+            datos['estado_superficie'] = estado_superficie
 
     if pide_similar:
         datos['_permitir_color_alternativo'] = True
@@ -686,14 +715,9 @@ def _normalizar_preferencias_extraidas(datos, mensaje, historial):
         'estado' in ultimo_asistente
         and ('superficie' in ultimo_asistente or 'muro' in ultimo_asistente)
     ):
-        if re.search(r'\b(?:nuevo|nueva|sin pintar)\b', texto_mensaje):
-            datos['estado_superficie'] = 'nueva'
-        elif re.search(r'\b(?:bueno|buena|buen estado|esta bien)\b', texto_mensaje):
-            datos['estado_superficie'] = 'pintada_buen_estado'
-        elif re.search(r'\b(?:deteriorado|deteriorada|grietas?|mal estado)\b', texto_mensaje):
-            datos['estado_superficie'] = 'deteriorada'
-        elif re.search(r'\b(?:humedad|humedo|humeda|manchas?)\b', texto_mensaje):
-            datos['estado_superficie'] = 'humedad'
+        estado_superficie = _estado_superficie_pintura_desde_texto(texto_mensaje)
+        if estado_superficie:
+            datos['estado_superficie'] = estado_superficie
     proyecto_estandar_explicito = bool(re.search(
         r'\b(?:estandar|basico|basica)\b|\b(?:de|como) referencia\b',
         texto_usuario,
@@ -3175,14 +3199,24 @@ def _resolver_recomendacion_color(datos):
         }
 
     color_solicitado = str(datos.get('color') or '').strip()
-    productos = pinturas_compatibles(contexto, color_solicitado)
+    tipo_superficie = str(datos.get('tipo_superficie') or '').strip()
+    if contexto == 'piscina' and not tipo_superficie:
+        tipo_superficie = 'piscina_estanque'
+    etiqueta_superficie = dict(Producto.SUPERFICIE_CHOICES).get(
+        tipo_superficie, tipo_superficie,
+    ).lower()
+    detalle_superficie = f' sobre {etiqueta_superficie}' if tipo_superficie else ''
+    productos = pinturas_compatibles(
+        contexto, color_solicitado, tipo_superficie=tipo_superficie,
+    )
     if not productos:
         detalle_color = f' en color {color_solicitado}' if color_solicitado else ''
         return {
             'tipo': 'sin_resultados',
             'mensaje': (
-                f'No hay pinturas verificadas con stock para {contexto}{detalle_color}. '
-                'No recomendaré una pintura de otro ambiente porque podría no ser adecuada.'
+                f'No encontré pinturas con ficha verificada y stock para {contexto}'
+                f'{detalle_superficie}{detalle_color}. '
+                'No recomendaré pinturas de otro ambiente o superficie incompatible.'
             ),
             'productos': [],
             'sugerencias': ['Ver otros colores compatibles', 'Revisar todas las pinturas'],
@@ -3192,7 +3226,7 @@ def _resolver_recomendacion_color(datos):
     for producto in productos:
         item = _producto_publico(producto)
         item.update(color_publico(producto))
-        item['rol'] = f'Color compatible con {contexto}'
+        item['rol'] = f'Color compatible con {contexto}{detalle_superficie}'
         item['carrito_cantidad'] = 1
         recomendaciones.append(item)
 
@@ -3211,10 +3245,15 @@ def _resolver_recomendacion_color(datos):
             'una pintura común de muro no corresponde para inmersión.'
         ),
     }[contexto]
+    aviso = ''
+    if tipo_superficie and len(set(producto.color for producto in productos)) == 1 and not color_solicitado:
+        aviso = f' No encontré otros colores con ficha verificada y stock{detalle_superficie}.'
+    elif not tipo_superficie:
+        aviso = ' Falta confirmar el material de la superficie antes de elegir una pintura.'
     return {
         'tipo': 'recomendacion_color',
         'contexto_pintura': contexto,
-        'mensaje': f'{explicacion} Colores disponibles encontrados: {colores}.',
+        'mensaje': f'{explicacion} Colores disponibles encontrados{detalle_superficie}: {colores}.{aviso}',
         'productos': recomendaciones,
         'sugerencias': [
             'Quiero calcular cuánta pintura necesito',
@@ -3937,6 +3976,86 @@ def _respuesta_pintura_para_contexto(producto, historial):
             'Buscar otra pintura compatible',
         ],
     }
+
+
+def _resolver_seleccion_color_pintura(mensaje, historial, productos_contexto):
+    """Recalcula el proyecto cuando el cliente elige una pintura mostrada."""
+    if not productos_contexto:
+        return None
+    texto = _texto_normalizado(mensaje)
+    if not re.search(
+        r'\b(?:elijo|escojo|prefiero|quiero|usare|usar|me interesa|'
+        r'me gusta|me quedo con|'
+        r'calcula(?:lo)? con|cotiza(?:lo)? con)\b',
+        texto,
+    ):
+        return None
+
+    ids = list(dict.fromkeys(productos_contexto))
+    encontrados = {
+        producto.pk: producto
+        for producto in Producto.objects.filter(pk__in=ids, activo=True)
+        if producto.tipo_calculo == 'pintura'
+    }
+    pinturas = [encontrados[pk] for pk in ids if pk in encontrados]
+    if not pinturas:
+        return None
+
+    seleccionadas = [
+        producto for producto in pinturas
+        if _texto_normalizado(producto.nombre) in texto
+    ]
+    if not seleccionadas:
+        seleccionadas = [
+            producto for producto in pinturas
+            if len(_texto_normalizado(producto.color)) >= 3
+            and _texto_normalizado(producto.color) in texto
+        ]
+    if not seleccionadas:
+        palabras_genericas = {
+            'color', 'pintura', 'sipa', 'esmalte', 'agua', 'satinado',
+            'mate', 'galon', 'litro', 'interior', 'exterior',
+        }
+        coincidencias_por_tono = []
+        for producto in pinturas:
+            palabras_tono = {
+                palabra for palabra in re.findall(
+                    r'[a-z0-9]+', _texto_normalizado(producto.color)
+                )
+                if len(palabra) >= 4 and palabra not in palabras_genericas
+            }
+            if any(re.search(rf'\b{re.escape(palabra)}\b', texto)
+                   for palabra in palabras_tono):
+                coincidencias_por_tono.append(producto)
+        seleccionadas = coincidencias_por_tono
+    if not seleccionadas and re.search(
+        r'\b(?:primer[oa]?|segund[oa]|tercer[oa]?|cuart[oa]|quint[oa]|'
+        r'sext[oa]|septim[oa]|octav[oa]|noven[oa]|decim[oa]|'
+        r'[1-9][0-9]*(?:er|ro|ra|do|da|to|ta)?)\b',
+        texto,
+    ):
+        seleccionadas = _productos_mencionados_en_seguimiento(mensaje, pinturas)
+    if len(seleccionadas) != 1:
+        opciones = [producto.nombre for producto in pinturas[:6]]
+        return {
+            'tipo': 'aclaracion_color',
+            'mensaje': (
+                'No pude identificar de forma inequívoca cuál pintura quieres elegir. '
+                'Indica el nombre, el tono o la posición de una de las opciones mostradas. '
+                'Si buscas un color que no aparece en la lista, pídeme buscarlo en el catálogo.'
+            ),
+            'productos': [],
+            'maestros': [],
+            'sugerencias': opciones,
+        }
+    resultado = _respuesta_pintura_para_contexto(seleccionadas[0], historial)
+    if not resultado:
+        return None
+    resultado['mensaje'] = (
+        'CÁLCULO ACTUALIZADO CON EL COLOR ELEGIDO\n\n'
+        + resultado['mensaje']
+    )
+    return resultado
 
 
 def _producto_mencionado_para_uso(consulta, productos):
@@ -5839,22 +5958,36 @@ def _resolver_resumen_contextual(historial):
         if item.get('role') != 'assistant':
             continue
         contenido = str(item.get('content') or '').strip()
-        if any(marca in contenido.upper() for marca in (
+        contenido_normalizado = _texto_normalizado(contenido)
+        es_resumen_pintura = bool(re.search(
+            r'para\s+\d+(?:[.,]\d+)?\s*m(?:2|²)\s+necesitas\s+'
+            r'aproximadamente\s+\d+(?:[.,]\d+)?\s+litros?',
+            contenido_normalizado,
+        )) or 'calculo actualizado con el color elegido' in contenido_normalizado
+        if es_resumen_pintura or any(marca in contenido.upper() for marca in (
             'PROPUESTA ESTÁNDAR PARA TU PROYECTO',
             'PRODUCTOS POR ETAPA',
             'MATERIALES Y PARA QUÉ SE USAN',
             'RESULTADO\nENCONTRÉ',
         )):
+            sugerencias = (
+                [
+                    '¿Qué herramientas necesito para pintar?',
+                    'Ver pinturas de otro color',
+                    'Buscar maestro pintor',
+                ]
+                if es_resumen_pintura else [
+                    '¿Por qué elegiste estos materiales?',
+                    '¿Qué herramientas necesito para este proyecto?',
+                    'Muéstrame alternativas más económicas',
+                ]
+            )
             return {
                 'tipo': 'resumen_proyecto',
                 'mensaje': contenido,
                 'productos': [],
                 'maestros': [],
-                'sugerencias': [
-                    '¿Por qué elegiste estos materiales?',
-                    '¿Qué herramientas necesito para este proyecto?',
-                    'Muéstrame alternativas más económicas',
-                ],
+                'sugerencias': sugerencias,
             }
     return {
         'tipo': 'seguimiento_proyecto',
@@ -6562,6 +6695,16 @@ def _resolver_calculo_pintura_local(mensaje, historial):
     pintura como uno de sus materiales.
     """
     historial = historial or []
+    texto = _texto_normalizado(mensaje)
+    # Las preguntas posteriores sobre herramientas o profesionales deben
+    # conservar el contexto de la pintura, pero no volver a ejecutar el
+    # calculo de litros y envases. Esos flujos se resuelven mas adelante con
+    # las tarjetas ya mostradas al cliente.
+    if re.search(r'\bherramientas?\b', texto) or re.search(
+        r'\b(?:maestr[oa]|pintor(?:a)?|profesional|especialista)\b',
+        texto,
+    ):
+        return None
     nueva_consulta = _es_nueva_consulta_pintura(mensaje)
     ultimo_asistente = next((
         _texto_normalizado(item.get('content'))
@@ -6777,6 +6920,11 @@ def procesar_consulta(
     caneria_por_servicio = _resolver_caneria_por_servicio(mensaje)
     if caneria_por_servicio:
         return caneria_por_servicio
+    seleccion_color_pintura = _resolver_seleccion_color_pintura(
+        mensaje, historial, productos_contexto or [],
+    )
+    if seleccion_color_pintura:
+        return seleccion_color_pintura
     nueva_consulta_pintura = _es_nueva_consulta_pintura(mensaje)
     calculo_pintura_local = _resolver_calculo_pintura_local(mensaje, historial)
     if calculo_pintura_local:

@@ -32,9 +32,11 @@ def detectar_contexto_pintura(datos):
     return ''
 
 
-def pinturas_compatibles(contexto, color='', limite=6):
+def pinturas_compatibles(contexto, color='', limite=6, *, tipo_superficie=''):
     if contexto not in ETIQUETAS_CONTEXTO:
         return []
+    if contexto == 'piscina':
+        tipo_superficie = tipo_superficie or 'piscina_estanque'
     candidatas = list(
         Producto.objects.filter(
             activo=True,
@@ -46,6 +48,8 @@ def pinturas_compatibles(contexto, color='', limite=6):
     )
     compatibles = []
     for producto in candidatas:
+        if tipo_superficie and tipo_superficie not in (producto.superficies_compatibles or []):
+            continue
         es_piscina = (
             producto.tipo_pintura == 'caucho_clorado'
             or 'piscina_estanque' in producto.superficies_compatibles
