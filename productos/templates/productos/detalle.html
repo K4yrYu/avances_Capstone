@@ -241,16 +241,16 @@
             {% if producto.tiempo_repintado_legible %}
               <div><dt>Tiempo de repintado</dt><dd>{{ producto.tiempo_repintado_legible }}</dd></div>
             {% endif %}
-            {% if producto.rendimiento_legible %}
+            {% if producto.informacion_tecnica_verificada and producto.rendimiento_legible %}
               <div><dt>Rendimiento</dt><dd>{{ producto.rendimiento_legible }}</dd></div>
             {% endif %}
-            {% if producto.capas_recomendadas %}
+            {% if producto.informacion_tecnica_verificada and producto.capas_recomendadas %}
               <div><dt>Aplicación recomendada</dt><dd>{{ producto.capas_recomendadas }} capa{{ producto.capas_recomendadas|pluralize }}</dd></div>
             {% endif %}
             {% if producto.uso_recomendado %}
               <div class="technical-wide"><dt>Uso recomendado</dt><dd>{{ producto.uso_recomendado|linebreaksbr }}</dd></div>
             {% endif %}
-            {% for clave, valor in producto.especificaciones.items %}
+            {% for clave, valor in producto.especificaciones_publicas.items %}
               <div>
                 <dt>{{ clave }}</dt>
                 <dd>

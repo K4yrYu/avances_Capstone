@@ -186,6 +186,14 @@ def detectar_situacion_cotidiana(mensaje):
     """Devuelve la primera situación inequívoca; los riesgos tienen prioridad."""
     texto = normalizar_lenguaje_cotidiano(mensaje)
     for situacion in SITUACIONES:
+        if situacion['codigo'] == 'humedad_muro':
+            # Evitar interpretar «sin humedad» como un síntoma positivo.
+            texto_humedad = re.sub(
+                r'\b(?:sin|sin presencia de|libre de|no (?:tiene|hay|presenta))\s+'
+                r'(?:humedad|moho|hongos?|manchas?)\b', '', texto,
+            )
+            if not any(re.search(patron, texto_humedad) for patron in situacion['patrones']):
+                continue
         if any(re.search(patron, texto) for patron in situacion['patrones']):
             return {**situacion, 'texto_normalizado': texto}
     return None

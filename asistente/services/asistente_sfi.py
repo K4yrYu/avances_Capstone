@@ -101,14 +101,20 @@ def _texto_normalizado(valor):
 def _estado_superficie_pintura_desde_texto(texto):
     """Normaliza descripciones cotidianas del estado de una superficie."""
     texto = _texto_normalizado(texto)
+    texto_humedad = re.sub(
+        r'\b(?:sin|sin presencia de|libre de|no (?:tiene|hay|presenta))\s+'
+        r'(?:humedad|moho|hongos?|manchas?)\b', '', texto,
+    )
+    if re.search(r'\b(?:humedad|humeda|humedo|moho|manchas?)\b', texto_humedad):
+        return 'humedad'
     if re.search(r'\b(?:nueva|nuevo|sin pintar)\b', texto):
         return 'nueva'
-    if re.search(r'\b(?:humedad|humeda|humedo|moho|manchas?)\b', texto):
-        return 'humedad'
     if re.search(
         r'\b(?:deteriorada|deteriorado|grietas?|descascarad[oa]|mal estado)\b',
         texto,
     ):
+        return 'deteriorada'
+    if re.search(r'\bno\s+(?:esta\s+)?(?:en\s+)?buen estado\b', texto):
         return 'deteriorada'
     if re.search(r'\b(?:bueno|buena|buen estado|pintada|pintado|esta bien)\b', texto):
         return 'pintada_buen_estado'
@@ -128,6 +134,15 @@ def _estado_superficie_pintura_desde_texto(texto):
 def _aplicar_contexto_calculo_pintura(datos, mensaje, historial):
     """Enruta cálculos de pintura explícitos sin afectar otros proyectos."""
     texto_actual = _texto_normalizado(mensaje)
+    solo_herramientas = bool(re.search(r'\bherramientas?\b', texto_actual)) and not bool(
+        re.search(r'\b(?:material(?:es)?|producto(?:s)?|insumo(?:s)?|'
+                  r'litros?|envases?|cantidad|rendimiento|metros? cuadrados?)\b', texto_actual)
+    )
+    if solo_herramientas:
+        if datos.get('intencion') == 'calcular_pintura':
+            datos['intencion'] = 'planificar_proyecto'
+            datos['incluir_herramientas'] = True
+        return datos
     usuarios = ' '.join(
         str(item.get('content') or '')
         for item in historial
@@ -4906,7 +4921,7 @@ def _resolver_herramientas_iniciales(mensaje):
         consultas = ['espatula acero', 'lija muro']
         contexto = 'aplicar y alisar pasta muro'
     elif any(termino in texto for termino in ('pintar', 'pintura', 'pared', 'muro')):
-        consultas = ['rodillo pintura', 'brocha pintura']
+        consultas = ['rodillo pintura', 'brocha pintura', 'bandeja pintura', 'extension telescopica']
         contexto = 'pintar la pared'
     elif any(termino in texto for termino in ('techo', 'techumbre', 'cubierta')):
         consultas = ['cinta metrica', 'taladro percutor']
@@ -4922,7 +4937,7 @@ def _resolver_herramientas_iniciales(mensaje):
     usadas = set()
     for consulta in consultas:
         termino_principal = _texto_normalizado(consulta).split()[0]
-        candidatos_directos = Producto.objects.filter(activo=True).order_by('nombre')
+        candidatos_directos = Producto.objects.filter(activo=True, stock__gt=0).order_by('nombre')
         producto = next((
             candidato for candidato in candidatos_directos
             if candidato.pk not in usadas
@@ -4930,12 +4945,12 @@ def _resolver_herramientas_iniciales(mensaje):
                 'herramienta' in _texto_normalizado(candidato.categoria)
                 or termino_principal in ('espatula', 'lija')
             )
-            and termino_principal in _texto_normalizado(candidato.nombre)
+            and re.match(rf'^\s*{re.escape(termino_principal)}\w*\b', _texto_normalizado(candidato.nombre))
         ), None)
         if not producto:
             producto = next((
                 candidato for candidato in _buscar_productos(consulta, limite=10)
-                if candidato.pk not in usadas
+                if candidato.pk not in usadas and candidato.stock > 0
                 and (
                     'herramienta' in _texto_normalizado(candidato.categoria)
                     or termino_principal in ('espatula', 'lija')
@@ -4945,9 +4960,10 @@ def _resolver_herramientas_iniciales(mensaje):
             continue
         item = _producto_publico(producto)
         item.update({
-            'rol': 'Herramienta recomendada',
+            'rol': ('Complemento para mayor alcance' if consulta == 'extension telescopica'
+                    else 'Herramienta recomendada'),
             'carrito_cantidad': 1,
-            'es_opcional': True,
+            'es_opcional': consulta == 'extension telescopica',
         })
         herramientas.append(item)
         usadas.add(producto.pk)
@@ -4957,7 +4973,12 @@ def _resolver_herramientas_iniciales(mensaje):
         'mensaje': (
             f'HERRAMIENTAS PARA {contexto.upper()}\n'
             + (
-                '\n'.join(f"• {item['nombre']}" for item in herramientas)
+                '\n'.join(
+                    f"• {item['nombre']}" + (
+                        ' — opcional para alcanzar zonas altas.'
+                        if item['rol'] == 'Complemento para mayor alcance' else ''
+                    ) for item in herramientas
+                )
                 if herramientas
                 else 'No encontré herramientas relacionadas con stock en SFI.'
             )
@@ -6822,6 +6843,12 @@ def procesar_consulta(
     riesgo = detectar_situacion_cotidiana(mensaje)
     if riesgo and riesgo.get('tipo') == 'riesgo':
         return _resolver_situacion_cotidiana(mensaje)
+    texto_consulta = _texto_normalizado(mensaje).strip(' ¿?.,!')
+    if (not historial and not productos_contexto and re.fullmatch(
+        r'(?:que|cuales) herramientas? (?:necesito|se usan|sirven) para pintar',
+        texto_consulta,
+    )):
+        return _resolver_herramientas_iniciales(mensaje)
     ultimo_asistente = next((
         _texto_normalizado(item.get('content')) for item in reversed(historial or [])
         if item.get('role') == 'assistant'

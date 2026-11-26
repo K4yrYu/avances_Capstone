@@ -278,6 +278,17 @@ class Producto(models.Model):
         return f'{self._numero_legible(self.rendimiento)} {self.get_unidad_rendimiento_display()}'
 
     @property
+    def especificaciones_publicas(self):
+        internas = {
+            'fuente de referencia', 'verificación pendiente', 'verificacion pendiente',
+            'estimación de rendimiento', 'estimacion de rendimiento',
+            'estimación de aplicación', 'estimacion de aplicacion',
+            'estado comercial', 'referencia del precio',
+        }
+        return {clave: valor for clave, valor in (self.especificaciones or {}).items()
+                if clave.strip().casefold() not in internas}
+
+    @property
     def superficies_compatibles_display(self):
         etiquetas = dict(self.SUPERFICIE_CHOICES)
         return [etiquetas[valor] for valor in self.superficies_compatibles if valor in etiquetas]

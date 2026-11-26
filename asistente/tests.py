@@ -449,6 +449,16 @@ class PisoFlotanteTests(TestCase):
 
 
 class AsistenteSfiTests(TestCase):
+    def test_muro_sin_humedad_no_activa_diagnostico_de_humedad(self):
+        from .services.situaciones_cotidianas import detectar_situacion_cotidiana
+        from .services.asistente_sfi import _estado_superficie_pintura_desde_texto
+
+        frase = 'Quiero pintar un muro de hormigón que está firme y sin humedad.'
+        situacion = detectar_situacion_cotidiana(frase)
+        self.assertFalse(situacion and situacion['codigo'] == 'humedad_muro')
+        self.assertNotEqual(_estado_superficie_pintura_desde_texto(frase), 'humedad')
+        self.assertEqual(_estado_superficie_pintura_desde_texto('muro nuevo con humedad'), 'humedad')
+        self.assertEqual(_estado_superficie_pintura_desde_texto('muro no está en buen estado'), 'deteriorada')
     def setUp(self):
         self.pintura = Producto.objects.create(
             nombre='Látex SFI interior mate', descripcion='Pintura blanca para muros interiores',
@@ -4271,6 +4281,38 @@ class PlanificadorGenericoProyectosTests(TestCase):
             for producto in resultado['productos']
         ))
         self.assertNotIn('metros cuadrados', resultado['mensaje'].casefold())
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_herramientas_para_pintar_no_se_convierte_en_calculo_si_gemini_se_equivoca(self, interpretar):
+        interpretar.return_value = {
+            'intencion': 'calcular_pintura', 'proyecto': 'Herramientas para pintar',
+            'tareas_proyecto': [], 'herramientas_proyecto': ['rodillo pintura', 'brocha pintura'],
+            'incluir_herramientas': True, 'datos_faltantes_proyecto': [],
+        }
+        resultado = procesar_consulta('¿Qué herramientas necesito para pintar?', [])
+        self.assertNotEqual(resultado['tipo'], 'calculo_pintura')
+        self.assertNotIn('para calcularlo con precisión necesito saber', resultado['mensaje'].casefold())
+
+    @patch('asistente.services.asistente_sfi.interpretar_con_gemini')
+    def test_herramientas_pintar_directo_no_pide_medidas(self, interpretar):
+        resultado = procesar_consulta('¿Qué herramientas necesito para pintar?', [])
+        self.assertEqual(resultado['tipo'], 'seguimiento_herramientas')
+        self.assertNotIn('metros cuadrados', resultado['mensaje'].casefold())
+        self.assertNotIn('antes de recomendar productos', resultado['mensaje'].casefold())
+        interpretar.assert_not_called()
+
+    def test_pintura_incluye_bandeja_y_extension_como_opcional(self):
+        for nombre in ('Rodillo pintura prueba', 'Bandeja para pintura prueba',
+                       'Extensión telescópica para rodillo prueba'):
+            Producto.objects.create(nombre=nombre, descripcion='Herramienta para pintar.',
+                                    precio=1000, stock=5, categoria='Herramientas', activo=True)
+        resultado = procesar_consulta('¿Qué herramientas necesito para pintar?', [])
+        nombres = ' '.join(p['nombre'].casefold() for p in resultado['productos'])
+        self.assertIn('rodillo', nombres)
+        self.assertIn('bandeja', nombres)
+        self.assertIn('extensión', nombres)
+        extension = next(p for p in resultado['productos'] if p['rol'] == 'Complemento para mayor alcance')
+        self.assertTrue(extension['es_opcional'])
 
     def test_materiales_y_herramientas_pasan_al_planificador_completo(self):
         from .services.asistente_sfi import (

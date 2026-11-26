@@ -133,6 +133,24 @@ class SeguridadProductosTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_detalle_oculta_notas_internas_y_estimaciones_no_verificadas(self):
+        self.producto.especificaciones = {
+            'Fuente de referencia': 'https://example.com/interna',
+            'Verificación pendiente': 'Nota interna',
+            'Estimación de rendimiento': 'Estimación interna',
+            'Color': 'Blanco',
+        }
+        self.producto.rendimiento = 10
+        self.producto.unidad_rendimiento = 'm2_l'
+        self.producto.capas_recomendadas = 2
+        self.producto.save()
+        response = self.client.get(reverse('detalle_producto', args=[self.producto.id]))
+        self.assertNotContains(response, 'https://example.com/interna')
+        self.assertNotContains(response, 'Nota interna')
+        self.assertNotContains(response, 'Estimación interna')
+        self.assertNotContains(response, '10 m²/L')
+        self.assertContains(response, 'Blanco')
+
     def test_catalogo_publico_usa_identidad_sfi_y_controles_de_orden(self):
         response = self.client.get(reverse('lista_productos'))
 
